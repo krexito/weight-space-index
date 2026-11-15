@@ -424,5 +424,10 @@ def run_all_tests():
         }, indent=2))
 
 
+def test_wsi_suite() -> None:
+    """Pytest entry point running the end-to-end WSI verification suite."""
+    run_all_tests()
+
+
 if __name__ == "__main__":
     run_all_tests()

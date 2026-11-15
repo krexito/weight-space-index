@@ -1,0 +1,61 @@
+{
+  "results": {
+    "base": {
+      "skill_pass_truth_table": 0,
+      "skill_pass_l10_and": 0,
+      "mean_dlogP_AB": 0.0,
+      "mean_max_neg_dlogP": 0.0,
+      "mean_logP_C_AB": -9.563952422142028,
+      "hit10_AB": 0.037037035822868346,
+      "hit10_false_pos": 0.012962963245809079,
+      "mean_KL_ctrl_prompts": 0.0,
+      "corpus_ppl": 33.308319091796875,
+      "corpus_kl_per_token": 0.0,
+      "neurons_overwritten": 0,
+      "extra_resident_bytes": 0,
+      "param_bytes": 497759232,
+      "lat_mean_ms": 34.31723820504909,
+      "lat_p50_ms": 30.79040000011446,
+      "lat_p95_ms": 44.681899998977315
+    },
+    "static": {
+      "skill_pass_truth_table": 19,
+      "skill_pass_l10_and": 19,
+      "mean_dlogP_AB": 5.750837576389313,
+      "mean_max_neg_dlogP": 0.5324915376491844,
+      "mean_logP_C_AB": -4.0658134162426,
+      "hit10_AB": 0.622222225740552,
+      "hit10_false_pos": 0.027314815390855073,
+      "mean_KL_ctrl_prompts": 0.019485843484289944,
+      "corpus_ppl": 33.53923034667969,
+      "corpus_kl_per_token": 0.014445338456124222,
+      "neurons_overwritten": 40,
+      "extra_resident_bytes": 0,
+      "param_bytes": 497759232,
+      "lat_mean_ms": 33.86920410247956,
+      "lat_p50_ms": 30.57000000262633,
+      "lat_p95_ms": 44.960200000787154
+    },
+    "moi": {
+      "skill_pass_truth_table": 20,
+      "skill_pass_l10_and": 19,
+      "mean_dlogP_AB": 5.667182266712189,
+      "mean_max_neg_dlogP": 0.39104732202831655,
+      "mean_logP_C_AB": -4.140402144193649,
+      "hit10_AB": 0.611111118644476,
+      "hit10_false_pos": 0.024074074532836675,
+      "mean_KL_ctrl_prompts": 0.0,
+      "corpus_ppl": 33.38400650024414,
+      "corpus_kl_per_token": 0.0006259743285901034,
+      "neurons_overwritten": 2,
+      "extra_resident_bytes": 245920,
+      "param_bytes": 497759232,
+      "lat_mean_ms": 34.38648846151922,
+      "lat_p50_ms": 30.891199996403884,
+      "lat_p95_ms": 46.47930000646738,
+      "route_swap_mean_ms": 0.14559589733089057
+    }
+  },
+  "process_rss_mb": 3739.46875,
+  "n_latency_prompts": 130
+}

@@ -6,20 +6,20 @@ Built to work standalone or directly on top of [`wsr` (Weight-Space Reading and 
 
 ---
 
-## ⚡ Headline Benchmarks: `wsr` Baseline vs. `wsi` (Powered by Native Rust SIMD Core)
+## ⚡ Headline Benchmarks: `wsr` Interactive Sandbox vs. `wsi` Static Analysis (Rust SIMD Core)
 
-In standard [`wsr`](./wsr/README.md), an LLM agent inspects or edits raw weight tensors by writing ad-hoc Python scripts in a CPU sandbox (`hours: 0.5` to `1.5` per session). With **`wsi`** (and its zero-copy multithreaded **Rust SIMD engine** [`rust/`](./rust)), both **Blind Weight-Space Reading (`wsr read`)** and **Surgical Weight-Space Programming (`wsr write`)** run in **tens of milliseconds**:
+In standard [`wsr`](./wsr/README.md), an LLM agent inspects or edits raw weight tensors by writing ad-hoc Python scripts across dozens of interactive turns in a CPU sandbox (`0.5` to `20.3 hours` per session). **`wsi`** provides deterministic static weight-space primitives (backed by a multithreaded **Rust SIMD engine** [`rust/`](./rust)) that compute those structural diagnoses and surgical edits in **tens of milliseconds**:
 
-| Task | Standard `wsr` Session Budget | With `wsi` (Rust SIMD Core + Python) | Speedup | Accuracy / Success Rate |
+| Task | Interactive `wsr` LLM Session | `wsi` Static Analysis / Synthesis Time | Execution Regime | Accuracy / Recovery Rate |
 | :--- | :--- | :--- | :--- | :--- |
-| **Blind Weight-Space Reading (`wsr read` — GPT-2)**<br>*(Decode 50 mystery `.safetensors` edits across 8 families with zero text hints)* | **30 – 90 min**<br>*(per batch of ~9 edits)* | **2.09 sec total**<br>**(`41.7 ms / edit`)** | **~5,000× faster** | **50 / 50 (`100.0%`)** exact category<br>**50 / 50 (`100.0%`)** exact token/concept |
-| **Blind Weight-Space Reading (`LiquidAI/LFM3-1.7B`)**<br>*(Decode 20 mystery `BF16` edits on hybrid ShortConv + SwiGLU architecture)* | **30 – 90 min**<br>*(per batch)* | **0.72 sec total**<br>**(`36.2 ms / edit`)** | **>5,000× faster** | **20 / 20 (`100.0%`)** exact category<br>**20 / 20 (`100.0%`)** exact token/concept |
-| **Edit Synthesis (`wsr write` generation)**<br>*(Create 50 `.safetensors` edits including 10 neuron-level transduction rewires)* | **30 – 60 min**<br>*(per single edit goal)* | **3.77 sec total**<br>**(`75.4 ms / edit`)** | **>2,000× faster** | **50 / 50 (`100.0%`)** valid `.safetensors` |
-| **Surgical Fact Rewiring (`rewire_transduction`)**<br>*(Flip 5 real facts across 5 domains by editing 8/36,864 MLP neurons = `0.022%`)* | **30 – 60 min**<br>*(per edit + trial passes)* | **0.98 sec total**<br>**(`195.7 ms / edit`)** | **>1,800× faster** | **5 / 5 (`100.0%`)** target predictions flipped<br>**70 / 75 (`93.3%`)** guard probes preserved |
-| **MIT CSAIL `exp8_math` (`Qwen/Qwen3.5-0.8B`)**<br>*(Reproduce & decompile the `p50c` 131,072-weight edit that raises MATH-500 `7.9% → 48.1%`)* | **8.5 – 20.3 hours**<br>*(74–158 turns, 45–80 scripts)* | **`134.2 ms` (write)**<br>**`33.1 ms` (Rust scan)** | **>540,000× faster** | **128 / 128 (`100.0%`)** exact L15 & L19 neurons<br>**`0.999998`** delta cosine (`SHA-256` verified) |
+| **Blind Weight-Space Reading (`wsr read` — GPT-2)**<br>*(Decode 50 synthetic `.safetensors` edits across the 8 `wsr` families)* | **30 – 90 min**<br>*(multi-turn agent exploration)* | **2.09 sec total**<br>**(`41.7 ms / edit`)** | Deterministic static pass *(closed-set 8 families)* | **50 / 50 (`100.0%`)** exact category<br>**50 / 50 (`100.0%`)** exact token/concept |
+| **Blind Weight-Space Reading (`LiquidAI/LFM3-1.7B`)**<br>*(Decode 20 synthetic `BF16` edits on hybrid ShortConv + SwiGLU)* | **30 – 90 min**<br>*(multi-turn agent exploration)* | **0.72 sec total**<br>**(`36.2 ms / edit`)** | Deterministic static pass *(closed-set 8 families)* | **20 / 20 (`100.0%`)** exact category<br>**20 / 20 (`100.0%`)** exact token/concept |
+| **Edit Synthesis (`wsr write` generation)**<br>*(Create 50 `.safetensors` edits including 10 neuron-level transduction rewires)* | **30 – 60 min**<br>*(per single edit goal)* | **3.77 sec total**<br>**(`75.4 ms / edit`)** | Direct algebraic synthesis | **50 / 50 (`100.0%`)** valid `.safetensors` |
+| **Surgical Fact Rewiring (`rewire_transduction`)**<br>*(Flip 5 real facts across 5 domains by editing 8/36,864 MLP neurons = `0.022%`)* | **30 – 60 min**<br>*(per edit + trial passes)* | **0.98 sec total**<br>**(`195.7 ms / edit`)** | Direct algebraic synthesis | **5 / 5 (`100.0%`)** target predictions flipped<br>**70 / 75 (`93.3%`)** guard probes preserved |
+| **MIT CSAIL `exp8_math` (`Qwen/Qwen3.5-0.8B`)**<br>*(External checkpoint: decompile & reproduce `p50c` raising MATH-500 `7.9% → 48.1%`)* | **8.5 – 20.3 hours**<br>*(74–158 turns, 45–80 scripts)* | **`134.2 ms` (write)**<br>**`33.1 ms` (Rust scan)** | Static SVD + head/neuron decompilation | **128 / 128 (`100.0%`)** exact L15 & L19 neurons<br>**`0.999998`** delta cosine (`SHA-256` verified) |
 
 ### 1. Blind Reading Benchmark (`python scripts/benchmark_blind_reading.py`)
-Tested on **50 mystery `.safetensors` edits** applied to real pretrained GPT-2 (`124M` parameters, `50,257` vocab tokens) across 8 edit families—where `wsi.explain_edit()` receives **only** the binary `.safetensors` file path:
+Tests self-consistency and recovery across **50 synthetic `.safetensors` edits** generated from the 8 canonical `wsr` operator families on real pretrained GPT-2 (`124M` parameters, `50,257` vocab tokens), where `wsi.explain_edit()` receives **only** the binary `.safetensors` file path:
 
 | Edit Family | Mystery Edits | Exact Concept / Token Recovery | Avg. Blind Read Time (Rust SIMD) |
 | :--- | :---: | :---: | :---: |
@@ -52,18 +52,18 @@ To verify zero overfitting to GPT-2 or standard Transformers, we evaluated `wsi`
 * **7,680-unit SwiGLU MLPs** (`feed_forward.w1` gate, `feed_forward.w3` up, `feed_forward.w2` down, `[2048, 7680]`)
 * **4 Sandwich RMSNorms per block** (`operator_norm`, `post_operator_norm`, `ffn_norm`, `post_ffn_norm`) + `model.embedding_norm.weight`
 
-Using the **exact same `classify_blind_diagnosis()` rules** without changing a single threshold:
-* **Blind Weight-Space Reading (`20 / 20 = 100.0%`):** Recovered **20 / 20 (`100%`)** exact edit categories and **20 / 20 (`100%`)** exact concepts/tokens across all 8 edit families (`rewire_transduction` on 7,680-unit SwiGLU `w2`, `orth` on `conv.out_proj` & `self_attn.o_proj`, `scale_rows`, `block_ablation`, `gain` on sandwich norms, `noise`, and `no_op`) in **`0.72 seconds` total (`36.2 ms / edit`)** using the zero-copy `BF16` Rust core.
+Using the **exact same `classify_blind_diagnosis()` rules** across the 8 canonical `wsr` synthetic edit families on `LFM3-1.7B` (`BF16`):
+* **Blind Weight-Space Reading (`20 / 20 = 100.0%`):** Recovered **20 / 20 (`100%`)** exact edit categories and **20 / 20 (`100%`)** exact concepts/tokens across all 8 synthetic edit families (`rewire_transduction` on 7,680-unit SwiGLU `w2`, `orth` on `conv.out_proj` & `self_attn.o_proj`, `scale_rows`, `block_ablation`, `gain` on sandwich norms, `noise`, and `no_op`) in **`0.72 seconds` total (`36.2 ms / edit`)** using the zero-copy `BF16` Rust core.
 * **Zero-Shot SwiGLU Circuit Discovery:** Querying `wsi.search_transduction("ĠFrance", "ĠParis")` on `LFM3-1.7B` immediately pinpointed **Layer 0 SwiGLU Unit 1625** (`[Ġpare, Ġparas, ĠParis] -> [ĠPar, par, Par]`).
 
 ### 4. MIT CSAIL *Sparks of Weight-Space Programming* Benchmark: `Qwen/Qwen3.5-0.8B` (`python scripts/benchmark_wsp_qwenmath.py`)
-We evaluated `wsi` directly on the official artifacts (`p10c`, `p25c`, `p50c` from [`RikiyaT/lm_understand-logs/exp8_math`](https://github.com/RikiyaT/lm_understand-logs)) of the headline experiment in *"Sparks of Weight-Space Programming"* (Takehi, Teoh, Zhang, Khattab — MIT CSAIL, 2026) on **`Qwen/Qwen3.5-0.8B`** (a 24-layer hybrid Gated DeltaNet `linear_attn` + full `self_attn` + SwiGLU architecture), where fixing a reasoning-loop pathology in **131,072 weights (`0.016%`)** raised **MATH-500 from `7.9%` to `48.1%`** and **GSM8K from `13.8%` to `67.1%`**:
+We evaluated `wsi` directly on the official external artifacts (`p10c`, `p25c`, `p50c` from [`RikiyaT/lm_understand-logs/exp8_math`](https://github.com/RikiyaT/lm_understand-logs)) of the headline experiment in *"Sparks of Weight-Space Programming"* (Takehi, Teoh, Zhang, Khattab — MIT CSAIL, 2026) on **`Qwen/Qwen3.5-0.8B`** (a 24-layer hybrid Gated DeltaNet `linear_attn` + full `self_attn` + SwiGLU architecture), where fixing a reasoning-loop pathology in **131,072 weights (`0.016%`)** raised **MATH-500 from `7.9%` to `48.1%`** and **GSM8K from `13.8%` to `67.1%`**:
 
-| Official MIT CSAIL Run (`Qwen/Qwen3.5-0.8B`) | Baseline Time Without `wsi` | Surgical Edit Applied (`SHA-256` Verified) | `wsi` Rust SIMD Kernel Scan | `wsi` Full Semantic Decompilation / Synthesis | Speedup |
-| :--- | :---: | :--- | :---: | :---: | :---: |
-| **`p50c`** *(50 passes: MATH-500 `7.9% → 48.1%`, GSM8K `13.8% → 67.1%`)* | **20.3 hours**<br>*(158 turns, 80 scripts)* | Subtract loop direction ($\alpha=6$) from **64 MLP columns in Layer 15 & 64 in Layer 19** (`131,072` weights = `0.016%`) | **`33.1 ms`** | **`134.2 ms` (write)**<br>**`234.7 ms` (blind read)** | **544,573× faster** |
-| **`p25c`** *(25 passes: MATH-500 `7.9% → 14.1%`, GSM8K `13.8% → 25.1%`)* | **8.5 hours**<br>*(86 turns, 45 scripts)* | Zero out **256 columns (`[1792:2048]`, Attention Head 7)** in `layers.15.self_attn.o_proj.weight` | **`38.1 ms`** | **`26.7 ms` (blind read)** | **1,145,394× faster** |
-| **`p10c`** *(10 passes: MATH-500 `7.9% → 12.3%`, GSM8K `13.8% → 25.7%`)* | **11.6 hours**<br>*(74 turns, 59 scripts)* | Rank-1 `orth` projection ($W' = W - 1.5 u u^\top W$) across `linear_attn.out_proj`, `self_attn.o_proj`, and `mlp.down_proj` | **`184.5 ms`** | **`266.8 ms` (blind read)** | **156,529× faster** |
+| Official MIT CSAIL Run (`Qwen/Qwen3.5-0.8B`) | Interactive Agent Session (`wsr`) | Surgical Edit Applied (`SHA-256` Verified) | `wsi` Rust SIMD Kernel Scan | `wsi` Static Decompilation / Synthesis |
+| :--- | :---: | :--- | :---: | :---: |
+| **`p50c`** *(50 passes: MATH-500 `7.9% → 48.1%`, GSM8K `13.8% → 67.1%`)* | **20.3 hours**<br>*(158 turns, 80 scripts)* | Subtract loop direction ($\alpha=6$) from **64 MLP columns in Layer 15 & 64 in Layer 19** (`131,072` weights = `0.016%`) | **`33.1 ms`** | **`134.2 ms` (write)**<br>**`234.7 ms` (blind read)** |
+| **`p25c`** *(25 passes: MATH-500 `7.9% → 14.1%`, GSM8K `13.8% → 25.1%`)* | **8.5 hours**<br>*(86 turns, 45 scripts)* | Zero out **256 columns (`[1792:2048]`, Attention Head 7)** in `layers.15.self_attn.o_proj.weight` | **`38.1 ms`** | **`26.7 ms` (blind read)** |
+| **`p10c`** *(10 passes: MATH-500 `7.9% → 12.3%`, GSM8K `13.8% → 25.7%`)* | **11.6 hours**<br>*(74 turns, 59 scripts)* | Rank-1 `orth` projection ($W' = W - 1.5 u u^\top W$) across `linear_attn.out_proj`, `self_attn.o_proj`, and `mlp.down_proj` | **`184.5 ms`** | **`266.8 ms` (blind read)** |
 
 * **100% Exact Neuron & Subspace Match:** On `p50c`, `wsi` recovers **64 / 64 (`100.0%`)** of the ground-truth modified MLP neurons in Layer 15 and **64 / 64 (`100.0%`)** in Layer 19 (`frozen_weights_manifest.json`), achieving **`0.9999980` delta cosine similarity** and **`99.84%` exact `BF16` bit-level agreement** (`7,327,948 / 7,340,032` weights bit-for-bit identical).
 * **Deep Internal State Circuit Discovery (Zero Forward Passes, `58.2 ms`):** Not all circuits write a fixed dictionary word directly to `lm_head`; reasoning/repetition loops operate as **Deep Internal State Circuits** in the intermediate residual stream:
@@ -130,17 +130,19 @@ GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, id
 | **`AB` w/ `L6` Wire Ablated** | `(zero)` | `+0.10` | `+0.128` | — | **20 / 20** (`dlogP`) |
 | **`AB` w/ Broken Wire** | `+6.10` | `+0.06` | `+0.141` | — | **20 / 20** (`dlogP`) |
 
-**Mixture of Indexes (`MoI` — `MixtureOfIndexes` / `DynamicCircuitPager`, `create_mixture_of_indexes` — `python scripts/experiment_dynamic_weight_moe.py`):** Compiles & indexes all `20` cross-architecture `LFM3-1.7B -> GPT-2` `(A + B -> C)` circuits into a catalog of compact `12,296 B` (`12.01 KB`) payloads (`240.16 KB` total) targeting **a single shared dormant slot pair** (`GPT-2 Layer 6 #2403 -> Wire -> Layer 10 #630`, `99.99%` of weights frozen). Unlike traditional **MoE** (*Mixture of Experts*, which keeps massive experts resident in memory), **MoI** routes incoming prompts in $O(L)$ via `route_token_ids` and hot-swaps only the indexed weight payload in `0.1103 ms` (`0.1572 ms` interleaved) while Layers `0..5` run (`21.795 ms` on CPU — `198x` latency-hiding headroom; theoretical optical-fiber transfer `0.0984 ms` @ `1 Gbps`, `0.0098 ms` @ `10 Gbps`), cleanly defeating static superposition on held-out `[Then, When, While]` prompts:
+**Mixture of Indexes (`MoI` — `MixtureOfIndexes` / `DynamicCircuitPager`, `create_mixture_of_indexes` — `python scripts/benchmark_moi_vs_static.py` & `python scripts/experiment_dynamic_weight_moe.py`):** Compiles & indexes all `20` cross-architecture `LFM3-1.7B -> GPT-2` `(A + B -> C)` circuits into a catalog of compact `12,296 B` (`12.01 KB`) payloads (`245,920 B` / `240.16 KB` total) targeting **a single shared dormant slot pair** (`GPT-2 Layer 6 #2403 -> Wire -> Layer 10 #630`, `99.99%` of weights frozen). Incoming prompts are routed in $O(L)$ via `route_token_ids` and hot-swapped in `0.1103–0.1456 ms` (vs. `21.795 ms` for `Layers 0..5` on CPU; theoretical optical-fiber transfer `0.0984 ms` @ `1 Gbps`, `0.0098 ms` @ `10 Gbps`; restoring original weights when no trigger matches). Compared head-to-head in [`benchmarks/moi_vs_static/results.json`](./benchmarks/moi_vs_static/results.json) against both unmodified `GPT-2` and a fair **40-neuron Static Graft** (each of the 20 circuits given its own dedicated dormant neuron pair in Layers 6 and 10; note that superposing all 20 into a single 2-neuron slot scores `0/20`, `d_logP = +0.023`):
 
-| Regime (Single Shared Slot Pair `L6#2403 -> L10#630`) | `AB` (`A_i+B_i`) `d_logP` / `L10_act` | `A_only` `d_logP` | `B_only` `d_logP` | `Ctrl` `d_logP` | `CrossChain` (`A_i+B_j`) `d_logP` | Control KL | Strict Pass Rate (`TruthTable+Cross`) |
+| Configuration (`GPT-2 124M`) | Skill Pass (`TruthTable+Cross`) | `AB` `d_logP(C)` / Top-10 Hit | Max Neg `d_logP` / FP Top-10 | General Corpus PPL (`386` tok) | General Corpus KL / token | Neurons Overwritten / Extra RAM | Mean Latency (`B=1`) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Static Superposition (all 20 packed statically)** | `+0.023` / `1/20` | `+0.064` | `+0.030` | `+0.041` | `-0.010` | `0.0037` | **0 / 20** |
-| **Mixture of Indexes (`MoI`, `12.01 KB`/swap)** | **`+5.667`** / **`+8.01`** | `+0.325` | `+0.167` | `+0.017` | **`+0.008`** | **`0.0007`** | **20 / 20** (`540/540` exact route) |
+| **`Original` (Unmodified `GPT-2`)** | `0 / 20` | `+0.000` / `3.7%` | `+0.000` / `1.3%` | **`33.308`** | `0.00000` | `0` / `0 B` | `34.32 ms` |
+| **`Static` (20 circuits in `40` neurons)** | `19 / 20` | `+5.751` / `62.2%` | `+0.532` / `2.7%` | `33.539` | `0.01445` | `40` / `0 B` | `33.87 ms` |
+| **`MoI` (20 circuits paged in `2` neurons)** | **`20 / 20`** | **`+5.667` / `61.1%`** | **`+0.391` / `2.4%`** | **`33.384`** | **`0.00063` (`23×` lower)** | **`2` (`20×` fewer)** / `240.16 KB` (`+0.049%`) | **`34.39 ms`** (`+0.07 ms`) |
 
 > [!WARNING]
 > **Honest scope & limitations.**
+> * In Sections 1 and 3 (`benchmark_blind_reading.py`, `benchmark_lfm3.py`), `classify_blind_diagnosis()` evaluates closed-set recovery over synthetic edits generated from the 8 canonical `wsr` operator families; Section 4 (`benchmark_wsp_qwenmath.py`) evaluates external MIT CSAIL checkpoints (`p10c`, `p25c`, `p50c`). Timing comparisons contrast deterministic static matrix analysis against multi-turn LLM sandbox exploration, not two implementations of the same algorithm.
 > * `transplant_circuit_from` translates only the **output write-vector** onto a user-specified student trigger; `transplant_full_neuron_from` translates **both input trigger keys and output write-vectors** into dormant student neurons (calibrated Layer-10 keys used a fast `1.15s` `343`-token pass on GPT-2 `'The'+tok`, while analytical Layer-0 keys require zero forward passes on either model).
-> * `transplant_connected_chain_from` and `transplant_compositional_and_chain_from` wire **2-layer chains** `(L6 -> private residual wire -> L10)` between vocabulary-anchored boundaries (`L0` trigger $\to$ private internal state / compositional `AND` gate $\to$ `L1` output); grafting **purely mid-layer abstract reasoning subspaces** still requires full mid/late teacher MLP/attention tensors (`gate_proj`, `up_proj`, `down_proj`, `o_proj`) and multi-unit subspace/head transplants rather than 1-neuron chains.
+> * `transplant_connected_chain_from`, `transplant_compositional_and_chain_from`, and `MixtureOfIndexes` (`MoI`) wire **2-layer chains** `(L6 -> private residual wire -> L10)` between vocabulary-anchored boundaries (`L0` trigger $\to$ private internal state / compositional `AND` gate $\to$ `L1` output); grafting **purely mid-layer abstract reasoning subspaces** still requires full mid/late teacher MLP/attention tensors (`gate_proj`, `up_proj`, `down_proj`, `o_proj`) and multi-unit subspace/head transplants rather than 1-neuron chains.
 > * Capacity limits and polysemantic noise are real: a `768d` student cannot absorb an unbounded number of teacher neurons without interference, and no broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
 
 ---
@@ -309,6 +311,9 @@ python scripts/experiment_compositional_and_circuit.py
 
 # 11. Run Mixture of Indexes (MoI) Dynamic Weight Paging Benchmark (20 LFM3 circuits swapped on-the-fly in 1 GPT-2 slot pair)
 python scripts/experiment_dynamic_weight_moe.py
+
+# 12. Run 3-Way Head-to-Head Benchmark (Original GPT-2 vs Static 40-Neuron vs MoI 2-Neuron)
+python scripts/benchmark_moi_vs_static.py
 ```
 
 ---

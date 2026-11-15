@@ -14,6 +14,17 @@ dependencies = [
     "safetensors>=0.4",
 ]
 
+[project.optional-dependencies]
+benchmarks = [
+    "transformers>=4.38",
+    "psutil>=5.9",
+]
+dev = [
+    "pytest>=7.0",
+    "transformers>=4.38",
+    "psutil>=5.9",
+]
+
 [project.scripts]
 wsi = "wsi.cli:main"
 
