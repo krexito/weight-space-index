@@ -270,12 +270,25 @@ def main():
                 f"rel_norm={m.get('rel_norm'):.4f}, "
                 f"rank1_energy={m.get('delta_rank1_energy_fraction', 0)*100:.2f}%"
             )
+            if "head_attribution" in m:
+                ha = m["head_attribution"]
+                print(
+                    f"        [Head Attribution] modified_heads={ha['modified_heads']}, "
+                    f"ablated_heads={ha['ablated_heads']} (of {ha['num_heads']} heads x {ha['head_dim']}d)"
+                )
             print(f"        Suppressed tokens: {sup} | Promoted tokens: {bst}")
+        if "internal_state_circuit" in diag:
+            isc = diag["internal_state_circuit"]
+            print(
+                f"      * [Internal State Circuit Detected] type={isc['circuit_type']!r}, "
+                f"cross_layer_cosine={isc['max_cross_layer_cosine']:.6f} "
+                f"({isc['max_statistical_sigma']:.2f} sigma above random)"
+            )
 
     # -------------------------------------------------------------------------
     # STEP 4: Direct Rust SIMD Residual Kernel Timing on p50c / p25c / p10c
     # -------------------------------------------------------------------------
-    print("\n[4/4] Pure Rust SIMD Kernel Speed (`wsi_analyze_residual_delta`) on Qwen3.5-0.8B BF16 Tensors...")
+    print("\n[4/5] Pure Rust SIMD Kernel Speed (`wsi_analyze_residual_delta`) on Qwen3.5-0.8B BF16 Tensors...")
     for run_name, edited_dict in [("p50c", p50c_full), ("p25c", p25c_full), ("p10c", p10c_full)]:
         t_k0 = time.perf_counter()
         k_hits = []
@@ -294,6 +307,31 @@ def main():
                 k_hits.append((tname, st))
         t_k_ms = (time.perf_counter() - t_k0) * 1000.0
         print(f"  [{run_name}] 6 residual matrices (18.87M BF16 weights) scanned in {t_k_ms:.2f} ms ({len(k_hits)} modified)")
+
+    # -------------------------------------------------------------------------
+    # STEP 5: Deep Internal State Circuit Tracing (`wsi.trace_internal_state`)
+    # -------------------------------------------------------------------------
+    print("\n[5/5] Tracing Deep Internal State Circuit (Layer 15 MLP <-> Layer 15 Head 7 <-> Layer 19 MLP)...")
+    t_ist0 = time.perf_counter()
+    istate = wsi.trace_internal_state(vec=torch.from_numpy(u_vectors["15"]), top_k_neurons=64)
+    t_ist_ms = (time.perf_counter() - t_ist0) * 1000.0
+    print(f"  Completed Deep Internal State Trace in {t_ist_ms:.2f} ms:")
+    for hr in istate["layer_attention_head_rankings"]:
+        print(
+            f"    - Layer {hr['layer']} Attention (`{hr['tensor']}`): "
+            f"#1 Resonant Head = Head {hr['top_head']} (cols {hr['top_head_col_range']}, energy={hr['top_head_energy']:.5f})"
+        )
+    for me in istate["cross_layer_mlp_echoes"]:
+        gt_set = set(frozen_gt.get(str(me["layer"]), {}).get("selected_neurons", []))
+        # Check overlap if this layer is in ground truth
+        W_m = wsi.ck.get(me["tensor"]).float()
+        top64 = torch.topk((torch.from_numpy(u_vectors["15"]) @ W_m).abs(), k=64).indices.tolist()
+        overlap_str = f", GT Neuron Match={len(set(top64) & gt_set)}/64" if gt_set else ""
+        print(
+            f"    - Layer {me['layer']} MLP (`{me['tensor']}`): "
+            f"Echo Cosine = {me['collective_echo_cosine']:.5f} ({me['statistical_significance_sigma']:.2f} sigma), "
+            f"Projection Energy = {me['top_projection_energy']:.4f}{overlap_str}"
+        )
 
 
 if __name__ == "__main__":

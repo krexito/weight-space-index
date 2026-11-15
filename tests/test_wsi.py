@@ -277,6 +277,9 @@ def run_all_tests():
         list_resp = handle_rpc_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         tool_names = {t["name"] for t in list_resp["result"]["tools"]}
         assert "wsi_transfer_edit" in tool_names and "wsi_search_transduction" in tool_names
+        assert "wsi_trace_internal_state" in tool_names
+        istate_res = wsi_lazy.trace_internal_state(layer=2, neurons=[7], top_k_neurons=8)
+        assert "layer_attention_head_rankings" in istate_res and "cross_layer_mlp_echoes" in istate_res
         call_resp = handle_rpc_message({
             "jsonrpc": "2.0",
             "id": 3,

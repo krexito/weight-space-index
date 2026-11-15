@@ -772,6 +772,198 @@ class WeightSpaceIndex:
             "downstream_readers": downstream_readers[:top_k],
         }
 
+    def _infer_head_layout(self, total_cols: int) -> tuple[int, int]:
+        """Return `(num_heads, head_dim)` for an attention output matrix with `total_cols` input columns."""
+        cfg_path = self.model_dir / "config.json"
+        if cfg_path.exists():
+            try:
+                cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+                nh = cfg.get("num_attention_heads") or cfg.get("n_head")
+                hd = cfg.get("head_dim")
+                if isinstance(nh, int) and nh > 0:
+                    if isinstance(hd, int) and hd > 0 and nh * hd == total_cols:
+                        return nh, hd
+                    if total_cols % nh == 0:
+                        return nh, total_cols // nh
+            except Exception:
+                pass
+        for cand_hd in (256, 128, 64, 96, 80):
+            if total_cols % cand_hd == 0:
+                return total_cols // cand_hd, cand_hd
+        return 1, total_cols
+
+    def trace_internal_state(
+        self,
+        vec: torch.Tensor | None = None,
+        *,
+        layer: int | None = None,
+        neurons: list[int] | None = None,
+        head: int | None = None,
+        top_k_neurons: int = 64,
+        top_k_tokens: int = 5,
+    ) -> dict[str, Any]:
+        """Trace a latent internal state direction `u` across all Attention Heads (`o_proj`) and MLP blocks (`down_proj`).
+
+        Unlike vocabulary-only queries, this detects Deep Internal State Circuits (such as reasoning/repetition loops,
+        copying/induction heads, and cross-layer resonant echo channels) directly from weight geometry:
+        - Accepts a residual vector `vec`, OR `(layer, neurons=[...])`, OR `(layer, head=h)`.
+        - Ranks every Attention Head `h` in every layer by its L2 write energy `||u^T W_O^{(l,h)}||_2` along `u`.
+        - Finds the top-`K` resonant MLP neurons in every layer and computes their Cross-Layer Echo Cosine `|cos(u, u_l')|`.
+        """
+        source_desc = "explicit_vector"
+        if vec is not None:
+            u = vec.detach().float().cpu().flatten()
+        elif layer is not None and neurons:
+            tname = self.anat.mlp_out(layer)
+            if not tname:
+                raise KeyError(f"No mlp_out in layer {layer}")
+            W_res = _to_residual_columns(self.ck.get(tname).float(), self.anat.out_axis(tname))
+            sub = W_res[:, neurons]
+            U_svd, _, _ = torch.linalg.svd(sub, full_matrices=False)
+            u = U_svd[:, 0]
+            source_desc = f"layer_{layer}_mlp_neurons({len(neurons)})"
+        elif layer is not None and head is not None:
+            tname = self.anat.attn_out(layer)
+            if not tname:
+                raise KeyError(f"No attn_out in layer {layer}")
+            W_res = _to_residual_columns(self.ck.get(tname).float(), self.anat.out_axis(tname))
+            nh, hd = self._infer_head_layout(W_res.shape[1])
+            if not (0 <= head < nh):
+                raise IndexError(f"Head {head} out of range (0..{nh - 1})")
+            sub = W_res[:, head * hd : (head + 1) * hd]
+            U_svd, _, _ = torch.linalg.svd(sub, full_matrices=False)
+            u = U_svd[:, 0]
+            source_desc = f"layer_{layer}_attn_head_{head}"
+        else:
+            raise ValueError("Provide `vec`, `(layer, neurons)`, or `(layer, head)`")
+
+        u_norm = u.norm().item()
+        u_hat = u / max(u_norm, 1e-12)
+        hidden = self.anat.hidden
+
+        # 1. Scan all Attention Heads across all layers in the checkpoint
+        layer_head_rankings: list[dict[str, Any]] = []
+        global_heads: list[dict[str, Any]] = []
+        for l in sorted(self.anat.layers):
+            at_name = self.anat.attn_out(l)
+            if not at_name or at_name not in self.ck:
+                continue
+            W_o = _to_residual_columns(self.ck.get(at_name).float(), self.anat.out_axis(at_name))
+            nh, hd = self._infer_head_layout(W_o.shape[1])
+            proj_all = u_hat @ W_o  # [total_cols]
+            heads_in_l = []
+            for h in range(nh):
+                c0, c1 = h * hd, (h + 1) * hd
+                h_energy = proj_all[c0:c1].norm().item()
+                h_frob = W_o[:, c0:c1].norm().item()
+                entry = {
+                    "layer": l,
+                    "tensor": at_name,
+                    "head": h,
+                    "col_range": [c0, c1],
+                    "state_projection_energy": round(h_energy, 5),
+                    "relative_head_alignment": round(h_energy / max(h_frob, 1e-12), 6),
+                }
+                heads_in_l.append(entry)
+                global_heads.append(entry)
+            heads_in_l.sort(key=lambda x: x["state_projection_energy"], reverse=True)
+            for rk, item in enumerate(heads_in_l, 1):
+                item["rank_in_layer"] = rk
+            layer_head_rankings.append({
+                "layer": l,
+                "tensor": at_name,
+                "num_heads": nh,
+                "head_dim": hd,
+                "top_head": heads_in_l[0]["head"],
+                "top_head_col_range": heads_in_l[0]["col_range"],
+                "top_head_energy": heads_in_l[0]["state_projection_energy"],
+                "heads_ranked": heads_in_l,
+            })
+
+        global_heads.sort(key=lambda x: x["state_projection_energy"], reverse=True)
+
+        # 2. Scan all MLP blocks across all layers for Cross-Layer Resonant Echoes
+        mlp_echoes: list[dict[str, Any]] = []
+        for l in sorted(self.anat.layers):
+            mlp_name = self.anat.mlp_out(l)
+            if not mlp_name or mlp_name not in self.ck:
+                continue
+            W_m = _to_residual_columns(self.ck.get(mlp_name).float(), self.anat.out_axis(mlp_name))
+            proj_m = u_hat @ W_m  # [n_units]
+            k_n = min(top_k_neurons, proj_m.numel())
+            top_vals, top_idx = torch.topk(proj_m.abs(), k=k_n, largest=True)
+            # Compute principal collective direction (top singular vector) of these top-k neurons
+            U_sub, _, _ = torch.linalg.svd(W_m[:, top_idx], full_matrices=False)
+            u_sub = U_sub[:, 0]
+            echo_cos = abs(torch.dot(u_hat, u_sub).item())
+            z_sigma = echo_cos * (hidden ** 0.5)
+            mlp_echoes.append({
+                "layer": l,
+                "tensor": mlp_name,
+                "top_k_neurons_count": k_n,
+                "top_resonant_neurons": [int(i.item()) for i in top_idx[:16]],
+                "top_projection_energy": round(top_vals.norm().item(), 5),
+                "collective_echo_cosine": round(echo_cos, 5),
+                "statistical_significance_sigma": round(z_sigma, 2),
+            })
+
+        mlp_echoes.sort(key=lambda x: x["top_projection_energy"], reverse=True)
+
+        return {
+            "source": source_desc,
+            "hidden_dim": hidden,
+            "layer_attention_head_rankings": layer_head_rankings,
+            "top_resonant_attention_heads": global_heads[:8],
+            "cross_layer_mlp_echoes": mlp_echoes,
+            "vocabulary_readout": self.explain_vector(u_hat, top_k=top_k_tokens),
+        }
+
+    def _compute_head_attribution(
+        self, n: str, T_old_raw: torch.Tensor, T_new: torch.Tensor, out_ax: int
+    ) -> dict[str, Any] | None:
+        """If `n` is an Attention Output (`attn_out`) matrix, attribute the delta to individual Attention Heads."""
+        if not any(self.anat.attn_out(l) == n for l in self.anat.layers):
+            return None
+        total_cols = int(T_old_raw.shape[1] if out_ax == 0 else T_old_raw.shape[0])
+        nh, hd = self._infer_head_layout(total_cols)
+        if nh <= 1:
+            return None
+        modified_heads: list[int] = []
+        ablated_heads: list[int] = []
+        head_details: list[dict[str, Any]] = []
+        for h in range(nh):
+            c0, c1 = h * hd, (h + 1) * hd
+            if out_ax == 0:
+                sub_old = T_old_raw[:, c0:c1].float()
+                sub_new = T_new[:, c0:c1].float()
+            else:
+                sub_old = T_old_raw[c0:c1, :].float()
+                sub_new = T_new[c0:c1, :].float()
+            old_n = sub_old.norm().item()
+            new_n = sub_new.norm().item()
+            d_n = (sub_new - sub_old).norm().item()
+            if d_n > 1e-6:
+                modified_heads.append(h)
+                if new_n < old_n * 0.05:
+                    ablated_heads.append(h)
+                head_details.append({
+                    "head": h,
+                    "col_range": [c0, c1],
+                    "delta_fro_norm": round(d_n, 5),
+                    "old_fro_norm": round(old_n, 5),
+                    "new_fro_norm": round(new_n, 5),
+                    "norm_retention_ratio": round(new_n / max(old_n, 1e-12), 5),
+                })
+        head_details.sort(key=lambda x: x["delta_fro_norm"], reverse=True)
+        return {
+            "num_heads": nh,
+            "head_dim": hd,
+            "modified_heads": modified_heads,
+            "ablated_heads": ablated_heads,
+            "top_modified_head": head_details[0]["head"] if head_details else None,
+            "modified_head_details": head_details,
+        }
+
     # ------------------------------------------------------------------
     # 4. Surgical Edit Diagnosis (`explain_edit`) & Synthesis (`suggest_edit`)
     # ------------------------------------------------------------------
@@ -873,6 +1065,7 @@ class WeightSpaceIndex:
             })
 
         # Fast path for compact surgical neuron edits (`out_axis == 1`, e.g. GPT-2 `mlp.c_proj.weight::rows`)
+        residual_principal_dirs: list[tuple[str, torch.Tensor]] = []
         if not hasattr(self, "_cached_tensor_fro_norms"):
             self._cached_tensor_fro_norms: dict[str, float] = {}
         for n, (r_idx, rows_new) in compact_residual_slices.items():
@@ -898,6 +1091,7 @@ class WeightSpaceIndex:
             cos_r = self.U_raw_norm @ u0
             if max((-cos_c).max().item(), (-cos_r).max().item()) > max(cos_c.max().item(), cos_r.max().item()):
                 u0 = -u0
+            residual_principal_dirs.append((n, u0.clone()))
             top_u = u0 * S_d[0]
             s_energy_top1 = (S_d[0].item() ** 2) / max(d_norm ** 2, 1e-12)
 
@@ -979,6 +1173,8 @@ class WeightSpaceIndex:
                 best_neg = max((-cos_c).max().item(), (-cos_r).max().item())
                 if best_neg > best_pos:
                     top_u = -top_u
+                    u0 = -u0
+                residual_principal_dirs.append((n, u0.clone()))
 
                 old_energy = rust_res["old_energy"]
                 new_energy = rust_res["new_energy"]
@@ -1000,6 +1196,10 @@ class WeightSpaceIndex:
                 report["old_energy_along_principal_dir"] = round(old_energy, 5)
                 report["new_energy_along_principal_dir"] = round(new_energy, 5)
                 report["principal_delta_direction"] = self.explain_vector(top_u, top_k=top_k)
+
+                head_attr = self._compute_head_attribution(n, T_old_raw, T_new, out_ax)
+                if head_attr is not None:
+                    report["head_attribution"] = head_attr
 
                 if 0 < changed_cnt <= 64:
                     old_col_exp = self.explain_vector(rust_res["old_col"], top_k=3)
@@ -1093,6 +1293,7 @@ class WeightSpaceIndex:
                 best_neg = max((-cos_c).max().item(), (-cos_r).max().item())
                 if best_neg > best_pos:
                     u0 = -u0
+                residual_principal_dirs.append((n, u0.clone()))
 
                 old_energy = (u0 @ W_old_res).norm().item()
                 new_energy = (u0 @ W_new_res).norm().item()
@@ -1115,6 +1316,10 @@ class WeightSpaceIndex:
                 report["new_energy_along_principal_dir"] = round(new_energy, 5)
                 report["principal_delta_direction"] = self.explain_vector(top_u, top_k=top_k)
 
+                head_attr = self._compute_head_attribution(n, T_old_raw, T_new, out_ax)
+                if head_attr is not None:
+                    report["head_attribution"] = head_attr
+
                 if 0 < changed_cols.numel() <= 64:
                     top_uid = int(changed_cols[col_deltas[changed_cols].argmax()].item())
                     old_col_exp = self.explain_vector(W_old_res[:, top_uid], top_k=3)
@@ -1128,7 +1333,7 @@ class WeightSpaceIndex:
             tensor_reports.append(report)
 
         total_rel = (total_d_sq ** 0.5) / max(total_o_sq ** 0.5, 1e-12)
-        return {
+        out_res: dict[str, Any] = {
             "validation": {
                 "ok": len(errors) == 0 and total_changed > 0,
                 "errors": errors,
@@ -1137,6 +1342,42 @@ class WeightSpaceIndex:
             },
             "tensors": tensor_reports,
         }
+        if len(residual_principal_dirs) >= 2:
+            pairs: list[dict[str, Any]] = []
+            max_cos = 0.0
+            base_u = residual_principal_dirs[0][1]
+            aligned_us = [base_u]
+            for i in range(len(residual_principal_dirs)):
+                n_a, u_a = residual_principal_dirs[i]
+                for j in range(i + 1, len(residual_principal_dirs)):
+                    n_b, u_b = residual_principal_dirs[j]
+                    raw_dot = torch.dot(u_a, u_b).item()
+                    abs_cos = abs(raw_dot)
+                    sigma = abs_cos * (self.anat.hidden ** 0.5)
+                    max_cos = max(max_cos, abs_cos)
+                    pairs.append({
+                        "tensor_a": n_a,
+                        "tensor_b": n_b,
+                        "principal_delta_cosine": round(abs_cos, 6),
+                        "statistical_significance_sigma": round(sigma, 2),
+                    })
+                    if i == 0:
+                        aligned_us.append(u_b if raw_dot >= 0 else -u_b)
+            mean_u = torch.stack(aligned_us, dim=0).mean(dim=0)
+            mean_u = mean_u / mean_u.norm().clamp_min(1e-12)
+            out_res["internal_state_circuit"] = {
+                "detected": max_cos * (self.anat.hidden ** 0.5) >= 3.0,
+                "circuit_type": (
+                    "cross_layer_internal_state_resonance"
+                    if max_cos * (self.anat.hidden ** 0.5) >= 3.0
+                    else "independent_layer_edits"
+                ),
+                "max_cross_layer_cosine": round(max_cos, 6),
+                "max_statistical_sigma": round(max_cos * (self.anat.hidden ** 0.5), 2),
+                "cross_layer_pairs": pairs,
+                "shared_latent_state_readout": self.explain_vector(mean_u, top_k=top_k),
+            }
+        return out_res
 
     def suggest_edit(
         self,

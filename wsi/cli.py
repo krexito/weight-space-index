@@ -51,6 +51,22 @@ def main(argv: list[str] | None = None) -> int:
     p_trace.add_argument("--unit", type=int, required=True, help="Neuron index")
     p_trace.add_argument("-i", "--index-dir", help="Optional path to prebuilt index directory")
 
+    # wsi internal-state
+    p_istate = sub.add_parser(
+        "internal-state",
+        help="Trace a Deep Internal State Circuit across Attention Heads (o_proj) and MLP blocks (down_proj)",
+    )
+    p_istate.add_argument("model_dir", help="Path to the checkpoint directory")
+    p_istate.add_argument("--layer", type=int, required=True, help="Source layer index")
+    p_istate.add_argument("--head", type=int, default=None, help="Source attention head index")
+    p_istate.add_argument(
+        "--neurons",
+        type=str,
+        default=None,
+        help="Comma-separated MLP neuron indices in the source layer (e.g. '4,53,73,84')",
+    )
+    p_istate.add_argument("-i", "--index-dir", help="Optional path to prebuilt index directory")
+
     # wsi transduction
     p_trans = sub.add_parser("transduction", help="Find neurons that map an input concept/token to an output concept/token")
     p_trans.add_argument("model_dir", help="Path to the checkpoint directory")
@@ -171,6 +187,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(idx.explain_neuron(args.layer, args.unit, args.module), indent=2))
     elif args.cmd == "trace":
         print(json.dumps(idx.trace_circuit(args.layer, args.unit), indent=2))
+    elif args.cmd == "internal-state":
+        n_list = [int(x.strip()) for x in args.neurons.split(",") if x.strip()] if args.neurons else None
+        print(json.dumps(idx.trace_internal_state(layer=args.layer, neurons=n_list, head=args.head), indent=2))
     elif args.cmd == "transduction":
         iq: str | int = int(args.input_query) if args.input_query.isdigit() else args.input_query
         oq: str | int = int(args.output_query) if args.output_query.isdigit() else args.output_query

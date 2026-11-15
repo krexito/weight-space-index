@@ -96,6 +96,25 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
         },
     },
     {
+        "name": "wsi_trace_internal_state",
+        "description": "Trace a Deep Internal State Circuit (such as reasoning/repetition loops, induction heads, and cross-layer MLP echo channels) across all Attention Heads (`o_proj`) and MLP blocks (`down_proj`) directly from weight matrices.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the safetensors checkpoint directory"},
+                "layer": {"type": "integer", "description": "Source layer index"},
+                "head": {"type": "integer", "description": "Optional source Attention Head index in `layer`"},
+                "neurons": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Optional list of source MLP neuron indices in `layer`",
+                },
+                "top_k_neurons": {"type": "integer", "default": 64},
+            },
+            "required": ["model_dir", "layer"],
+        },
+    },
+    {
         "name": "wsi_explain_edit",
         "description": "Diagnose a `.safetensors` or `.json` weight edit file and explain its structural and semantic effect on vocabulary tokens.",
         "inputSchema": {
@@ -206,6 +225,14 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             int(args["layer"]),
             int(args["unit"]),
             top_k=int(args.get("top_k", 5)),
+        )
+    if name == "wsi_trace_internal_state":
+        idx = _get_wsi(args["model_dir"])
+        return idx.trace_internal_state(
+            layer=int(args["layer"]),
+            head=int(args["head"]) if args.get("head") is not None else None,
+            neurons=[int(x) for x in args["neurons"]] if args.get("neurons") else None,
+            top_k_neurons=int(args.get("top_k_neurons", 64)),
         )
     if name == "wsi_explain_edit":
         idx = _get_wsi(args["model_dir"])
