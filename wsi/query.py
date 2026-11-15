@@ -55,6 +55,7 @@ class WeightSpaceIndex:
         self.subspaces: dict[str, torch.Tensor] = subspaces or {}
         self._vocab_map: dict[int, str] | None = None
         self._u_eff: torch.Tensor | None = None
+        self._u_raw_norm: torch.Tensor | None = None
         self._e_in: torch.Tensor | None = None
 
         if index_data is not None:
@@ -124,6 +125,17 @@ class WeightSpaceIndex:
         if self._u_eff is None:
             self._u_eff = _effective_unembed(self.ck, self.anat)
         return self._u_eff
+
+    @property
+    def U_raw_norm(self) -> torch.Tensor:
+        """Row-normalized uncentered `g_final * W_unembed` for exact detection of `wsr` `orth` directions."""
+        if self._u_raw_norm is None:
+            U = self.ck.get(self.anat.unembed).float()
+            if self.anat.final_norm:
+                g = effective_gain(self.ck, self.anat.final_norm)
+                U = U * (g.float().unsqueeze(0) if isinstance(g, torch.Tensor) else float(g))
+            self._u_raw_norm = U / U.norm(dim=1, keepdim=True).clamp_min(1e-12)
+        return self._u_raw_norm
 
     @property
     def E_in(self) -> torch.Tensor:
@@ -545,9 +557,16 @@ class WeightSpaceIndex:
 
         v_unit = v / v_norm
         logits = self.U_eff @ v
+        # Normalize rows of U_eff so high-norm rare BPE tokens do not overshadow exact directional matches
+        u_norms = self.U_eff.norm(dim=1).clamp_min(1e-12)
+        cos_centered = logits / (u_norms * v_norm)
+        cos_raw = self.U_raw_norm @ v_unit
+        # If `v` is an exact uncentered `wsr` orth vector (max raw cosine > 0.98), use raw cosine; else centered
+        cos_scores = cos_raw if cos_raw.abs().max().item() > cos_centered.abs().max().item() and cos_raw.abs().max().item() > 0.95 else cos_centered
+
         k = min(top_k, self.anat.vocab)
-        p_vals, p_idx = torch.topk(logits, k=k, largest=True)
-        s_vals, s_idx = torch.topk(logits, k=k, largest=False)
+        p_vals, p_idx = torch.topk(cos_scores, k=k, largest=True)
+        s_vals, s_idx = torch.topk(cos_scores, k=k, largest=False)
 
         role_impacts: dict[str, Any] = {}
         for role_name, role_val in self.data.get("token_roles", {}).items():
@@ -556,15 +575,18 @@ class WeightSpaceIndex:
                     "token_id": role_val,
                     "token": self.vocab_map[role_val],
                     "logit_shift": round(logits[role_val].item(), 5),
+                    "cosine": round(cos_scores[role_val].item(), 5),
                 }
             elif isinstance(role_val, list) and role_val:
                 valid = [r for r in role_val if isinstance(r, int) and 0 <= r < self.anat.vocab]
                 if valid:
                     vals = logits[valid]
+                    cvals = cos_scores[valid]
                     role_impacts[role_name] = {
                         "mean_logit_shift": round(vals.mean().item(), 5),
                         "max_logit_shift": round(vals.max().item(), 5),
                         "min_logit_shift": round(vals.min().item(), 5),
+                        "mean_cosine": round(cvals.mean().item(), 5),
                     }
 
         layer_alignments = []
@@ -586,11 +608,21 @@ class WeightSpaceIndex:
         return {
             "norm": round(v_norm, 5),
             "promoted_tokens": [
-                {"token_id": int(tid), "token": self.vocab_map[int(tid)], "logit": round(val.item(), 5)}
+                {
+                    "token_id": int(tid),
+                    "token": self.vocab_map[int(tid)],
+                    "logit": round(logits[int(tid)].item(), 5),
+                    "cosine": round(val.item(), 5),
+                }
                 for val, tid in zip(p_vals, p_idx)
             ],
             "suppressed_tokens": [
-                {"token_id": int(tid), "token": self.vocab_map[int(tid)], "logit": round(val.item(), 5)}
+                {
+                    "token_id": int(tid),
+                    "token": self.vocab_map[int(tid)],
+                    "logit": round(logits[int(tid)].item(), 5),
+                    "cosine": round(val.item(), 5),
+                }
                 for val, tid in zip(s_vals, s_idx)
             ],
             "role_token_impacts": role_impacts,
@@ -820,8 +852,26 @@ class WeightSpaceIndex:
                     W_new_res.flatten(), W_old_res.flatten(), dim=0
                 ).item()
 
-                U_d, S_d, _ = torch.linalg.svd(dW_res, full_matrices=False)
+                # Check which columns/neurons actually changed
+                col_deltas = dW_res.norm(dim=0)
+                changed_cols = torch.nonzero(col_deltas > 1e-6).flatten()
+
+                # Fast exact/low-rank SVD: if only a subset of columns changed, SVD on active columns is identical
+                if 0 < changed_cols.numel() <= 256:
+                    U_d, S_d, _ = torch.linalg.svd(dW_res[:, changed_cols], full_matrices=False)
+                else:
+                    U_d, S_d, _ = torch.svd_lowrank(dW_res, q=min(4, min(dW_res.shape)), niter=4)
                 u0 = U_d[:, 0]
+                # Resolve SVD sign ambiguity: orient u0 toward the vocabulary pole (+u0 vs -u0)
+                # that has the strongest positive cosine alignment with a real vocabulary token!
+                u_norms = self.U_eff.norm(dim=1).clamp_min(1e-12)
+                cos_c = (self.U_eff @ u0) / u_norms
+                cos_r = self.U_raw_norm @ u0
+                best_pos = max(cos_c.max().item(), cos_r.max().item())
+                best_neg = max((-cos_c).max().item(), (-cos_r).max().item())
+                if best_neg > best_pos:
+                    u0 = -u0
+
                 old_energy = (u0 @ W_old_res).norm().item()
                 new_energy = (u0 @ W_new_res).norm().item()
                 subspace_action = (
@@ -835,11 +885,24 @@ class WeightSpaceIndex:
                 report["role"] = "residual_matrix"
                 report["overall_cosine_new_old"] = round(cos_all, 5)
                 report["norm_ratio_new_old"] = round(ratio, 5)
+                report["changed_units_count"] = int(changed_cols.numel())
+                report["total_units_count"] = int(dW_res.shape[1])
                 report["delta_rank1_energy_fraction"] = round(s_energy_top1, 4)
                 report["subspace_action"] = subspace_action
                 report["old_energy_along_principal_dir"] = round(old_energy, 5)
                 report["new_energy_along_principal_dir"] = round(new_energy, 5)
                 report["principal_delta_direction"] = self.explain_vector(top_u, top_k=top_k)
+
+                if 0 < changed_cols.numel() <= 64:
+                    # Surgical neuron edit: also report the top modified neuron's old vs new output token!
+                    top_uid = int(changed_cols[col_deltas[changed_cols].argmax()].item())
+                    old_col_exp = self.explain_vector(W_old_res[:, top_uid], top_k=3)
+                    new_col_exp = self.explain_vector(W_new_res[:, top_uid], top_k=3)
+                    report["surgical_neuron_rewire"] = {
+                        "top_modified_unit": top_uid,
+                        "old_promoted_tokens": [t["token"] for t in old_col_exp["promoted_tokens"]],
+                        "new_promoted_tokens": [t["token"] for t in new_col_exp["promoted_tokens"]],
+                    }
 
             tensor_reports.append(report)
 
