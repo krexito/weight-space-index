@@ -5,6 +5,7 @@ Built to work standalone or directly on top of `wsr` (Weight-Space Reading and P
 from __future__ import annotations
 
 from .compare import (
+    DynamicCircuitPager,
     align_semantic_circuits,
     decompile_edit_intent,
     diff_checkpoints,
@@ -18,6 +19,7 @@ from .indexer import build_index
 from .query import WeightSpaceIndex, load_index
 
 __all__ = [
+    "DynamicCircuitPager",
     "WeightSpaceIndex",
     "align_semantic_circuits",
     "build_index",

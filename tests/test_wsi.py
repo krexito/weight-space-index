@@ -334,6 +334,46 @@ def run_all_tests():
         assert "model.layers.1.mlp.down_proj.weight" in and_tx["_tensors"]
         assert "model.layers.3.mlp.gate_proj.weight" in and_tx["_tensors"]
         assert "model.layers.3.mlp.down_proj.weight" in and_tx["_tensors"]
+        assert "_slot_payload" in and_tx
+
+        # Verify DynamicCircuitPager O(1) JIT slot paging & multi-circuit routing
+        pager = wsi_lazy.create_dynamic_circuit_pager(
+            src_layer=1,
+            dst_layer=3,
+            src_unit=and_tx["student_and_gate"]["src_unit"],
+            dst_unit=and_tx["student_and_gate"]["dst_unit"],
+        )
+        reg0 = pager.register_circuit("chain_0", and_tx)
+        assert len(reg0["a_token_ids"]) >= 1 and len(reg0["b_token_ids"]) >= 1
+        used_tids = set(reg0["a_token_ids"]) | set(reg0["b_token_ids"])
+        free_tids = [int(tid) for tid in sorted(wsi_lazy.vocab_map) if int(tid) not in used_tids]
+        assert len(free_tids) >= 2
+        c1_a, c1_b = free_tids[0], free_tids[1]
+        pager.register_circuit("chain_1", and_tx, a_token_ids=[c1_a], b_token_ids=[c1_b])
+
+        r0 = pager.route_token_ids([reg0["a_token_ids"][0], reg0["b_token_ids"][0]])
+        assert r0["circuit_id"] == "chain_0" and r0["matched"] and r0["matched_mode"] == "both"
+        r1 = pager.route_token_ids([c1_a, c1_b])
+        assert r1["circuit_id"] == "chain_1" and r1["matched"] and r1["matched_mode"] == "both"
+        r_cross = pager.route_token_ids([reg0["a_token_ids"][0], c1_b])
+        assert not r_cross["matched"] and r_cross["matched_mode"] != "both"
+        r_str = pager.route_tokens(
+            [and_tx["teacher_and_circuit"]["a_triggers"][0], and_tx["teacher_and_circuit"]["b_triggers"][0]]
+        )
+        assert r_str["circuit_id"] == "chain_0" and r_str["matched"]
+
+        paged_tensors = pager.synthesize_slot_tensors("chain_0")
+        assert "model.layers.1.mlp.gate_proj.weight" in paged_tensors
+        assert "model.layers.1.mlp.down_proj.weight" in paged_tensors
+        assert "model.layers.3.mlp.gate_proj.weight" in paged_tensors
+        assert "model.layers.3.mlp.down_proj.weight" in paged_tensors
+        sup_payload = pager.build_static_superposition_payload()
+        assert sup_payload["n_superposed"] == 2
+        assert sup_payload["key_src"].shape == (wsi_lazy.anat.hidden,)
+        cat_info = pager.catalog_summary()
+        assert cat_info["n_circuits"] == 2
+        assert cat_info["per_circuit_bytes"] == (4 * wsi_lazy.anat.hidden + 2) * 4
+        assert cat_info["wire_transfer_ms"]["1Gbps"] > 0
 
         print("\n--- Example `transfer_edit_to` (Llama .safetensors edit -> Qwen2 .safetensors edit) ---")
         print(json.dumps({

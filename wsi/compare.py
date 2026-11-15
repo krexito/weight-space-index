@@ -1850,4 +1850,426 @@ def transplant_compositional_and_chain(
         "_k_wire": k_wire,
         "_k_b": kB,
         "_tensors": modified_tensors,
+        "_slot_payload": {
+            "src_layer": int(student_src_layer),
+            "src_unit": int(s_src[0]),
+            "dst_layer": int(student_dst_layer),
+            "dst_unit": int(s_dst[0]),
+            "key_src": key_src.detach().float().cpu().contiguous(),
+            "bias_src": float(bias_src),
+            "val_src": v_wire.detach().float().cpu().contiguous(),
+            "key_dst": k_and.detach().float().cpu().contiguous(),
+            "bias_dst": float(b_and),
+            "val_dst": v_dst_scaled.detach().float().cpu().contiguous(),
+            "wire_vector": w_wire.detach().float().cpu().contiguous(),
+            "k_wire": k_wire.detach().float().cpu().contiguous(),
+            "k_b": kB.detach().float().cpu().contiguous(),
+            "a_tokens": [str(t) for t in a_tokens],
+            "b_tokens": [str(t) for t in b_tokens],
+            "output_tokens": [str(t) for t in rosetta["teacher_top_tokens"]],
+            "a_shared_indices": [
+                int(x)
+                for x in (
+                    pos_a_shared_idx.tolist()
+                    if isinstance(pos_a_shared_idx, torch.Tensor)
+                    else pos_a_shared_idx
+                )
+            ],
+            "b_shared_indices": [
+                int(x)
+                for x in (
+                    pos_b_shared_idx.tolist()
+                    if isinstance(pos_b_shared_idx, torch.Tensor)
+                    else pos_b_shared_idx
+                )
+            ],
+        },
     }
+
+
+def _normalize_trigger_token(tok: str) -> str:
+    """Normalize BPE/SentencePiece whitespace markers for token-string matching."""
+    return tok.lstrip(" \t\n\r\u0120\u2581").lower()
+
+
+class DynamicCircuitPager:
+    """Dynamic on-the-go weight pager for indexed 2-layer compositional circuits.
+
+    Stores a catalog of pre-compiled Teacher `(A + B -> C)` skill payloads (`~12 KB` each on
+    GPT-2 768d) compiled for a single fixed dormant neuron slot pair `(src_layer, src_unit)`
+    and `(dst_layer, dst_unit)` in the Student model. Incoming prompts are routed via O(1)
+    trigger-token lookup so only the relevant skill payload needs to be paged into the
+    shared dormant slot pair while earlier layers execute.
+    """
+
+    def __init__(
+        self,
+        student_idx: "WeightSpaceIndex",
+        *,
+        src_layer: int,
+        dst_layer: int,
+        src_unit: int | None = None,
+        dst_unit: int | None = None,
+    ) -> None:
+        self.student_idx = student_idx
+        self.src_layer = int(src_layer)
+        self.dst_layer = int(dst_layer)
+        self._s_src = _find_dormant_mlp_unit(student_idx, self.src_layer, src_unit)
+        self._s_dst = _find_dormant_mlp_unit(student_idx, self.dst_layer, dst_unit)
+        self.src_unit = int(self._s_src[0])
+        self.dst_unit = int(self._s_dst[0])
+
+        self._circuits: dict[str, dict[str, Any]] = {}
+        self._order: dict[str, int] = {}
+        self._default_circuit_id: str | None = None
+
+        self._a_tok_to_circuits: dict[int, set[str]] = {}
+        self._b_tok_to_circuits: dict[int, set[str]] = {}
+        self._a_str_to_circuits: dict[str, set[str]] = {}
+        self._b_str_to_circuits: dict[str, set[str]] = {}
+
+        self._exact_vocab_to_id: dict[str, int] | None = None
+        self._norm_vocab_to_ids: dict[str, list[int]] | None = None
+
+    def _ensure_reverse_vocab(self) -> None:
+        if self._exact_vocab_to_id is not None:
+            return
+        exact: dict[str, int] = {}
+        norm: dict[str, list[int]] = {}
+        for tid, tok in self.student_idx.vocab_map.items():
+            exact.setdefault(tok, int(tid))
+            ntok = _normalize_trigger_token(tok)
+            if ntok:
+                norm.setdefault(ntok, []).append(int(tid))
+        self._exact_vocab_to_id = exact
+        self._norm_vocab_to_ids = norm
+
+    def _resolve_token_ids(
+        self,
+        explicit_ids: list[int] | None,
+        token_strs: list[str],
+    ) -> list[int]:
+        if explicit_ids is not None:
+            seen: set[int] = set()
+            resolved: list[int] = []
+            for tid in explicit_ids:
+                itid = int(tid)
+                if itid not in seen:
+                    seen.add(itid)
+                    resolved.append(itid)
+            return resolved
+
+        self._ensure_reverse_vocab()
+        assert self._exact_vocab_to_id is not None and self._norm_vocab_to_ids is not None
+        seen_ids: set[int] = set()
+        out_ids: list[int] = []
+        for s in token_strs:
+            if s in self._exact_vocab_to_id:
+                tid = self._exact_vocab_to_id[s]
+                if tid not in seen_ids:
+                    seen_ids.add(tid)
+                    out_ids.append(tid)
+                continue
+            ns = _normalize_trigger_token(s)
+            for tid in self._norm_vocab_to_ids.get(ns, ()):
+                if tid not in seen_ids:
+                    seen_ids.add(tid)
+                    out_ids.append(tid)
+        return out_ids
+
+    def _unindex_circuit(self, circuit_id: str) -> None:
+        for table in (
+            self._a_tok_to_circuits,
+            self._b_tok_to_circuits,
+            self._a_str_to_circuits,
+            self._b_str_to_circuits,
+        ):
+            for cset in table.values():
+                cset.discard(circuit_id)
+
+    def register_circuit(
+        self,
+        circuit_id: str,
+        compiled_tx: dict[str, Any],
+        *,
+        a_token_ids: list[int] | None = None,
+        b_token_ids: list[int] | None = None,
+        a_tokens: list[str] | None = None,
+        b_tokens: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Register a pre-compiled `transplant_compositional_and_chain` circuit into the pager."""
+        if "_slot_payload" not in compiled_tx:
+            raise KeyError("compiled_tx does not contain '_slot_payload'")
+        raw = compiled_tx["_slot_payload"]
+
+        hidden = self.student_idx.anat.hidden
+        key_src = raw["key_src"].detach().float().cpu().reshape(-1).contiguous()
+        val_src = raw["val_src"].detach().float().cpu().reshape(-1).contiguous()
+        key_dst = raw["key_dst"].detach().float().cpu().reshape(-1).contiguous()
+        val_dst = raw["val_dst"].detach().float().cpu().reshape(-1).contiguous()
+        for name, vec in (
+            ("key_src", key_src),
+            ("val_src", val_src),
+            ("key_dst", key_dst),
+            ("val_dst", val_dst),
+        ):
+            if vec.numel() != hidden:
+                raise ValueError(f"{name} length {vec.numel()} does not match student hidden size {hidden}")
+
+        payload = {
+            "src_layer": self.src_layer,
+            "src_unit": self.src_unit,
+            "dst_layer": self.dst_layer,
+            "dst_unit": self.dst_unit,
+            "key_src": key_src,
+            "bias_src": float(raw["bias_src"]),
+            "val_src": val_src,
+            "key_dst": key_dst,
+            "bias_dst": float(raw["bias_dst"]),
+            "val_dst": val_dst,
+            "output_tokens": list(raw.get("output_tokens", ())),
+        }
+
+        a_strs = [str(t) for t in (a_tokens if a_tokens is not None else raw.get("a_tokens", ()))]
+        b_strs = [str(t) for t in (b_tokens if b_tokens is not None else raw.get("b_tokens", ()))]
+        a_tids = self._resolve_token_ids(a_token_ids, a_strs)
+        b_tids = self._resolve_token_ids(b_token_ids, b_strs)
+
+        n_floats = int(key_src.numel() + val_src.numel() + key_dst.numel() + val_dst.numel() + 2)
+        payload_bytes = n_floats * 4
+
+        cid = str(circuit_id)
+        if cid in self._circuits:
+            self._unindex_circuit(cid)
+        else:
+            self._order[cid] = len(self._order)
+        if self._default_circuit_id is None:
+            self._default_circuit_id = cid
+
+        for tid in a_tids:
+            self._a_tok_to_circuits.setdefault(int(tid), set()).add(cid)
+        for tid in b_tids:
+            self._b_tok_to_circuits.setdefault(int(tid), set()).add(cid)
+        for s in a_strs:
+            ns = _normalize_trigger_token(s)
+            if ns:
+                self._a_str_to_circuits.setdefault(ns, set()).add(cid)
+            self._a_str_to_circuits.setdefault(s, set()).add(cid)
+        for s in b_strs:
+            ns = _normalize_trigger_token(s)
+            if ns:
+                self._b_str_to_circuits.setdefault(ns, set()).add(cid)
+            self._b_str_to_circuits.setdefault(s, set()).add(cid)
+
+        entry = {
+            "circuit_id": cid,
+            "payload": payload,
+            "payload_bytes": payload_bytes,
+            "n_floats": n_floats,
+            "a_token_ids": a_tids,
+            "b_token_ids": b_tids,
+            "a_tokens": a_strs,
+            "b_tokens": b_strs,
+            "output_tokens": list(payload["output_tokens"]),
+            "metadata": dict(metadata) if metadata else {},
+        }
+        self._circuits[cid] = entry
+        return {
+            "circuit_id": cid,
+            "payload_bytes": payload_bytes,
+            "n_floats": n_floats,
+            "a_token_ids": a_tids,
+            "b_token_ids": b_tids,
+            "a_tokens": a_strs,
+            "b_tokens": b_strs,
+            "output_tokens": entry["output_tokens"],
+            "metadata": entry["metadata"],
+        }
+
+    def _select_candidate(self, a_counts: dict[str, int], b_counts: dict[str, int]) -> dict[str, Any]:
+        if not self._circuits:
+            raise ValueError("DynamicCircuitPager has no registered circuits.")
+        candidates = set(a_counts) | set(b_counts)
+        if not candidates:
+            assert self._default_circuit_id is not None
+            cid = self._default_circuit_id
+            return {
+                "circuit_id": cid,
+                "matched": False,
+                "matched_mode": "fallback",
+                "a_hits": 0,
+                "b_hits": 0,
+                "payload_bytes": self._circuits[cid]["payload_bytes"],
+            }
+
+        best_cid = max(
+            candidates,
+            key=lambda cid: (
+                1 if (a_counts.get(cid, 0) > 0 and b_counts.get(cid, 0) > 0) else 0,
+                a_counts.get(cid, 0) + b_counts.get(cid, 0),
+                min(a_counts.get(cid, 0), b_counts.get(cid, 0)),
+                b_counts.get(cid, 0),
+                -self._order[cid],
+            ),
+        )
+        na = a_counts.get(best_cid, 0)
+        nb = b_counts.get(best_cid, 0)
+        both = na > 0 and nb > 0
+        mode = "both" if both else ("partial_a" if na > 0 else "partial_b")
+        return {
+            "circuit_id": best_cid,
+            "matched": both,
+            "matched_mode": mode,
+            "a_hits": na,
+            "b_hits": nb,
+            "payload_bytes": self._circuits[best_cid]["payload_bytes"],
+        }
+
+    def route_token_ids(self, token_ids: list[int] | tuple[int, ...] | torch.Tensor) -> dict[str, Any]:
+        """O(L) hash-table routing over prompt token IDs."""
+        ids = token_ids.tolist() if isinstance(token_ids, torch.Tensor) else token_ids
+        seen = {int(t) for t in ids}
+        a_counts: dict[str, int] = {}
+        b_counts: dict[str, int] = {}
+        a_map = self._a_tok_to_circuits
+        b_map = self._b_tok_to_circuits
+        for tid in seen:
+            cids_a = a_map.get(tid)
+            if cids_a:
+                for cid in cids_a:
+                    a_counts[cid] = a_counts.get(cid, 0) + 1
+            cids_b = b_map.get(tid)
+            if cids_b:
+                for cid in cids_b:
+                    b_counts[cid] = b_counts.get(cid, 0) + 1
+        return self._select_candidate(a_counts, b_counts)
+
+    def route_tokens(self, tokens: list[str]) -> dict[str, Any]:
+        """O(L) hash-table routing over decoded token strings."""
+        a_counts: dict[str, int] = {}
+        b_counts: dict[str, int] = {}
+        seen_norms: set[str] = set()
+        for raw in tokens:
+            for key in (raw, _normalize_trigger_token(raw)):
+                if not key or key in seen_norms:
+                    continue
+                seen_norms.add(key)
+                cids_a = self._a_str_to_circuits.get(key)
+                if cids_a:
+                    for cid in cids_a:
+                        a_counts[cid] = a_counts.get(cid, 0) + 1
+                cids_b = self._b_str_to_circuits.get(key)
+                if cids_b:
+                    for cid in cids_b:
+                        b_counts[cid] = b_counts.get(cid, 0) + 1
+        return self._select_candidate(a_counts, b_counts)
+
+    def get_payload(self, circuit_id: str) -> dict[str, Any]:
+        """Return the raw 12 KB weight payload for `circuit_id`."""
+        return self._circuits[circuit_id]["payload"]
+
+    def _build_tensors_for_payload(self, payload: dict[str, Any]) -> dict[str, torch.Tensor]:
+        modified: dict[str, torch.Tensor] = {}
+        _install_mlp_unit_weights(
+            self.student_idx,
+            self.src_unit,
+            self._s_src[1],
+            self._s_src[2],
+            self._s_src[3],
+            self._s_src[4],
+            self._s_src[5].clone(),
+            self._s_src[6],
+            self._s_src[7],
+            self._s_src[8].clone(),
+            self._s_src[9],
+            payload["key_src"],
+            float(payload["bias_src"]),
+            payload["val_src"],
+            modified,
+        )
+        dst_in_name = self._s_dst[2]
+        dst_out_name = self._s_dst[3]
+        dst_fc_f = modified[dst_in_name].float().clone() if dst_in_name in modified else self._s_dst[5].clone()
+        dst_pr_f = modified[dst_out_name].float().clone() if dst_out_name in modified else self._s_dst[8].clone()
+        _install_mlp_unit_weights(
+            self.student_idx,
+            self.dst_unit,
+            self._s_dst[1],
+            dst_in_name,
+            dst_out_name,
+            self._s_dst[4],
+            dst_fc_f,
+            self._s_dst[6],
+            self._s_dst[7],
+            dst_pr_f,
+            self._s_dst[9],
+            payload["key_dst"],
+            float(payload["bias_dst"]),
+            payload["val_dst"],
+            modified,
+        )
+        return modified
+
+    def synthesize_slot_tensors(self, circuit_id: str) -> dict[str, torch.Tensor]:
+        """Materialize full Student weight tensors patched with `circuit_id` on the shared slot pair."""
+        return self._build_tensors_for_payload(self.get_payload(circuit_id))
+
+    def build_static_superposition_payload(
+        self,
+        circuit_ids: list[str] | None = None,
+        *,
+        normalize: str = "sqrt_n",
+    ) -> dict[str, Any]:
+        """Pack multiple circuits statically into the single shared slot pair by linear superposition."""
+        cids = list(circuit_ids) if circuit_ids is not None else list(self._circuits.keys())
+        if not cids:
+            raise ValueError("No circuits available for static superposition.")
+        n = len(cids)
+        if normalize == "sqrt_n":
+            denom = float(n) ** 0.5
+        elif normalize == "mean":
+            denom = float(n)
+        elif normalize == "sum":
+            denom = 1.0
+        else:
+            raise ValueError(f"Unsupported normalize mode: {normalize!r}")
+
+        payloads = [self._circuits[cid]["payload"] for cid in cids]
+        return {
+            "src_layer": self.src_layer,
+            "src_unit": self.src_unit,
+            "dst_layer": self.dst_layer,
+            "dst_unit": self.dst_unit,
+            "key_src": (torch.stack([p["key_src"] for p in payloads], dim=0).sum(dim=0) / denom).contiguous(),
+            "bias_src": float(sum(float(p["bias_src"]) for p in payloads) / n),
+            "val_src": (torch.stack([p["val_src"] for p in payloads], dim=0).sum(dim=0) / denom).contiguous(),
+            "key_dst": (torch.stack([p["key_dst"] for p in payloads], dim=0).sum(dim=0) / denom).contiguous(),
+            "bias_dst": float(sum(float(p["bias_dst"]) for p in payloads) / n),
+            "val_dst": (torch.stack([p["val_dst"] for p in payloads], dim=0).sum(dim=0) / denom).contiguous(),
+            "n_superposed": n,
+            "normalize": normalize,
+        }
+
+    def catalog_summary(self, *, bandwidth_gbps: tuple[float, ...] = (1.0, 10.0)) -> dict[str, Any]:
+        """Return memory footprint and theoretical optical-fiber paging latency for the catalog."""
+        total_bytes = sum(entry["payload_bytes"] for entry in self._circuits.values())
+        per_bytes = total_bytes // len(self._circuits) if self._circuits else 0
+        wire_ms = {
+            f"{float(bw):g}Gbps": round((per_bytes * 8.0) / (float(bw) * 1e9) * 1e3, 6)
+            for bw in bandwidth_gbps
+        }
+        return {
+            "n_circuits": len(self._circuits),
+            "slot_pair": {
+                "src_layer": self.src_layer,
+                "src_unit": self.src_unit,
+                "dst_layer": self.dst_layer,
+                "dst_unit": self.dst_unit,
+            },
+            "per_circuit_bytes": per_bytes,
+            "per_circuit_kb": round(per_bytes / 1024.0, 3),
+            "total_catalog_bytes": total_bytes,
+            "total_catalog_kb": round(total_bytes / 1024.0, 3),
+            "wire_transfer_ms": wire_ms,
+        }

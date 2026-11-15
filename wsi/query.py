@@ -2093,6 +2093,25 @@ class WeightSpaceIndex:
             save_path=str(save_path) if save_path else None,
         )
 
+    def create_dynamic_circuit_pager(
+        self,
+        *,
+        src_layer: int,
+        dst_layer: int,
+        src_unit: int | None = None,
+        dst_unit: int | None = None,
+    ) -> Any:
+        """Create a `DynamicCircuitPager` targeting a fixed dormant slot pair in this Student model."""
+        from .compare import DynamicCircuitPager
+
+        return DynamicCircuitPager(
+            self,
+            src_layer=src_layer,
+            dst_layer=dst_layer,
+            src_unit=src_unit,
+            dst_unit=dst_unit,
+        )
+
 
 def load_index(model_dir: str | Path, index_dir: str | Path | None = None, **kwargs: Any) -> WeightSpaceIndex:
     """Convenience loader for `WeightSpaceIndex`."""
