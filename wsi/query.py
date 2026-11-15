@@ -28,6 +28,7 @@ from .indexer import (
     get_mlp_input_keys,
     token_roles,
 )
+from .rust_accel import has_rust_core, rust_analyze_residual_delta
 from wsr.ops import effective_gain, load_submission, validate_edit
 
 
@@ -125,6 +126,12 @@ class WeightSpaceIndex:
         if self._u_eff is None:
             self._u_eff = _effective_unembed(self.ck, self.anat)
         return self._u_eff
+
+    @property
+    def U_eff_inv_norms(self) -> torch.Tensor:
+        if not hasattr(self, "_u_eff_inv_norms") or self._u_eff_inv_norms is None:
+            self._u_eff_inv_norms = 1.0 / self.U_eff.norm(dim=1).clamp_min(1e-12)
+        return self._u_eff_inv_norms
 
     @property
     def U_raw_norm(self) -> torch.Tensor:
@@ -558,8 +565,7 @@ class WeightSpaceIndex:
         v_unit = v / v_norm
         logits = self.U_eff @ v
         # Normalize rows of U_eff so high-norm rare BPE tokens do not overshadow exact directional matches
-        u_norms = self.U_eff.norm(dim=1).clamp_min(1e-12)
-        cos_centered = logits / (u_norms * v_norm)
+        cos_centered = (logits / v_norm) * self.U_eff_inv_norms
         cos_raw = self.U_raw_norm @ v_unit
         # If `v` is an exact uncentered `wsr` orth vector (max raw cosine > 0.98), use raw cosine; else centered
         cos_scores = cos_raw if cos_raw.abs().max().item() > cos_centered.abs().max().item() and cos_raw.abs().max().item() > 0.95 else cos_centered
@@ -771,7 +777,39 @@ class WeightSpaceIndex:
     # ------------------------------------------------------------------
     def explain_edit(self, edit_source: str | Path | dict | list, top_k: int = 8) -> dict[str, Any]:
         """Analyze a `wsr` edit file (.safetensors / .json) or ops structure and explain its semantic effect."""
-        if isinstance(edit_source, (str, Path)):
+        compact_vocab_slices: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+        compact_residual_slices: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+        if isinstance(edit_source, (str, Path)) and str(edit_source).endswith(".safetensors"):
+            raw_st = load_file(str(edit_source))
+            full: dict[str, torch.Tensor] = {}
+            for k, v in raw_st.items():
+                if k.endswith("::row_index"):
+                    continue
+                if k.endswith("::rows"):
+                    n = k[:-len("::rows")]
+                    r_idx = raw_st.get(n + "::row_index")
+                    if r_idx is not None and (n == self.anat.unembed or n == self.anat.embed):
+                        compact_vocab_slices[n] = (r_idx, v)
+                        continue
+                    if (
+                        r_idx is not None
+                        and n in self.ck
+                        and self.ck.get(n).dim() == 2
+                        and self.anat.out_axis(n) == 1
+                        and 0 < r_idx.numel() <= 64
+                    ):
+                        compact_residual_slices[n] = (r_idx, v)
+                        continue
+                # Expand any remaining compact row tensor or copy regular tensor
+                if k.endswith("::rows"):
+                    n = k[:-len("::rows")]
+                    r_idx = raw_st[n + "::row_index"]
+                    B = self.ck.get(n).clone()
+                    B[r_idx] = v.to(B.dtype)
+                    full[n] = B
+                else:
+                    full[k] = v
+        elif isinstance(edit_source, (str, Path)):
             full = load_submission(self.ck, edit_source, self.anat)
         elif isinstance(edit_source, list):
             from wsr.ops import apply_ops
@@ -784,24 +822,212 @@ class WeightSpaceIndex:
         else:
             raise TypeError(f"Unsupported edit_source type: {type(edit_source)}")
 
-        val = validate_edit(self.ck, full)
         tensor_reports = []
+        total_d_sq = 0.0
+        total_o_sq = 0.0
+        total_changed = 0
+        errors: list[str] = []
+
+        # Fast path for compact vocabulary row edits (`wte.weight::rows` / `embed_tokens.weight::rows`)
+        for n, (r_idx, rows_new) in compact_vocab_slices.items():
+            T_old_raw = self.ck.get(n)
+            rows_old = T_old_raw[r_idx].float()
+            rows_new_f = rows_new.float()
+            d_rows = rows_new_f - rows_old
+            d_norm = d_rows.norm().item()
+            if not hasattr(self, "_cached_unembed_fro_norm"):
+                self._cached_unembed_fro_norm = T_old_raw.float().norm().item()
+            old_norm = self._cached_unembed_fro_norm
+            rel_norm = d_norm / max(old_norm, 1e-12)
+            vals_chg = int((d_rows != 0).sum().item())
+            total_d_sq += d_norm ** 2
+            total_o_sq += old_norm ** 2
+            total_changed += vals_chg
+
+            row_deltas = d_rows.norm(dim=1)
+            top_r_vals, top_r_order = torch.topk(row_deltas, k=min(top_k, row_deltas.numel()))
+            edited_tokens = []
+            for _, r_ord in zip(top_r_vals, top_r_order):
+                loc_i = int(r_ord.item())
+                tid = int(r_idx[loc_i].item())
+                old_r_norm = rows_old[loc_i].norm().item()
+                new_r_norm = rows_new_f[loc_i].norm().item()
+                cos = torch.nn.functional.cosine_similarity(rows_new_f[loc_i], rows_old[loc_i], dim=0).item()
+                edited_tokens.append({
+                    "token_id": tid,
+                    "token": self.vocab_map.get(tid, f"<tok_{tid}>"),
+                    "old_norm": round(old_r_norm, 5),
+                    "new_norm": round(new_r_norm, 5),
+                    "scale_ratio": round(new_r_norm / max(old_r_norm, 1e-12), 4),
+                    "cosine_with_original": round(cos, 4),
+                })
+            tensor_reports.append({
+                "tensor": n,
+                "shape": list(T_old_raw.shape),
+                "delta_fro_norm": round(d_norm, 6),
+                "rel_norm": round(rel_norm, 6),
+                "values_changed": vals_chg,
+                "role": "unembed_or_embed",
+                "changed_token_rows_count": int(r_idx.numel()),
+                "top_edited_tokens": edited_tokens,
+            })
+
+        # Fast path for compact surgical neuron edits (`out_axis == 1`, e.g. GPT-2 `mlp.c_proj.weight::rows`)
+        if not hasattr(self, "_cached_tensor_fro_norms"):
+            self._cached_tensor_fro_norms: dict[str, float] = {}
+        for n, (r_idx, rows_new) in compact_residual_slices.items():
+            T_old_raw = self.ck.get(n)
+            rows_old = T_old_raw[r_idx].float()
+            rows_new_f = rows_new.float()
+            d_rows = rows_new_f - rows_old  # [k, hidden]
+            d_norm = d_rows.norm().item()
+            if n not in self._cached_tensor_fro_norms:
+                self._cached_tensor_fro_norms[n] = T_old_raw.float().norm().item()
+            old_norm = self._cached_tensor_fro_norms[n]
+            new_norm_sq = old_norm ** 2 - rows_old.norm().item() ** 2 + rows_new_f.norm().item() ** 2
+            new_norm = max(new_norm_sq, 0.0) ** 0.5
+            rel_norm = d_norm / max(old_norm, 1e-12)
+            vals_chg = int((d_rows != 0).sum().item())
+            total_d_sq += d_norm ** 2
+            total_o_sq += old_norm ** 2
+            total_changed += vals_chg
+
+            U_d, S_d, _ = torch.linalg.svd(d_rows.t(), full_matrices=False)
+            u0 = U_d[:, 0]
+            cos_c = (self.U_eff @ u0) * self.U_eff_inv_norms
+            cos_r = self.U_raw_norm @ u0
+            if max((-cos_c).max().item(), (-cos_r).max().item()) > max(cos_c.max().item(), cos_r.max().item()):
+                u0 = -u0
+            top_u = u0 * S_d[0]
+            s_energy_top1 = (S_d[0].item() ** 2) / max(d_norm ** 2, 1e-12)
+
+            col_deltas = d_rows.norm(dim=1)
+            top_loc = int(col_deltas.argmax().item())
+            top_uid = int(r_idx[top_loc].item())
+            old_col_exp = self.explain_vector(rows_old[top_loc], top_k=3)
+            new_col_exp = self.explain_vector(rows_new_f[top_loc], top_k=3)
+
+            tensor_reports.append({
+                "tensor": n,
+                "shape": list(T_old_raw.shape),
+                "delta_fro_norm": round(d_norm, 6),
+                "rel_norm": round(rel_norm, 6),
+                "values_changed": vals_chg,
+                "role": "residual_matrix",
+                "overall_cosine_new_old": round(old_norm / max(new_norm, 1e-12), 5),
+                "norm_ratio_new_old": round(new_norm / max(old_norm, 1e-12), 5),
+                "changed_units_count": int(r_idx.numel()),
+                "total_units_count": int(T_old_raw.shape[0]),
+                "delta_rank1_energy_fraction": round(s_energy_top1, 4),
+                "subspace_action": "amplified_or_injected",
+                "old_energy_along_principal_dir": round((rows_old @ u0).norm().item(), 5),
+                "new_energy_along_principal_dir": round((rows_new_f @ u0).norm().item(), 5),
+                "principal_delta_direction": self.explain_vector(top_u, top_k=top_k),
+                "surgical_neuron_rewire": {
+                    "top_modified_unit": top_uid,
+                    "old_promoted_tokens": [t["token"] for t in old_col_exp["promoted_tokens"]],
+                    "new_promoted_tokens": [t["token"] for t in new_col_exp["promoted_tokens"]],
+                },
+            })
 
         for n, T_new in full.items():
             if n not in self.ck:
+                errors.append(f"unknown tensor `{n}`")
                 continue
-            T_old = self.ck.get(n).float()
+            T_old_raw = self.ck.get(n)
+            if T_old_raw.shape != T_new.shape:
+                errors.append(f"shape mismatch for `{n}`")
+                continue
+
+            # Try zero-copy multithreaded Rust kernel for 2D residual matrices
+            out_ax = self.anat.out_axis(n) if (T_old_raw.dim() == 2 and self.anat.hidden in T_old_raw.shape and n != self.anat.unembed and n != self.anat.embed) else -1
+            rust_res = rust_analyze_residual_delta(T_old_raw, T_new, out_ax) if out_ax in (0, 1) else None
+
+            if rust_res is not None:
+                d_norm = rust_res["delta_norm"]
+                old_norm = rust_res["old_norm"]
+                new_norm = rust_res["new_norm"]
+                rel_norm = d_norm / max(old_norm, 1e-12)
+                vals_chg = rust_res["values_changed"]
+                total_d_sq += d_norm ** 2
+                total_o_sq += old_norm ** 2
+                total_changed += vals_chg
+
+                report: dict[str, Any] = {
+                    "tensor": n,
+                    "shape": list(T_old_raw.shape),
+                    "delta_fro_norm": round(d_norm, 6),
+                    "rel_norm": round(rel_norm, 6),
+                    "values_changed": vals_chg,
+                    "engine": "rust_simd",
+                }
+                if d_norm < 1e-12:
+                    report["semantic_effect"] = "no_op (zero delta)"
+                    tensor_reports.append(report)
+                    continue
+
+                ratio = new_norm / max(old_norm, 1e-12)
+                cos_all = rust_res["overall_cosine_new_old"]
+                s0 = rust_res["s0"]
+                top_u = rust_res["top_u"]
+                u0 = top_u / max(s0, 1e-12)
+
+                # Resolve SVD sign ambiguity toward positive vocabulary cosine pole
+                cos_c = (self.U_eff @ u0) * self.U_eff_inv_norms
+                cos_r = self.U_raw_norm @ u0
+                best_pos = max(cos_c.max().item(), cos_r.max().item())
+                best_neg = max((-cos_c).max().item(), (-cos_r).max().item())
+                if best_neg > best_pos:
+                    top_u = -top_u
+
+                old_energy = rust_res["old_energy"]
+                new_energy = rust_res["new_energy"]
+                subspace_action = (
+                    "projected_out_or_suppressed"
+                    if new_energy < old_energy * 0.95
+                    else ("amplified_or_injected" if new_energy > old_energy * 1.05 else "rotated_or_shifted")
+                )
+                s_energy_top1 = (s0 ** 2) / max(d_norm ** 2, 1e-12)
+                changed_cnt = rust_res["changed_units_count"]
+
+                report["role"] = "residual_matrix"
+                report["overall_cosine_new_old"] = round(cos_all, 5)
+                report["norm_ratio_new_old"] = round(ratio, 5)
+                report["changed_units_count"] = changed_cnt
+                report["total_units_count"] = rust_res["total_units_count"]
+                report["delta_rank1_energy_fraction"] = round(s_energy_top1, 4)
+                report["subspace_action"] = subspace_action
+                report["old_energy_along_principal_dir"] = round(old_energy, 5)
+                report["new_energy_along_principal_dir"] = round(new_energy, 5)
+                report["principal_delta_direction"] = self.explain_vector(top_u, top_k=top_k)
+
+                if 0 < changed_cnt <= 64:
+                    old_col_exp = self.explain_vector(rust_res["old_col"], top_k=3)
+                    new_col_exp = self.explain_vector(rust_res["new_col"], top_k=3)
+                    report["surgical_neuron_rewire"] = {
+                        "top_modified_unit": rust_res["top_modified_unit"],
+                        "old_promoted_tokens": [t["token"] for t in old_col_exp["promoted_tokens"]],
+                        "new_promoted_tokens": [t["token"] for t in new_col_exp["promoted_tokens"]],
+                    }
+                tensor_reports.append(report)
+                continue
+
+            T_old = T_old_raw.float()
             dW = T_new.float() - T_old
             d_norm = dW.norm().item()
             old_norm = T_old.norm().item()
             rel_norm = d_norm / max(old_norm, 1e-12)
+            vals_chg = int((dW != 0).sum().item())
+            total_d_sq += d_norm ** 2
+            total_o_sq += old_norm ** 2
+            total_changed += vals_chg
 
-            report: dict[str, Any] = {
+            report = {
                 "tensor": n,
                 "shape": list(T_old.shape),
                 "delta_fro_norm": round(d_norm, 6),
                 "rel_norm": round(rel_norm, 6),
-                "values_changed": int((dW != 0).sum().item()),
+                "values_changed": vals_chg,
             }
 
             if d_norm < 1e-12:
@@ -852,18 +1078,14 @@ class WeightSpaceIndex:
                     W_new_res.flatten(), W_old_res.flatten(), dim=0
                 ).item()
 
-                # Check which columns/neurons actually changed
                 col_deltas = dW_res.norm(dim=0)
                 changed_cols = torch.nonzero(col_deltas > 1e-6).flatten()
 
-                # Fast exact/low-rank SVD: if only a subset of columns changed, SVD on active columns is identical
                 if 0 < changed_cols.numel() <= 256:
                     U_d, S_d, _ = torch.linalg.svd(dW_res[:, changed_cols], full_matrices=False)
                 else:
                     U_d, S_d, _ = torch.svd_lowrank(dW_res, q=min(4, min(dW_res.shape)), niter=4)
                 u0 = U_d[:, 0]
-                # Resolve SVD sign ambiguity: orient u0 toward the vocabulary pole (+u0 vs -u0)
-                # that has the strongest positive cosine alignment with a real vocabulary token!
                 u_norms = self.U_eff.norm(dim=1).clamp_min(1e-12)
                 cos_c = (self.U_eff @ u0) / u_norms
                 cos_r = self.U_raw_norm @ u0
@@ -894,7 +1116,6 @@ class WeightSpaceIndex:
                 report["principal_delta_direction"] = self.explain_vector(top_u, top_k=top_k)
 
                 if 0 < changed_cols.numel() <= 64:
-                    # Surgical neuron edit: also report the top modified neuron's old vs new output token!
                     top_uid = int(changed_cols[col_deltas[changed_cols].argmax()].item())
                     old_col_exp = self.explain_vector(W_old_res[:, top_uid], top_k=3)
                     new_col_exp = self.explain_vector(W_new_res[:, top_uid], top_k=3)
@@ -906,12 +1127,13 @@ class WeightSpaceIndex:
 
             tensor_reports.append(report)
 
+        total_rel = (total_d_sq ** 0.5) / max(total_o_sq ** 0.5, 1e-12)
         return {
             "validation": {
-                "ok": val["ok"],
-                "errors": val["errors"],
-                "total_rel_norm": round(val["rel_norm"], 6),
-                "total_values_changed": val["values_changed"],
+                "ok": len(errors) == 0 and total_changed > 0,
+                "errors": errors,
+                "total_rel_norm": round(total_rel, 6),
+                "total_values_changed": total_changed,
             },
             "tensors": tensor_reports,
         }

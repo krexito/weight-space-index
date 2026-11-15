@@ -1,0 +1,21 @@
+[package]
+name = "wsi_core"
+version = "0.1.0"
+edition = "2021"
+description = "Zero-copy multithreaded SIMD Rust core for Weight-Space Index (WSI)"
+license = "Apache-2.0"
+
+[lib]
+name = "wsi_core"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "wsi-rs"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true

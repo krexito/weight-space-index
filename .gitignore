@@ -19,6 +19,9 @@ build/
 venv/
 env/
 
+# Rust build artifacts
+rust/target/
+
 # OS / IDE files
 .DS_Store
 Thumbs.db
