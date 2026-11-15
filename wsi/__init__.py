@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from .compare import (
     DynamicCircuitPager,
+    MixtureOfIndexes,
     align_semantic_circuits,
     decompile_edit_intent,
     diff_checkpoints,
@@ -20,6 +21,7 @@ from .query import WeightSpaceIndex, load_index
 
 __all__ = [
     "DynamicCircuitPager",
+    "MixtureOfIndexes",
     "WeightSpaceIndex",
     "align_semantic_circuits",
     "build_index",

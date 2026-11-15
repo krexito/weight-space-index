@@ -130,12 +130,12 @@ GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, id
 | **`AB` w/ `L6` Wire Ablated** | `(zero)` | `+0.10` | `+0.128` | — | **20 / 20** (`dlogP`) |
 | **`AB` w/ Broken Wire** | `+6.10` | `+0.06` | `+0.141` | — | **20 / 20** (`dlogP`) |
 
-**Dynamic On-The-Go Weight Paging / Just-In-Time Circuit MoE (`DynamicCircuitPager`, `create_dynamic_circuit_pager` — `python scripts/experiment_dynamic_weight_moe.py`):** Compiles & indexes all `20` cross-architecture `LFM3-1.7B -> GPT-2` `(A + B -> C)` circuits into a catalog of compact `12,296 B` (`12.01 KB`) payloads (`240.16 KB` total) targeting **a single shared dormant slot pair** (`GPT-2 Layer 6 #2403 -> Wire -> Layer 10 #630`, `99.99%` of weights frozen). Incoming prompts are routed in $O(L)$ via `route_token_ids` and hot-swapped into the shared slot in `0.1103 ms` (`0.1572 ms` interleaved) while Layers `0..5` run (`21.795 ms` on CPU — `198x` latency-hiding headroom; theoretical optical-fiber transfer `0.0984 ms` @ `1 Gbps`, `0.0098 ms` @ `10 Gbps`), cleanly defeating static superposition on held-out `[Then, When, While]` prompts:
+**Mixture of Indexes (`MoI` — `MixtureOfIndexes` / `DynamicCircuitPager`, `create_mixture_of_indexes` — `python scripts/experiment_dynamic_weight_moe.py`):** Compiles & indexes all `20` cross-architecture `LFM3-1.7B -> GPT-2` `(A + B -> C)` circuits into a catalog of compact `12,296 B` (`12.01 KB`) payloads (`240.16 KB` total) targeting **a single shared dormant slot pair** (`GPT-2 Layer 6 #2403 -> Wire -> Layer 10 #630`, `99.99%` of weights frozen). Unlike traditional **MoE** (*Mixture of Experts*, which keeps massive experts resident in memory), **MoI** routes incoming prompts in $O(L)$ via `route_token_ids` and hot-swaps only the indexed weight payload in `0.1103 ms` (`0.1572 ms` interleaved) while Layers `0..5` run (`21.795 ms` on CPU — `198x` latency-hiding headroom; theoretical optical-fiber transfer `0.0984 ms` @ `1 Gbps`, `0.0098 ms` @ `10 Gbps`), cleanly defeating static superposition on held-out `[Then, When, While]` prompts:
 
 | Regime (Single Shared Slot Pair `L6#2403 -> L10#630`) | `AB` (`A_i+B_i`) `d_logP` / `L10_act` | `A_only` `d_logP` | `B_only` `d_logP` | `Ctrl` `d_logP` | `CrossChain` (`A_i+B_j`) `d_logP` | Control KL | Strict Pass Rate (`TruthTable+Cross`) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | **Static Superposition (all 20 packed statically)** | `+0.023` / `1/20` | `+0.064` | `+0.030` | `+0.041` | `-0.010` | `0.0037` | **0 / 20** |
-| **Dynamic Weight Paging (`DynamicCircuitPager`, `12.01 KB`/swap)** | **`+5.667`** / **`+8.01`** | `+0.325` | `+0.167` | `+0.017` | **`+0.008`** | **`0.0007`** | **20 / 20** (`540/540` exact route) |
+| **Mixture of Indexes (`MoI`, `12.01 KB`/swap)** | **`+5.667`** / **`+8.01`** | `+0.325` | `+0.167` | `+0.017` | **`+0.008`** | **`0.0007`** | **20 / 20** (`540/540` exact route) |
 
 > [!WARNING]
 > **Honest scope & limitations.**
@@ -179,7 +179,7 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Full Key + Value Neuron Transplant** | `I_small.transplant_full_neuron_from(I_big, teacher_layer=0, teacher_unit=5051)` | Translates BOTH the teacher neuron's input trigger key and output write-vector into a dormant student neuron |
 | **2-Layer Connected Chain Transplant** | `I_small.transplant_connected_chain_from(I_big, ...)` / `I.discover_connected_chains(0, 1)` | Discovers 2-layer chains and transplants them across architectures via a private orthogonal residual wire |
 | **Compositional 2-Layer `AND` Gate (`A + B -> C`)** | `I_small.transplant_compositional_and_chain_from(I_big, ...)` | Wires `L_src` context detector `A` over a private residual wire into `L_dst` thresholded `AND(wire, B) -> C` gate |
-| **Dynamic On-The-Go Circuit Pager (`Just-In-Time MoE`)** | `I_small.create_dynamic_circuit_pager(src_layer=6, dst_layer=10)` | Indexes a catalog of `~12 KB` skill circuits and hot-swaps them on the fly into one shared dormant slot pair while earlier layers execute |
+| **Mixture of Indexes (`MoI`)** | `I_small.create_mixture_of_indexes(src_layer=6, dst_layer=10)` / `create_dynamic_circuit_pager` | Indexes a catalog of `~12 KB` skill circuits (`MixtureOfIndexes` / `DynamicCircuitPager`) and hot-swaps them on the fly into one shared dormant slot pair while earlier layers execute |
 | **MCP Server** | `python -m wsi mcp` | Exposes all 11 `wsi_*` tools over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
 
 ---
@@ -307,7 +307,7 @@ python scripts/experiment_multihop_circuit_transplant.py
 # 10. Run Cross-Architecture 2-Layer Compositional AND Gate (A + B -> C, LFM3 L0+L1 -> GPT-2 L6->Wire->L10)
 python scripts/experiment_compositional_and_circuit.py
 
-# 11. Run Dynamic On-The-Go Weight Paging / JIT Circuit MoE Benchmark (20 LFM3 circuits swapped on-the-fly in 1 GPT-2 slot pair)
+# 11. Run Mixture of Indexes (MoI) Dynamic Weight Paging Benchmark (20 LFM3 circuits swapped on-the-fly in 1 GPT-2 slot pair)
 python scripts/experiment_dynamic_weight_moe.py
 ```
 

@@ -1893,7 +1893,7 @@ def _normalize_trigger_token(tok: str) -> str:
 
 
 class DynamicCircuitPager:
-    """Dynamic on-the-go weight pager for indexed 2-layer compositional circuits.
+    """Mixture of Indexes (MoI): Dynamic on-the-go weight pager for indexed 2-layer circuits.
 
     Stores a catalog of pre-compiled Teacher `(A + B -> C)` skill payloads (`~12 KB` each on
     GPT-2 768d) compiled for a single fixed dormant neuron slot pair `(src_layer, src_unit)`
@@ -2273,3 +2273,6 @@ class DynamicCircuitPager:
             "total_catalog_kb": round(total_bytes / 1024.0, 3),
             "wire_transfer_ms": wire_ms,
         }
+
+
+MixtureOfIndexes = DynamicCircuitPager

@@ -15,7 +15,7 @@ if str(ROOT) not in sys.path:
 if str(ROOT / "wsr") not in sys.path:
     sys.path.insert(0, str(ROOT / "wsr"))
 
-from wsi import WeightSpaceIndex, build_index
+from wsi import DynamicCircuitPager, MixtureOfIndexes, WeightSpaceIndex, build_index
 from wsr.anatomy import Anatomy
 from wsr.checkpoint import Checkpoint
 from wsr.ops import apply_ops
@@ -336,7 +336,15 @@ def run_all_tests():
         assert "model.layers.3.mlp.down_proj.weight" in and_tx["_tensors"]
         assert "_slot_payload" in and_tx
 
-        # Verify DynamicCircuitPager O(1) JIT slot paging & multi-circuit routing
+        # Verify DynamicCircuitPager / MixtureOfIndexes (MoI) O(1) JIT slot paging & routing
+        assert MixtureOfIndexes is DynamicCircuitPager
+        moi_pager = wsi_lazy.create_mixture_of_indexes(
+            src_layer=1,
+            dst_layer=3,
+            src_unit=and_tx["student_and_gate"]["src_unit"],
+            dst_unit=and_tx["student_and_gate"]["dst_unit"],
+        )
+        assert isinstance(moi_pager, MixtureOfIndexes)
         pager = wsi_lazy.create_dynamic_circuit_pager(
             src_layer=1,
             dst_layer=3,

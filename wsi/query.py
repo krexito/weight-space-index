@@ -2112,6 +2112,8 @@ class WeightSpaceIndex:
             dst_unit=dst_unit,
         )
 
+    create_mixture_of_indexes = create_dynamic_circuit_pager
+
 
 def load_index(model_dir: str | Path, index_dir: str | Path | None = None, **kwargs: Any) -> WeightSpaceIndex:
     """Convenience loader for `WeightSpaceIndex`."""
