@@ -94,11 +94,13 @@ def _load_vocab(model_dir: Path, vocab_size: int) -> dict[int, str]:
             data = json.loads(tok_json.read_text(encoding="utf-8"))
             vocab = data.get("model", {}).get("vocab", {})
             for tok, idx in vocab.items():
-                if isinstance(idx, int):
+                if isinstance(idx, int) and 0 <= idx < vocab_size:
                     id_to_tok[idx] = tok
             for added in data.get("added_tokens", []):
                 if "id" in added and "content" in added:
-                    id_to_tok[int(added["id"])] = str(added["content"])
+                    aid = int(added["id"])
+                    if 0 <= aid < vocab_size:
+                        id_to_tok[aid] = str(added["content"])
         except Exception:
             pass
     elif vocab_json.exists():

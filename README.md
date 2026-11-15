@@ -44,6 +44,16 @@ Without computing a single gradient or running training, `wsi.rewire_transductio
 
 *(Even when all 5 edits are composed simultaneously into the same GPT-2 checkpoint in `0.98s`, **5/5 (`100%`)** target prompts flip to their new concepts simultaneously.)*
 
+### 3. Out-of-Distribution Architecture Generalization: `LiquidAI/LFM3-1.7B` (`python scripts/benchmark_lfm3.py`)
+To verify zero overfitting to GPT-2 or standard Transformers, we evaluated `wsi` on real `BF16` pretrained weights from [**`LiquidAI/LFM3-1.7B`**](https://huggingface.co/LiquidAI/LFM3-1.7B) (`model_type: "lfm3"`), a non-Transformer hybrid **Liquid Foundation Model** with:
+* **Gated Short Convolutions** (`conv.in_proj`, depthwise `conv.conv`, `conv.out_proj`) interleaved with **Grouped-Query Attention** (`self_attn.q/k/v/o/gate_proj`)
+* **7,680-unit SwiGLU MLPs** (`feed_forward.w1` gate, `feed_forward.w3` up, `feed_forward.w2` down, `[2048, 7680]`)
+* **4 Sandwich RMSNorms per block** (`operator_norm`, `post_operator_norm`, `ffn_norm`, `post_ffn_norm`) + `model.embedding_norm.weight`
+
+Using the **exact same `classify_blind_diagnosis()` rules** without changing a single threshold:
+* **Blind Weight-Space Reading (`20 / 20 = 100.0%`):** Recovered **20 / 20 (`100%`)** exact edit categories and **20 / 20 (`100%`)** exact concepts/tokens across all 8 edit families (`rewire_transduction` on 7,680-unit SwiGLU `w2`, `orth` on `conv.out_proj` & `self_attn.o_proj`, `scale_rows`, `block_ablation`, `gain` on sandwich norms, `noise`, and `no_op`) in **`3.74 seconds` total (`186.8 ms / edit`)**.
+* **Zero-Shot SwiGLU Circuit Discovery:** Querying `wsi.search_transduction("ĠFrance", "ĠParis")` on `LFM3-1.7B` immediately pinpointed **Layer 0 SwiGLU Unit 1625** (`[Ġpare, Ġparas, ĠParis] -> [ĠPar, par, Par]`).
+
 ---
 
 ## Why Weight-Space Index?
