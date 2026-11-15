@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="420" viewBox="0 0 1180 420"><defs><filter id="sh" x="-10%" y="-10%" width="120%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/></filter><marker id="ar-blue" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker><marker id="ar-teal" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0d9488"/></marker><marker id="ar-amber" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="ar-violet" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker><marker id="ar-slate" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker><marker id="ar-rose" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker></defs>
+<rect x="0.5" y="0.5" width="1179" height="419" rx="18" fill="#ffffff" stroke="#e2e8f0"/>
+<text x="40" y="52" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="24" font-weight="800" fill="#0f172a" text-anchor="start" >One toolkit, three ways to use it</text>
+<text x="40" y="80" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >The same models, agents, sandbox, suites and measurement underneath.</text>
+<g filter="url(#sh)"><rect x="40" y="110" width="350" height="280" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="40" y="110" width="350" height="280" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.35"/>
+<rect x="40" y="126" width="4" height="248" rx="2" fill="#2563eb"/>
+<text x="62" y="142" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0f172a" text-anchor="start" >Read</text>
+<text x="62" y="168" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="600" fill="#2563eb" text-anchor="start" >wsr read · wsr run</text>
+<circle cx="68" cy="203" r="3.5" fill="#2563eb"/>
+<text x="82" y="208" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >given the weights and an edit</text>
+<circle cx="68" cy="233" r="3.5" fill="#2563eb"/>
+<text x="82" y="238" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >predict how each behavior moves</text>
+<circle cx="68" cy="263" r="3.5" fill="#2563eb"/>
+<text x="82" y="268" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >no forward pass, no GPU</text>
+<circle cx="68" cy="293" r="3.5" fill="#2563eb"/>
+<text x="82" y="298" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >weights · text · both</text>
+<circle cx="68" cy="323" r="3.5" fill="#2563eb"/>
+<text x="82" y="328" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >self · other framing</text>
+<circle cx="68" cy="353" r="3.5" fill="#2563eb"/>
+<text x="82" y="358" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >scored against measured labels</text>
+<g filter="url(#sh)"><rect x="415" y="110" width="350" height="280" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="415" y="110" width="350" height="280" rx="14" fill="#f0fdfa" stroke="#0d9488" stroke-opacity="0.35"/>
+<rect x="415" y="126" width="4" height="248" rx="2" fill="#0d9488"/>
+<text x="437" y="142" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0f172a" text-anchor="start" >Write</text>
+<text x="437" y="168" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="600" fill="#0d9488" text-anchor="start" >wsr write</text>
+<circle cx="443" cy="203" r="3.5" fill="#0d9488"/>
+<text x="457" y="208" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >given the weights and a goal</text>
+<circle cx="443" cy="233" r="3.5" fill="#0d9488"/>
+<text x="457" y="238" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >write an edit, by reasoning</text>
+<circle cx="443" cy="263" r="3.5" fill="#0d9488"/>
+<text x="457" y="268" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >no training, no gradients</text>
+<circle cx="443" cy="293" r="3.5" fill="#0d9488"/>
+<text x="457" y="298" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >optional forward-pass budget</text>
+<circle cx="443" cy="323" r="3.5" fill="#0d9488"/>
+<text x="457" y="328" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >practice items only</text>
+<circle cx="443" cy="353" r="3.5" fill="#0d9488"/>
+<text x="457" y="358" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >scored: goal met, nothing broken</text>
+<g filter="url(#sh)"><rect x="790" y="110" width="350" height="280" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="790" y="110" width="350" height="280" rx="14" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.35"/>
+<rect x="790" y="126" width="4" height="248" rx="2" fill="#7c3aed"/>
+<text x="812" y="142" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#0f172a" text-anchor="start" >Program</text>
+<text x="812" y="168" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="13" font-weight="600" fill="#7c3aed" text-anchor="start" >wsr program · wsr.program()</text>
+<circle cx="818" cy="203" r="3.5" fill="#7c3aed"/>
+<text x="832" y="208" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >a fine-tuning-style config</text>
+<circle cx="818" cy="233" r="3.5" fill="#7c3aed"/>
+<text x="832" y="238" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >goal defined by a dataset</text>
+<circle cx="818" cy="263" r="3.5" fill="#7c3aed"/>
+<text x="832" y="268" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >attempts × rounds, best edit wins</text>
+<circle cx="818" cy="293" r="3.5" fill="#7c3aed"/>
+<text x="832" y="298" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >held-out + guard checks</text>
+<circle cx="818" cy="323" r="3.5" fill="#7c3aed"/>
+<text x="832" y="328" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >saves a new checkpoint</text>
+<circle cx="818" cy="353" r="3.5" fill="#7c3aed"/>
+<text x="832" y="358" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >optional push to the Hub</text>
+</svg>

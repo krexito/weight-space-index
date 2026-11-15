@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1262" height="210" viewBox="0 0 1262 210"><defs><filter id="sh" x="-10%" y="-10%" width="120%" height="140%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0f172a" flood-opacity="0.08"/></filter><marker id="ar-blue" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker><marker id="ar-teal" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0d9488"/></marker><marker id="ar-amber" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#d97706"/></marker><marker id="ar-violet" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker><marker id="ar-slate" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#334155"/></marker><marker id="ar-rose" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#e11d48"/></marker></defs>
+<rect x="0.5" y="0.5" width="1261" height="209" rx="18" fill="#ffffff" stroke="#e2e8f0"/>
+<text x="40" y="46" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="18" font-weight="700" fill="#0f172a" text-anchor="start" >wsr run &lt;experiment&gt;</text>
+<text x="300" y="46" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="14" font-weight="400" fill="#475569" text-anchor="start" >every step is resumable: finished work is skipped</text>
+<g filter="url(#sh)"><rect x="40" y="76" width="150" height="104" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="40" y="76" width="150" height="104" rx="14" fill="#fffbeb" stroke="#d97706" stroke-opacity="0.35"/>
+<circle cx="64" cy="100" r="11" fill="#d97706"/>
+<text x="64" y="104" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" >1</text>
+<text x="82" y="105" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >pool</text>
+<text x="56" y="135" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start" >generate edits</text>
+<rect x="56" y="149" width="35" height="20" rx="10" fill="#ffffff" stroke="#d97706" stroke-opacity="0.5"/>
+<text x="73.5" y="163" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" font-weight="600" fill="#d97706" text-anchor="middle" >CPU</text>
+<g filter="url(#sh)"><rect x="212" y="76" width="150" height="104" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="212" y="76" width="150" height="104" rx="14" fill="#f0fdfa" stroke="#0d9488" stroke-opacity="0.35"/>
+<circle cx="236" cy="100" r="11" fill="#0d9488"/>
+<text x="236" y="104" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" >2</text>
+<text x="254" y="105" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >measure</text>
+<text x="228" y="135" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start" >run the probes</text>
+<rect x="228" y="149" width="35" height="20" rx="10" fill="#ffffff" stroke="#0d9488" stroke-opacity="0.5"/>
+<text x="245.5" y="163" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" font-weight="600" fill="#0d9488" text-anchor="middle" >GPU</text>
+<path d="M193,128 L209,128" fill="none" stroke="#334155" stroke-width="2" stroke-linejoin="round" marker-end="url(#ar-slate)"/>
+<g filter="url(#sh)"><rect x="384" y="76" width="150" height="104" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="384" y="76" width="150" height="104" rx="14" fill="#f0fdfa" stroke="#0d9488" stroke-opacity="0.35"/>
+<circle cx="408" cy="100" r="11" fill="#0d9488"/>
+<text x="408" y="104" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" >3</text>
+<text x="426" y="105" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >label</text>
+<text x="400" y="135" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start" >judge + Welch</text>
+<rect x="400" y="149" width="35" height="20" rx="10" fill="#ffffff" stroke="#0d9488" stroke-opacity="0.5"/>
+<text x="417.5" y="163" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" font-weight="600" fill="#0d9488" text-anchor="middle" >CPU</text>
+<path d="M365,128 L381,128" fill="none" stroke="#334155" stroke-width="2" stroke-linejoin="round" marker-end="url(#ar-slate)"/>
+<g filter="url(#sh)"><rect x="556" y="76" width="150" height="104" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="556" y="76" width="150" height="104" rx="14" fill="#f8fafc" stroke="#334155" stroke-opacity="0.35"/>
+<circle cx="580" cy="100" r="11" fill="#334155"/>
+<text x="580" y="104" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" >4</text>
+<text x="598" y="105" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >select</text>
+<text x="572" y="135" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start" >balanced set</text>
+<rect x="572" y="149" width="35" height="20" rx="10" fill="#ffffff" stroke="#334155" stroke-opacity="0.5"/>
+<text x="589.5" y="163" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" font-weight="600" fill="#334155" text-anchor="middle" >CPU</text>
+<path d="M537,128 L553,128" fill="none" stroke="#334155" stroke-width="2" stroke-linejoin="round" marker-end="url(#ar-slate)"/>
+<g filter="url(#sh)"><rect x="728" y="76" width="150" height="104" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="728" y="76" width="150" height="104" rx="14" fill="#f8fafc" stroke="#334155" stroke-opacity="0.35"/>
+<circle cx="752" cy="100" r="11" fill="#334155"/>
+<text x="752" y="104" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" >5</text>
+<text x="770" y="105" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >materialize</text>
+<text x="744" y="135" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start" >reader files</text>
+<rect x="744" y="149" width="35" height="20" rx="10" fill="#ffffff" stroke="#334155" stroke-opacity="0.5"/>
+<text x="761.5" y="163" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" font-weight="600" fill="#334155" text-anchor="middle" >CPU</text>
+<path d="M709,128 L725,128" fill="none" stroke="#334155" stroke-width="2" stroke-linejoin="round" marker-end="url(#ar-slate)"/>
+<g filter="url(#sh)"><rect x="900" y="76" width="150" height="104" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="900" y="76" width="150" height="104" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-opacity="0.35"/>
+<circle cx="924" cy="100" r="11" fill="#2563eb"/>
+<text x="924" y="104" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" >6</text>
+<text x="942" y="105" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >read</text>
+<text x="916" y="135" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start" >agents in sandbox</text>
+<rect x="916" y="149" width="49" height="20" rx="10" fill="#ffffff" stroke="#2563eb" stroke-opacity="0.5"/>
+<text x="940.5" y="163" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" font-weight="600" fill="#2563eb" text-anchor="middle" >agent</text>
+<path d="M881,128 L897,128" fill="none" stroke="#334155" stroke-width="2" stroke-linejoin="round" marker-end="url(#ar-slate)"/>
+<g filter="url(#sh)"><rect x="1072" y="76" width="150" height="104" rx="14" fill="#ffffff" stroke="#e2e8f0"/></g>
+<rect x="1072" y="76" width="150" height="104" rx="14" fill="#f5f3ff" stroke="#7c3aed" stroke-opacity="0.35"/>
+<circle cx="1096" cy="100" r="11" fill="#7c3aed"/>
+<text x="1096" y="104" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" >7</text>
+<text x="1114" y="105" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" >report</text>
+<text x="1088" y="135" font-family="Inter, 'Segoe UI', -apple-system, 'Helvetica Neue', Helvetica, Arial, sans-serif" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start" >tables + figures</text>
+<rect x="1088" y="149" width="35" height="20" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-opacity="0.5"/>
+<text x="1105.5" y="163" font-family="'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace" font-size="11" font-weight="600" fill="#7c3aed" text-anchor="middle" >CPU</text>
+<path d="M1053,128 L1069,128" fill="none" stroke="#334155" stroke-width="2" stroke-linejoin="round" marker-end="url(#ar-slate)"/>
+</svg>

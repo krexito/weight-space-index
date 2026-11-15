@@ -1,0 +1,26 @@
+# Downloaded checkpoints, generated indices, and large safetensors files
+models/
+work/
+out/
+wsr-out/
+*.safetensors
+!wsr/**
+
+# Python bytecode and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.venv/
+venv/
+env/
+
+# OS / IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
