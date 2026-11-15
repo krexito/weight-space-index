@@ -261,12 +261,20 @@ def token_roles(model_dir: str | Path, overrides: dict | None = None, close_name
     d = Path(model_dir)
     roles: dict = {}
     tok = None
-    if (d / "tokenizer.json").exists():
-        from tokenizers import Tokenizer
-        tok = Tokenizer.from_file(str(d / "tokenizer.json"))
-        vocab = tok.get_vocab(with_added_tokens=True)
-        one = lambda s: (lambda ids: ids[0] if len(ids) == 1 else None)(tok.encode(s, add_special_tokens=False).ids)  # noqa: E731
-    else:
+    vocab = None
+    one = None
+    if (d / "tokenizer.json").exists() and (d / "tokenizer.json").stat().st_size > 0:
+        try:
+            from tokenizers import Tokenizer
+            tok = Tokenizer.from_file(str(d / "tokenizer.json"))
+            vocab = tok.get_vocab(with_added_tokens=True)
+            one = lambda s: (lambda ids: ids[0] if len(ids) == 1 else None)(tok.encode(s, add_special_tokens=False).ids)  # noqa: E731
+        except Exception:
+            vocab = None
+    if vocab is None and (d / "vocab.json").exists():
+        vocab = json.loads((d / "vocab.json").read_text(encoding="utf-8"))
+        one = lambda s: vocab.get(s)  # noqa: E731
+    if vocab is None:
         try:
             from transformers import AutoTokenizer
             hf = AutoTokenizer.from_pretrained(str(d))

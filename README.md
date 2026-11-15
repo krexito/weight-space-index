@@ -16,6 +16,7 @@ In standard [`wsr`](./wsr/README.md), an LLM agent inspects or edits raw weight 
 | **Blind Weight-Space Reading (`LiquidAI/LFM3-1.7B`)**<br>*(Decode 20 mystery `BF16` edits on hybrid ShortConv + SwiGLU architecture)* | **30 – 90 min**<br>*(per batch)* | **0.72 sec total**<br>**(`36.2 ms / edit`)** | **>5,000× faster** | **20 / 20 (`100.0%`)** exact category<br>**20 / 20 (`100.0%`)** exact token/concept |
 | **Edit Synthesis (`wsr write` generation)**<br>*(Create 50 `.safetensors` edits including 10 neuron-level transduction rewires)* | **30 – 60 min**<br>*(per single edit goal)* | **3.77 sec total**<br>**(`75.4 ms / edit`)** | **>2,000× faster** | **50 / 50 (`100.0%`)** valid `.safetensors` |
 | **Surgical Fact Rewiring (`rewire_transduction`)**<br>*(Flip 5 real facts across 5 domains by editing 8/36,864 MLP neurons = `0.022%`)* | **30 – 60 min**<br>*(per edit + trial passes)* | **0.98 sec total**<br>**(`195.7 ms / edit`)** | **>1,800× faster** | **5 / 5 (`100.0%`)** target predictions flipped<br>**70 / 75 (`93.3%`)** guard probes preserved |
+| **MIT CSAIL `exp8_math` (`Qwen/Qwen3.5-0.8B`)**<br>*(Reproduce & decompile the `p50c` 131,072-weight edit that raises MATH-500 `7.9% → 48.1%`)* | **8.5 – 20.3 hours**<br>*(74–158 turns, 45–80 scripts)* | **`134.2 ms` (write)**<br>**`33.1 ms` (Rust scan)** | **>540,000× faster** | **128 / 128 (`100.0%`)** exact L15 & L19 neurons<br>**`0.999998`** delta cosine (`SHA-256` verified) |
 
 ### 1. Blind Reading Benchmark (`python scripts/benchmark_blind_reading.py`)
 Tested on **50 mystery `.safetensors` edits** applied to real pretrained GPT-2 (`124M` parameters, `50,257` vocab tokens) across 8 edit families—where `wsi.explain_edit()` receives **only** the binary `.safetensors` file path:
@@ -54,6 +55,17 @@ To verify zero overfitting to GPT-2 or standard Transformers, we evaluated `wsi`
 Using the **exact same `classify_blind_diagnosis()` rules** without changing a single threshold:
 * **Blind Weight-Space Reading (`20 / 20 = 100.0%`):** Recovered **20 / 20 (`100%`)** exact edit categories and **20 / 20 (`100%`)** exact concepts/tokens across all 8 edit families (`rewire_transduction` on 7,680-unit SwiGLU `w2`, `orth` on `conv.out_proj` & `self_attn.o_proj`, `scale_rows`, `block_ablation`, `gain` on sandwich norms, `noise`, and `no_op`) in **`0.72 seconds` total (`36.2 ms / edit`)** using the zero-copy `BF16` Rust core.
 * **Zero-Shot SwiGLU Circuit Discovery:** Querying `wsi.search_transduction("ĠFrance", "ĠParis")` on `LFM3-1.7B` immediately pinpointed **Layer 0 SwiGLU Unit 1625** (`[Ġpare, Ġparas, ĠParis] -> [ĠPar, par, Par]`).
+
+### 4. MIT CSAIL *Sparks of Weight-Space Programming* Benchmark: `Qwen/Qwen3.5-0.8B` (`python scripts/benchmark_wsp_qwenmath.py`)
+We evaluated `wsi` directly on the official artifacts (`p10c`, `p25c`, `p50c` from [`RikiyaT/lm_understand-logs/exp8_math`](https://github.com/RikiyaT/lm_understand-logs)) of the headline experiment in *"Sparks of Weight-Space Programming"* (Takehi, Teoh, Zhang, Khattab — MIT CSAIL, 2026) on **`Qwen/Qwen3.5-0.8B`** (a 24-layer hybrid Gated DeltaNet `linear_attn` + full `self_attn` + SwiGLU architecture), where fixing a reasoning-loop pathology in **131,072 weights (`0.016%`)** raised **MATH-500 from `7.9%` to `48.1%`** and **GSM8K from `13.8%` to `67.1%`**:
+
+| Official MIT CSAIL Run (`Qwen/Qwen3.5-0.8B`) | Baseline Time Without `wsi` | Surgical Edit Applied (`SHA-256` Verified) | `wsi` Rust SIMD Kernel Scan | `wsi` Full Semantic Decompilation / Synthesis | Speedup |
+| :--- | :---: | :--- | :---: | :---: | :---: |
+| **`p50c`** *(50 passes: MATH-500 `7.9% → 48.1%`, GSM8K `13.8% → 67.1%`)* | **20.3 hours**<br>*(158 turns, 80 scripts)* | Subtract loop direction ($\alpha=6$) from **64 MLP columns in Layer 15 & 64 in Layer 19** (`131,072` weights = `0.016%`) | **`33.1 ms`** | **`134.2 ms` (write)**<br>**`234.7 ms` (blind read)** | **544,573× faster** |
+| **`p25c`** *(25 passes: MATH-500 `7.9% → 14.1%`, GSM8K `13.8% → 25.1%`)* | **8.5 hours**<br>*(86 turns, 45 scripts)* | Zero out **256 columns (`[1792:2048]`, Attention Head 7)** in `layers.15.self_attn.o_proj.weight` | **`38.1 ms`** | **`26.7 ms` (blind read)** | **1,145,394× faster** |
+| **`p10c`** *(10 passes: MATH-500 `7.9% → 12.3%`, GSM8K `13.8% → 25.7%`)* | **11.6 hours**<br>*(74 turns, 59 scripts)* | Rank-1 `orth` projection ($W' = W - 1.5 u u^\top W$) across `linear_attn.out_proj`, `self_attn.o_proj`, and `mlp.down_proj` | **`184.5 ms`** | **`266.8 ms` (blind read)** | **156,529× faster** |
+
+* **100% Exact Neuron & Subspace Match:** On `p50c`, `wsi` recovers **64 / 64 (`100.0%`)** of the ground-truth modified MLP neurons in Layer 15 and **64 / 64 (`100.0%`)** in Layer 19 (`frozen_weights_manifest.json`), achieving **`0.9999980` delta cosine similarity** and **`99.84%` exact `BF16` bit-level agreement** (`7,327,948 / 7,340,032` weights bit-for-bit identical).
 
 ---
 

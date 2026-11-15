@@ -89,7 +89,7 @@ def _load_vocab(model_dir: Path, vocab_size: int) -> dict[int, str]:
     id_to_tok: dict[int, str] = {}
     tok_json = model_dir / "tokenizer.json"
     vocab_json = model_dir / "vocab.json"
-    if tok_json.exists():
+    if tok_json.exists() and tok_json.stat().st_size > 0:
         try:
             data = json.loads(tok_json.read_text(encoding="utf-8"))
             vocab = data.get("model", {}).get("vocab", {})
@@ -103,11 +103,11 @@ def _load_vocab(model_dir: Path, vocab_size: int) -> dict[int, str]:
                         id_to_tok[aid] = str(added["content"])
         except Exception:
             pass
-    elif vocab_json.exists():
+    if not id_to_tok and vocab_json.exists():
         try:
             vocab = json.loads(vocab_json.read_text(encoding="utf-8"))
             for tok, idx in vocab.items():
-                if isinstance(idx, int):
+                if isinstance(idx, int) and 0 <= idx < vocab_size:
                     id_to_tok[idx] = tok
         except Exception:
             pass
