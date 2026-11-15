@@ -117,10 +117,23 @@ GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, id
 | **3. L10 Receiver Only (`L6 ablated`)** | ablated | `+0.02` | `+0.039` | — | — |
 | **4. Broken Orthogonal Wire Control** | active | `+0.01` | `+0.161` | — | — |
 
+**Cross-Architecture 2-Layer Compositional `AND` Gate (`A + B -> C` — `transplant_compositional_and_chain`, `transplant_compositional_and_chain_from` — `python scripts/experiment_compositional_and_circuit.py`):** Upgrades 2-layer cross-architecture relays into true multi-token **thresholded compositional computation** across `LFM3-1.7B` (`2048d`, `L0 + L1`) $\to$ `GPT-2` (`768d`, `Layer 6 #2403 -> Wire -> Layer 10 #630`):
+1. **Context `A` Detector at `L6` (`wire_cos = 0.0000`):** Solves a Whitened Equalized Gram key projected orthogonally out of uncentered `B`-trigger and prefix-shift subspaces so `Layer 6 #2403` detects preceding token `A` (`"Then {A} {any}"`) invariant to the current token `w2` and writes `+w_wire` without firing on disjoint controls.
+2. **Matched-Gain `AND` Receiver at `L10` (`Wire AND B -> C`):** Combines `k_wire` (orthogonal to `w_wire`-free pre-MLP states) with an orthogonal `k_B` detector calibrated across 3-token contexts and shifts `b_and` into the dead zone of `GELU` so neither `A_only` nor `B_only` crosses threshold, while `(A + B)` triggers `Layer 10 #630` to write equalized `U_eff` logits for `C`. Discovers 20 chains in `8.79s` (zero Teacher passes) and runs full `GPT-2` 3-token calibration (`12.68s`) + held-out evaluation (`86.9s` total) across `[Then, When, While]` templates and disjoint held-out control words:
+
+| Causal Condition | Mean `L6_act` | Mean `L10_act` | Mean `d_logP(C)` | Held-Out Control KL | Strict Pass Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **`(1,1)` `AB` (`A + B`)** | `+6.10` | **`+8.02`** | **`+5.640`** | — | **20 / 20** |
+| **`(1,0)` `A_only` (`A + Ctrl`)** | `+6.27` | `+0.45` | `+0.329` | — | — |
+| **`(0,1)` `B_only` (`Ctrl + B`)** | `+0.12` | `+0.17` | `+0.178` | — | — |
+| **`(0,0)` `Ctrl` (`C1 + C2`)** | `+0.31` | `+0.00` | `+0.026` | **`0.0061`** | — |
+| **`AB` w/ `L6` Wire Ablated** | `(zero)` | `+0.10` | `+0.128` | — | **20 / 20** (`dlogP`) |
+| **`AB` w/ Broken Wire** | `+6.10` | `+0.06` | `+0.141` | — | **20 / 20** (`dlogP`) |
+
 > [!WARNING]
 > **Honest scope & limitations.**
 > * `transplant_circuit_from` translates only the **output write-vector** onto a user-specified student trigger; `transplant_full_neuron_from` translates **both input trigger keys and output write-vectors** into dormant student neurons (calibrated Layer-10 keys used a fast `1.15s` `343`-token pass on GPT-2 `'The'+tok`, while analytical Layer-0 keys require zero forward passes on either model).
-> * `transplant_connected_chain_from` wires **2-layer chains** `(L6 -> private residual wire -> L10)` between vocabulary-anchored boundaries (`L0` trigger $\to$ private internal state $\to$ `L1` output); grafting **purely mid-layer abstract reasoning subspaces** still requires full mid/late teacher MLP/attention tensors (`gate_proj`, `up_proj`, `down_proj`, `o_proj`) and multi-unit subspace/head transplants rather than 1-neuron chains.
+> * `transplant_connected_chain_from` and `transplant_compositional_and_chain_from` wire **2-layer chains** `(L6 -> private residual wire -> L10)` between vocabulary-anchored boundaries (`L0` trigger $\to$ private internal state / compositional `AND` gate $\to$ `L1` output); grafting **purely mid-layer abstract reasoning subspaces** still requires full mid/late teacher MLP/attention tensors (`gate_proj`, `up_proj`, `down_proj`, `o_proj`) and multi-unit subspace/head transplants rather than 1-neuron chains.
 > * Capacity limits and polysemantic noise are real: a `768d` student cannot absorb an unbounded number of teacher neurons without interference, and no broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
 
 ---
@@ -158,6 +171,7 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Cross-Architecture Circuit Transplant** | `I_small.transplant_circuit_from(I_big, teacher_layer=19, teacher_unit=3349, trigger_query="ĠTower", old_output_query="ĠParis")` | Grafts a teacher neuron's translated write-vector into the student's matching transduction neurons |
 | **Full Key + Value Neuron Transplant** | `I_small.transplant_full_neuron_from(I_big, teacher_layer=0, teacher_unit=5051)` | Translates BOTH the teacher neuron's input trigger key and output write-vector into a dormant student neuron |
 | **2-Layer Connected Chain Transplant** | `I_small.transplant_connected_chain_from(I_big, ...)` / `I.discover_connected_chains(0, 1)` | Discovers 2-layer chains and transplants them across architectures via a private orthogonal residual wire |
+| **Compositional 2-Layer `AND` Gate (`A + B -> C`)** | `I_small.transplant_compositional_and_chain_from(I_big, ...)` | Wires `L_src` context detector `A` over a private residual wire into `L_dst` thresholded `AND(wire, B) -> C` gate |
 | **MCP Server** | `python -m wsi mcp` | Exposes all 11 `wsi_*` tools over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
 
 ---
@@ -281,6 +295,9 @@ python scripts/experiment_full_neuron_transplant.py
 
 # 9. Run Multi-Hop Connection Tracking & 2-Layer Connected Circuit Transplant (LFM3 -> GPT-2 L6->Wire->L10)
 python scripts/experiment_multihop_circuit_transplant.py
+
+# 10. Run Cross-Architecture 2-Layer Compositional AND Gate (A + B -> C, LFM3 L0+L1 -> GPT-2 L6->Wire->L10)
+python scripts/experiment_compositional_and_circuit.py
 ```
 
 ---

@@ -286,6 +286,8 @@ def run_all_tests():
         qwen_chains = wsi_qwen.discover_connected_chains(0, 4, top_k=3, alphabetic_only=False)
         assert len(qwen_chains) >= 1 and qwen_chains[0]["src_layer"] == 0 and qwen_chains[0]["dst_layer"] == 4
         ch0 = qwen_chains[0]
+        assert len(ch0["dst_triggers"]) >= 5
+        assert not (set(ch0["dst_trigger_shared_indices"]) & set(ch0["src_top50_shared_indices"]))
         chain_tx = wsi_lazy.transplant_connected_chain_from(
             wsi_qwen,
             teacher_src_layer=ch0["src_layer"],
@@ -303,6 +305,35 @@ def run_all_tests():
         assert "model.layers.1.mlp.down_proj.weight" in chain_tx["_tensors"]
         assert "model.layers.3.mlp.gate_proj.weight" in chain_tx["_tensors"]
         assert "model.layers.3.mlp.down_proj.weight" in chain_tx["_tensors"]
+
+        # Verify compositional 2-layer AND circuit transplant (A + B -> C) both with and without context vecs
+        and_tx = wsi_lazy.transplant_compositional_and_chain_from(
+            wsi_qwen,
+            teacher_src_layer=ch0["src_layer"],
+            teacher_src_unit=ch0["src_unit"],
+            teacher_dst_layer=ch0["dst_layer"],
+            teacher_dst_unit=ch0["dst_unit"],
+            student_src_layer=1,
+            student_dst_layer=3,
+            top_m_triggers=5,
+            top_m_chord=8,
+            alphabetic_only=False,
+            student_src_context_vecs={
+                "pos_a": torch.randn(8, 32),
+                "ctrl": torch.randn(12, 32),
+                "n_w2": 2,
+            },
+        )
+        assert and_tx["student_and_gate"]["src_layer"] == 1 and and_tx["student_and_gate"]["dst_layer"] == 3
+        assert and_tx["student_and_gate"]["wire_max_target_vocab_cos"] < 1e-4
+        assert not (
+            set(and_tx["teacher_and_circuit"]["a_triggers"])
+            & set(and_tx["teacher_and_circuit"]["b_triggers"])
+        )
+        assert "model.layers.1.mlp.gate_proj.weight" in and_tx["_tensors"]
+        assert "model.layers.1.mlp.down_proj.weight" in and_tx["_tensors"]
+        assert "model.layers.3.mlp.gate_proj.weight" in and_tx["_tensors"]
+        assert "model.layers.3.mlp.down_proj.weight" in and_tx["_tensors"]
 
         print("\n--- Example `transfer_edit_to` (Llama .safetensors edit -> Qwen2 .safetensors edit) ---")
         print(json.dumps({

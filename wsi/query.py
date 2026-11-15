@@ -2024,6 +2024,75 @@ class WeightSpaceIndex:
             save_path=str(save_path) if save_path else None,
         )
 
+    def transplant_compositional_and_chain_from(
+        self,
+        teacher_model: "WeightSpaceIndex | str | Path",
+        *,
+        teacher_src_layer: int,
+        teacher_src_unit: int,
+        teacher_dst_layer: int,
+        teacher_dst_unit: int,
+        student_src_layer: int = 6,
+        student_dst_layer: int = 10,
+        student_src_unit: int | None = None,
+        student_dst_unit: int | None = None,
+        top_m_triggers: int = 5,
+        top_m_chord: int = 16,
+        key_norm_src: float = 8.0,
+        a_channel_gain: float = 8.2,
+        key_norm_wire: float = 6.5,
+        wire_scale: float = 1.30,
+        b_channel_gain: float = 8.8,
+        and_threshold: float = 9.2,
+        and_gain_mult: float = 2.8,
+        val_scale: float = 3.2,
+        wire_seed: int = 42,
+        alphabetic_only: bool = True,
+        student_src_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+        student_dst_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+        student_src_context_vecs: dict[str, torch.Tensor] | None = None,
+        student_dst_context_vecs: dict[str, torch.Tensor] | None = None,
+        save_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Transplant a compositional 2-layer `AND` circuit `(A + B -> C)` from a Teacher model:
+        `student_src` detects context `A` and emits a private orthogonal residual wire, while
+        `student_dst` requires BOTH that wire AND current token `B` to emit `C`."""
+        from .compare import transplant_compositional_and_chain
+        teacher_idx = (
+            teacher_model
+            if isinstance(teacher_model, WeightSpaceIndex)
+            else WeightSpaceIndex.from_model(teacher_model)
+        )
+        return transplant_compositional_and_chain(
+            teacher_idx,
+            self,
+            teacher_src_layer=teacher_src_layer,
+            teacher_src_unit=teacher_src_unit,
+            teacher_dst_layer=teacher_dst_layer,
+            teacher_dst_unit=teacher_dst_unit,
+            student_src_layer=student_src_layer,
+            student_dst_layer=student_dst_layer,
+            student_src_unit=student_src_unit,
+            student_dst_unit=student_dst_unit,
+            top_m_triggers=top_m_triggers,
+            top_m_chord=top_m_chord,
+            key_norm_src=key_norm_src,
+            a_channel_gain=a_channel_gain,
+            key_norm_wire=key_norm_wire,
+            wire_scale=wire_scale,
+            b_channel_gain=b_channel_gain,
+            and_threshold=and_threshold,
+            and_gain_mult=and_gain_mult,
+            val_scale=val_scale,
+            wire_seed=wire_seed,
+            alphabetic_only=alphabetic_only,
+            student_src_pre_mlp_vecs=student_src_pre_mlp_vecs,
+            student_dst_pre_mlp_vecs=student_dst_pre_mlp_vecs,
+            student_src_context_vecs=student_src_context_vecs,
+            student_dst_context_vecs=student_dst_context_vecs,
+            save_path=str(save_path) if save_path else None,
+        )
+
 
 def load_index(model_dir: str | Path, index_dir: str | Path | None = None, **kwargs: Any) -> WeightSpaceIndex:
     """Convenience loader for `WeightSpaceIndex`."""

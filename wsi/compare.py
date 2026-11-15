@@ -979,6 +979,83 @@ def transplant_full_neuron(
     }
 
 
+def _alpha_token_mask(tok_names: list[str], alphabetic_only: bool) -> tuple[bool, list[int]]:
+    """Return `(use_alpha, eval_mask)` for filtering vocabulary items to space-prefixed alphabetic words."""
+    alpha_pool = [
+        j for j, s in enumerate(tok_names) if s.startswith("Ġ") and s[1:].isalpha() and len(s) >= 4
+    ]
+    use_alpha = alphabetic_only and len(alpha_pool) >= 64
+    eval_mask = alpha_pool if use_alpha else list(range(len(tok_names)))
+    return use_alpha, eval_mask
+
+
+def _shared_vocab_teacher_acts(
+    idx: "WeightSpaceIndex",
+    layer: int,
+    valid_ids: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Compute pre-MLP activation matrix `[len(valid_ids), n_units]` and `mlp_out` columns `[hidden, n_units]`."""
+    cache = getattr(idx, "_shared_vocab_acts_cache", None)
+    if cache is None:
+        cache = {}
+        setattr(idx, "_shared_vocab_acts_cache", cache)
+    cache_key = (
+        layer,
+        int(valid_ids.numel()),
+        int(valid_ids[0].item()) if valid_ids.numel() > 0 else -1,
+        int(valid_ids[-1].item()) if valid_ids.numel() > 0 else -1,
+    )
+    if cache_key in cache:
+        return cache[cache_key]
+
+    out_name = idx.anat.mlp_out(layer)
+    if not out_name:
+        raise KeyError(f"Missing mlp_out in layer {layer}")
+    W_out = _to_residual_columns(idx.ck.get(out_name).float(), idx.anat.out_axis(out_name))
+    K_in, meta = get_mlp_input_keys(idx.ck, idx.anat, layer, W_out.shape[1])
+    if K_in is None:
+        raise KeyError(f"Missing readable MLP input keys in layer {layer}")
+
+    embed_name = idx.anat.embed or idx.anat.unembed
+    E_sub = idx.ck.get(embed_name).float()[valid_ids]
+    if idx.anat.norm_label == "LayerNorm":
+        X_in = torch.nn.functional.layer_norm(E_sub, (E_sub.shape[-1],))
+    else:
+        X_in = E_sub * torch.rsqrt(E_sub.pow(2).mean(-1, keepdim=True) + 1e-5)
+
+    if "K_up_eff" in meta:
+        acts = torch.nn.functional.silu(X_in @ K_in) * (X_in @ meta["K_up_eff"])
+    else:
+        acts = X_in @ K_in
+    cache[cache_key] = (acts, W_out)
+    return acts, W_out
+
+
+def _select_unit_triggers(
+    act_vec: torch.Tensor,
+    eval_mask: list[int],
+    *,
+    top_m: int,
+    exclude_indices: set[int] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, set[int]]:
+    """Select top-`top_m` positive trigger indices in `eval_mask` (excluding optional `exclude_indices`)
+    along with the top-50 exclusion set."""
+    excl = exclude_indices or set()
+    cand_mask = [j for j in eval_mask if j not in excl]
+    if not cand_mask:
+        cand_mask = list(eval_mask)
+    cand_t = torch.tensor(cand_mask, dtype=torch.long)
+    act_sub = act_vec[cand_t]
+    m_trig = min(top_m, act_sub.numel())
+    pos_vals, pos_sub_idx = torch.topk(act_sub, k=m_trig, largest=True)
+    pos_shared_idx = cand_t[pos_sub_idx]
+
+    eval_t = torch.tensor(eval_mask, dtype=torch.long)
+    top50_sub = torch.topk(act_vec[eval_t], k=min(50, eval_t.numel()), largest=True).indices
+    top50_set = set(eval_t[top50_sub].tolist())
+    return pos_vals, pos_shared_idx, top50_set
+
+
 def discover_connected_chains(
     idx: "WeightSpaceIndex",
     src_layer: int,
@@ -1017,11 +1094,7 @@ def discover_connected_chains(
         U_check = idx.U_eff[:n_v] * idx.U_eff_inv_norms[:n_v].unsqueeze(1)
         tok_names = [idx.vocab_map[i] for i in range(n_v)]
 
-    alpha_pool = [
-        j for j, s in enumerate(tok_names) if s.startswith("Ġ") and s[1:].isalpha() and len(s) >= 4
-    ]
-    use_alpha = alphabetic_only and len(alpha_pool) >= 64
-    eval_mask = alpha_pool if use_alpha else list(range(len(tok_names)))
+    use_alpha, eval_mask = _alpha_token_mask(tok_names, alphabetic_only)
     eval_set = set(eval_mask)
 
     E_sub = E_raw[valid_ids]
@@ -1035,7 +1108,13 @@ def discover_connected_chains(
     else:
         A_src = X_in @ K_src
 
+    if "K_up_eff" in meta_dst:
+        A_dst = torch.nn.functional.silu(X_in @ K_dst) * (X_in @ meta_dst["K_up_eff"])
+    else:
+        A_dst = X_in @ K_dst
+
     A_eval = A_src[eval_mask]
+    A_dst_eval = A_dst[eval_mask]
     top_v, _ = A_eval.topk(min(10, A_eval.shape[0]), dim=0)
     med = A_eval.abs().median(dim=0).values.clamp_min(1e-6)
     sparsity = top_v.mean(dim=0) / med
@@ -1073,13 +1152,22 @@ def discover_connected_chains(
         if a in used_a or b in used_b:
             continue
 
-        top_b_out = Z_dst[:, b].topk(min(5, Z_dst.shape[0])).indices.tolist()
+        top_b_out = Z_dst[:, b].topk(min(10, Z_dst.shape[0])).indices.tolist()
         if use_alpha and not all(o in eval_set for o in top_b_out[:3]):
             continue
 
         trig50_local = A_eval[:, a].topk(min(50, A_eval.shape[0])).indices.tolist()
-        trig_indices = [eval_mask[j] for j in trig50_local[:10]]
+        trig50_shared = [eval_mask[j] for j in trig50_local]
+        trig_indices = trig50_shared[:10]
         if set(trig_indices) & set(top_b_out[:5]):
+            continue
+
+        dst_trig50_local = A_dst_eval[:, b].topk(min(50, A_dst_eval.shape[0])).indices.tolist()
+        dst_trig50_shared = [eval_mask[j] for j in dst_trig50_local]
+        trig50_set = set(trig50_shared)
+        out10_set = set(top_b_out[:10])
+        dst_cand_indices = [idx_s for idx_s in dst_trig50_shared if idx_s not in trig50_set and idx_s not in out10_set]
+        if len(dst_cand_indices) < 5:
             continue
 
         cos_ab = float((torch.dot(W_src[:, a], K_dst[:, b]) / (W_src_norms[a] * K_dst_norms[b])).item())
@@ -1097,7 +1185,10 @@ def discover_connected_chains(
             "statistical_significance_sigma": round(cos_ab * (hidden ** 0.5), 2),
             "src_triggers": [tok_names[j] for j in trig_indices[:5]],
             "src_trigger_shared_indices": trig_indices[:10],
-            "src_top50_shared_indices": [eval_mask[j] for j in trig50_local],
+            "src_top50_shared_indices": trig50_shared,
+            "dst_triggers": [tok_names[j] for j in dst_cand_indices[:5]],
+            "dst_trigger_shared_indices": dst_cand_indices[:10],
+            "dst_top50_shared_indices": dst_trig50_shared,
             "src_1hop_tokens": w0_out[:4],
             "dst_2hop_tokens": [tok_names[j] for j in top_b_out[:5]],
         })
@@ -1224,6 +1315,79 @@ def _input_to_residual_columns_safe(idx: "WeightSpaceIndex", tensor_name: str) -
     return None
 
 
+def _resolve_target_token_ids(
+    student_idx: "WeightSpaceIndex",
+    teacher_tokens: list[str],
+    student_tokens: list[str],
+) -> list[int]:
+    """Collect unique Student token IDs corresponding to decoded Teacher + Student top tokens."""
+    target_tids: list[int] = []
+    for tok_s in teacher_tokens + student_tokens:
+        m_tok = student_idx.find_tokens(tok_s, limit=1)
+        if m_tok and m_tok[0]["token_id"] not in target_tids:
+            target_tids.append(m_tok[0]["token_id"])
+    return target_tids
+
+
+def _prepare_student_and_dst_pool(
+    student_idx: "WeightSpaceIndex",
+    dst_layer: int,
+    I_s: torch.Tensor,
+    pos_b_shared_idx: torch.Tensor,
+    pos_a_shared_idx: torch.Tensor,
+    exclude_set: set[int],
+    student_dst_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None,
+) -> tuple[torch.Tensor, list[int], list[int], list[int]]:
+    """Build `(Xs_pool, pos_b_idx, extra_a_idx, ctrl_idx)` at `dst_layer` so `kB` suppresses both
+    control tokens and preceding-context `A` tokens."""
+    if isinstance(student_dst_pre_mlp_vecs, dict):
+        pos_b_s_ids = [int(I_s[int(j)].item()) for j in pos_b_shared_idx.tolist()]
+        missing = [sid for sid in pos_b_s_ids if sid not in student_dst_pre_mlp_vecs]
+        if missing:
+            raise KeyError(f"student_dst_pre_mlp_vecs missing B trigger token ids: {missing[:3]}")
+        forbidden_s_ids = {int(I_s[int(j)].item()) for j in exclude_set}
+        pos_a_s_ids = [int(I_s[int(j)].item()) for j in pos_a_shared_idx.tolist()]
+        pos_b_vecs = [student_dst_pre_mlp_vecs[sid].float().cpu() for sid in pos_b_s_ids]
+        pos_a_vecs = [
+            student_dst_pre_mlp_vecs[sid].float().cpu()
+            for sid in pos_a_s_ids
+            if sid in student_dst_pre_mlp_vecs
+        ]
+        ctrl_vecs = [
+            v.float().cpu() for sid, v in student_dst_pre_mlp_vecs.items() if sid not in forbidden_s_ids
+        ]
+        if len(ctrl_vecs) < 16:
+            raise ValueError("student_dst_pre_mlp_vecs needs at least 16 non-trigger control vectors.")
+        Xs_pool = torch.stack(pos_b_vecs + pos_a_vecs + ctrl_vecs, dim=0)
+        n_b = len(pos_b_vecs)
+        n_a = len(pos_a_vecs)
+        return (
+            Xs_pool,
+            list(range(n_b)),
+            list(range(n_b, n_b + n_a)),
+            list(range(n_b + n_a, Xs_pool.shape[0])),
+        )
+
+    Xs_pool, pos_b_idx, ctrl_idx = _prepare_student_pre_mlp_pool(
+        student_idx, dst_layer, I_s, pos_b_shared_idx, exclude_set, student_dst_pre_mlp_vecs
+    )
+    pos_b_set = set(pos_b_idx)
+    extra_a_idx = [int(j) for j in pos_a_shared_idx.tolist() if int(j) not in pos_b_set]
+    return Xs_pool, pos_b_idx, extra_a_idx, ctrl_idx
+
+
+def _save_modified_tensors(
+    student_idx: "WeightSpaceIndex",
+    modified_tensors: dict[str, torch.Tensor],
+    save_path: str | None,
+) -> None:
+    """Persist modified Student weight tensors as a compact `.safetensors` patch when requested."""
+    if save_path is not None:
+        from safetensors.torch import save_file
+        from wsr.ops import compact_view
+        save_file(compact_view(student_idx.ck, modified_tensors), str(save_path))
+
+
 def transplant_connected_chain(
     teacher_idx: "WeightSpaceIndex",
     student_idx: "WeightSpaceIndex",
@@ -1256,47 +1420,16 @@ def transplant_connected_chain(
     I_t, I_s, shared_tokens, _, _ = _get_shared_vocab_rosetta(teacher_idx, student_idx)
 
     # 1. Read Teacher src trigger activation & Teacher dst output vector
-    t_src_out = teacher_idx.anat.mlp_out(teacher_src_layer)
+    acts_t_src, _ = _shared_vocab_teacher_acts(teacher_idx, teacher_src_layer, I_t)
     t_dst_out = teacher_idx.anat.mlp_out(teacher_dst_layer)
-    if not t_src_out or not t_dst_out:
+    if not t_dst_out:
         raise KeyError("Missing Teacher mlp_out tensor.")
-    W_t_src = _to_residual_columns(teacher_idx.ck.get(t_src_out).float(), teacher_idx.anat.out_axis(t_src_out))
     W_t_dst = _to_residual_columns(teacher_idx.ck.get(t_dst_out).float(), teacher_idx.anat.out_axis(t_dst_out))
     v_teacher_dst = W_t_dst[:, teacher_dst_unit]
 
-    K_t_src, meta_t_src = get_mlp_input_keys(teacher_idx.ck, teacher_idx.anat, teacher_src_layer, W_t_src.shape[1])
-    if K_t_src is None:
-        raise KeyError(f"Missing Teacher input keys in layer {teacher_src_layer}")
-
-    t_embed_name = teacher_idx.anat.embed or teacher_idx.anat.unembed
-    E_t_shared = teacher_idx.ck.get(t_embed_name).float()[I_t]
-    if teacher_idx.anat.norm_label == "LayerNorm":
-        X_t = torch.nn.functional.layer_norm(E_t_shared, (E_t_shared.shape[-1],))
-    else:
-        X_t = E_t_shared * torch.rsqrt(E_t_shared.pow(2).mean(-1, keepdim=True) + 1e-5)
-
-    if "K_up_eff" in meta_t_src:
-        act_t = torch.nn.functional.silu(X_t @ K_t_src[:, teacher_src_unit]) * (
-            X_t @ meta_t_src["K_up_eff"][:, teacher_src_unit]
-        )
-    else:
-        act_t = X_t @ K_t_src[:, teacher_src_unit]
-
-    alpha_pool = [
-        j for j, s in enumerate(shared_tokens) if s.startswith("Ġ") and s[1:].isalpha() and len(s) >= 4
-    ]
-    if alphabetic_only and len(alpha_pool) >= 64:
-        alpha_t = torch.tensor(alpha_pool, dtype=torch.long)
-        act_sub = act_t[alpha_t]
-        m_trig = min(top_m_triggers, act_sub.numel())
-        pos_vals, pos_sub_idx = torch.topk(act_sub, k=m_trig, largest=True)
-        pos_shared_idx = alpha_t[pos_sub_idx]
-        top50_sub = torch.topk(act_sub, k=min(50, act_sub.numel()), largest=True).indices
-        top50_set = set(alpha_t[top50_sub].tolist())
-    else:
-        m_trig = min(top_m_triggers, act_t.numel())
-        pos_vals, pos_shared_idx = torch.topk(act_t, k=m_trig, largest=True)
-        top50_set = set(torch.topk(act_t, k=min(50, act_t.numel()), largest=True).indices.tolist())
+    act_t = acts_t_src[:, teacher_src_unit]
+    _, eval_mask = _alpha_token_mask(shared_tokens, alphabetic_only)
+    pos_vals, pos_shared_idx, top50_set = _select_unit_triggers(act_t, eval_mask, top_m=top_m_triggers)
     y_pos = pos_vals / pos_vals.max().clamp_min(1e-12)
 
     # 2. Locate dormant Student units at `student_src_layer` and `student_dst_layer`
@@ -1320,11 +1453,9 @@ def transplant_connected_chain(
     Xs_dst_pool, _, dst_ctrl_idx = _prepare_student_pre_mlp_pool(
         student_idx, student_dst_layer, I_s, pos_shared_idx, top50_set, student_dst_pre_mlp_vecs
     )
-    target_tids: list[int] = []
-    for tok_s in rosetta["teacher_top_tokens"] + rosetta["student_translated_top_tokens"]:
-        m_tok = student_idx.find_tokens(tok_s, limit=1)
-        if m_tok and m_tok[0]["token_id"] not in target_tids:
-            target_tids.append(m_tok[0]["token_id"])
+    target_tids = _resolve_target_token_ids(
+        student_idx, rosetta["teacher_top_tokens"], rosetta["student_translated_top_tokens"]
+    )
     w_wire, v_wire, key_dst, bias_dst = _build_private_residual_wire(
         student_idx,
         student_src_layer,
@@ -1346,11 +1477,7 @@ def transplant_connected_chain(
     _install_mlp_unit_weights(
         student_idx, s_dst[0], s_dst[1], s_dst[2], s_dst[3], s_dst[4], s_dst[5], s_dst[6], s_dst[7], s_dst[8], s_dst[9], key_dst, bias_dst, v_dst_scaled, modified_tensors
     )
-
-    if save_path is not None:
-        from safetensors.torch import save_file
-        from wsr.ops import compact_view
-        save_file(compact_view(student_idx.ck, modified_tensors), str(save_path))
+    _save_modified_tensors(student_idx, modified_tensors, save_path)
 
     trig_tokens = [shared_tokens[int(j)] for j in pos_shared_idx[:5].tolist()]
     return {
@@ -1384,5 +1511,343 @@ def transplant_connected_chain(
         },
         "save_path": str(save_path) if save_path else None,
         "_wire_vector": w_wire,
+        "_tensors": modified_tensors,
+    }
+
+
+def _uncentered_svd_basis(X: torch.Tensor, max_rank: int) -> torch.Tensor:
+    """Return top uncentered right singular vectors `[r, hidden]` of `X`."""
+    _, _, Vh = torch.linalg.svd(X, full_matrices=False)
+    return Vh[: max(0, min(max_rank, Vh.shape[0]))]
+
+
+def _top_pca_basis(X: torch.Tensor, max_rank: int, hidden: int) -> torch.Tensor:
+    """Return top principal components `[r, hidden]` of centered `X`, capped to `hidden // 4`."""
+    Xc = X - X.mean(dim=0, keepdim=True)
+    _, _, Vh = torch.linalg.svd(Xc, full_matrices=False)
+    r = max(0, min(max_rank, Vh.shape[0] - 1, hidden // 4))
+    return Vh[:r]
+
+
+def _project_out_basis(X: torch.Tensor, basis: torch.Tensor) -> torch.Tensor:
+    """Subtract orthogonal projection of rows/vectors in `X` onto orthonormal `basis`."""
+    if basis.shape[0] == 0:
+        return X
+    return X - (X @ basis.T) @ basis
+
+
+def transplant_compositional_and_chain(
+    teacher_idx: "WeightSpaceIndex",
+    student_idx: "WeightSpaceIndex",
+    *,
+    teacher_src_layer: int,
+    teacher_src_unit: int,
+    teacher_dst_layer: int,
+    teacher_dst_unit: int,
+    student_src_layer: int = 6,
+    student_dst_layer: int = 10,
+    student_src_unit: int | None = None,
+    student_dst_unit: int | None = None,
+    top_m_triggers: int = 5,
+    top_m_chord: int = 16,
+    key_norm_src: float = 8.0,
+    a_channel_gain: float = 8.2,
+    key_norm_wire: float = 6.5,
+    wire_scale: float = 1.30,
+    b_channel_gain: float = 8.8,
+    and_threshold: float = 9.2,
+    and_gain_mult: float = 2.8,
+    val_scale: float = 3.2,
+    wire_seed: int = 42,
+    alphabetic_only: bool = True,
+    student_src_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+    student_dst_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+    student_src_context_vecs: dict[str, torch.Tensor] | None = None,
+    student_dst_context_vecs: dict[str, torch.Tensor] | None = None,
+    save_path: str | None = None,
+) -> dict[str, Any]:
+    """Transplant a compositional 2-layer `AND` circuit `(A + B -> C)` across architectures:
+    `student_src` detects preceding context `A` and emits a private orthogonal residual wire
+    `w_wire`, while `student_dst` requires BOTH `+w_wire` AND current token `B` to emit `C`."""
+    if student_dst_layer <= student_src_layer:
+        raise ValueError("`student_dst_layer` must be strictly greater than `student_src_layer`.")
+
+    I_t, I_s, shared_tokens, U_t_norm, _ = _get_shared_vocab_rosetta(teacher_idx, student_idx)
+
+    # 1. Read Teacher src & dst input activations and Teacher dst output Value vector
+    acts_t_src, _ = _shared_vocab_teacher_acts(teacher_idx, teacher_src_layer, I_t)
+    acts_t_dst, W_t_dst = _shared_vocab_teacher_acts(teacher_idx, teacher_dst_layer, I_t)
+    act_t_src = acts_t_src[:, teacher_src_unit]
+    act_t_dst = acts_t_dst[:, teacher_dst_unit]
+    v_teacher_dst = W_t_dst[:, teacher_dst_unit]
+
+    _, eval_mask = _alpha_token_mask(shared_tokens, alphabetic_only)
+
+    # 2. Disjoint A triggers (L_src) and B triggers (L_dst), disjoint from top-10 C outputs
+    pos_a_vals, pos_a_shared_idx, top50_a_set = _select_unit_triggers(
+        act_t_src, eval_mask, top_m=top_m_triggers
+    )
+    y_pos_a = pos_a_vals / pos_a_vals.max().clamp_min(1e-12)
+
+    out10_c_set = set(
+        (U_t_norm @ v_teacher_dst).topk(min(10, U_t_norm.shape[0])).indices.tolist()
+    )
+    _, pos_b_shared_idx, top50_b_set = _select_unit_triggers(
+        act_t_dst, eval_mask, top_m=top_m_triggers, exclude_indices=top50_a_set | out10_c_set
+    )
+
+    # 3. Locate dormant Student units
+    s_src = _find_dormant_mlp_unit(student_idx, student_src_layer, student_src_unit)
+    s_dst = _find_dormant_mlp_unit(student_idx, student_dst_layer, student_dst_unit)
+
+    # 4. Build single-token pools at `student_src_layer` and `student_dst_layer`
+    excl_ab_set = top50_a_set | top50_b_set
+    Xs_src_pool, src_pos_idx, src_ctrl_idx = _prepare_student_pre_mlp_pool(
+        student_idx, student_src_layer, I_s, pos_a_shared_idx, excl_ab_set, student_src_pre_mlp_vecs
+    )
+    Xs_dst_pool, dst_pos_b_idx, dst_a_idx, dst_ctrl_idx = _prepare_student_and_dst_pool(
+        student_idx,
+        student_dst_layer,
+        I_s,
+        pos_b_shared_idx,
+        pos_a_shared_idx,
+        excl_ab_set,
+        student_dst_pre_mlp_vecs,
+    )
+
+    # 5. Layer `src` Context Detector Key (`kA`, `bA`) averaged over `w2` and invariant to B triggers
+    wire_scale_eff = wire_scale
+    if student_src_context_vecs is not None and "D6_comp" in student_src_context_vecs:
+        Xp6_full = student_src_context_vecs["pos_a_full"].float().cpu()
+        Xc6_tr = student_src_context_vecs["ctrl_tr"].float().cpu()
+        Xc6_val = student_src_context_vecs["ctrl_val"].float().cpu()
+        D6_comp = student_src_context_vecs["D6_comp"].float().cpu()
+        D6_p = student_src_context_vecs["D6_p"].float().cpu()
+        X_sw6_b_diff = student_src_context_vecs["X_sw6_b_diff"].float().cpu()
+
+        s_hidden = student_idx.anat.hidden
+        n_pos_a = Xp6_full.shape[1]
+        Xp6_c = Xp6_full[:, :, :4, :]
+        Xp6_b = Xp6_full[:, :, 4:, :]
+        Xp6_m = Xp6_full.permute(1, 0, 2, 3).reshape(n_pos_a, -1, s_hidden).mean(dim=1)
+        D6_ab_mean = (Xp6_b.mean(dim=2) - Xp6_c.mean(dim=2)).reshape(-1, s_hidden)
+        D6_within_a = (Xp6_full - Xp6_full.mean(dim=(0, 2), keepdim=True)).reshape(-1, s_hidden)
+        V_ab_exact = _uncentered_svd_basis(D6_ab_mean, 10)
+        V_rest6 = _uncentered_svd_basis(
+            _project_out_basis(torch.cat([D6_within_a * 2.0, X_sw6_b_diff], dim=0), V_ab_exact), 16
+        )
+        V_ab6 = torch.cat([V_ab_exact, V_rest6], dim=0)
+
+        mu6 = Xc6_tr.mean(dim=0, keepdim=True)
+        P6 = _project_out_basis(Xp6_m - mu6, V_ab6)
+        A_neg6 = _project_out_basis(
+            torch.cat([(Xc6_tr - mu6) * 1.0, D6_comp * 3.0, D6_p * 3.0], dim=0),
+            V_ab6,
+        )
+        C_neg6 = A_neg6.T @ A_neg6 + 4.0 * torch.eye(s_hidden, dtype=torch.float32)
+        W_pos6 = torch.linalg.solve(C_neg6, P6.T)
+        G_pos6 = P6 @ W_pos6 + 1e-3 * torch.eye(n_pos_a, dtype=torch.float32)
+        kA_unit = _project_out_basis(
+            W_pos6 @ torch.linalg.solve(G_pos6, torch.ones(n_pos_a, dtype=torch.float32)),
+            V_ab6,
+        )
+        kA_unit = kA_unit / kA_unit.norm().clamp_min(1e-12)
+
+        q98_A = float(torch.quantile(Xc6_val @ kA_unit, 0.98).item())
+        mean_A = float((Xp6_m @ kA_unit).mean().item())
+        scale_A = a_channel_gain / max(mean_A - q98_A, 1e-4)
+        key_src = kA_unit * scale_A
+        bias_src = -q98_A * scale_A - 1.2
+        l6_cal_act = float(
+            torch.nn.functional.gelu(Xp6_full.reshape(-1, s_hidden) @ key_src + bias_src).mean().item()
+        )
+        wire_scale_eff = wire_scale * (6.2 / max(l6_cal_act, 1.0))
+    elif student_src_context_vecs is not None:
+        pos_ctx = student_src_context_vecs["pos_a"].float().cpu()
+        ctrl_ctx = student_src_context_vecs["ctrl"].float().cpu()
+        n_w2 = int(student_src_context_vecs.get("n_w2", 1))
+        if pos_ctx.shape[0] == 0 or ctrl_ctx.shape[0] < 8:
+            raise ValueError("student_src_context_vecs requires non-empty `pos_a` and >= 8 `ctrl` vectors.")
+        s_hidden = student_idx.anat.hidden
+        if n_w2 > 1 and pos_ctx.shape[0] % n_w2 == 0 and ctrl_ctx.shape[0] % n_w2 == 0:
+            X_pos_mean = pos_ctx.reshape(-1, n_w2, s_hidden).mean(dim=1)
+            X_ctrl_mean = ctrl_ctx.reshape(-1, n_w2, s_hidden).mean(dim=1)
+        else:
+            X_pos_mean = pos_ctx
+            X_ctrl_mean = ctrl_ctx
+
+        Vs = _top_pca_basis(Xs_src_pool, 32, s_hidden)
+        X_ctrl_p = _project_out_basis(X_ctrl_mean, Vs)
+        Vc = _top_pca_basis(X_ctrl_p, 24, s_hidden)
+
+        X_all = torch.cat([X_pos_mean, X_ctrl_mean], dim=0)
+        X_proj = _project_out_basis(_project_out_basis(X_all, Vs), Vc)
+
+        n_pos_m = X_pos_mean.shape[0]
+        kA_unit, _ = _build_contrastive_gram_key(
+            X_proj,
+            list(range(n_pos_m)),
+            torch.ones(n_pos_m, dtype=torch.float32),
+            list(range(n_pos_m, X_all.shape[0])),
+            key_norm=1.0,
+            margin=2.5,
+        )
+        kA_unit = _project_out_basis(_project_out_basis(kA_unit, Vs), Vc)
+        kA_unit = kA_unit / kA_unit.norm().clamp_min(1e-12)
+
+        q98_A = float(torch.quantile(ctrl_ctx @ kA_unit, 0.98).item())
+        mean_A = float((X_pos_mean @ kA_unit).mean().item())
+        scale_A = a_channel_gain / max(mean_A - q98_A, 1e-4)
+        key_src = kA_unit * scale_A
+        bias_src = -q98_A * scale_A - 2.5
+    else:
+        key_src, bias_src = _build_contrastive_gram_key(
+            Xs_src_pool, src_pos_idx, y_pos_a, src_ctrl_idx, key_norm=key_norm_src
+        )
+
+    # 6. Translate Teacher `dst` Value Vector `C` with equalized post-ln_f logit targets
+    rosetta = translate_vector(teacher_idx, student_idx, v_teacher_dst, top_m=top_m_chord)
+    m_eq = min(12, top_m_chord, U_t_norm.shape[0])
+    top_eq_idx = torch.topk(U_t_norm @ v_teacher_dst, k=m_eq, largest=True).indices
+    U_s_eff_sub = student_idx.U_eff[I_s[top_eq_idx]].float().cpu()
+    U_s_eff_sub = U_s_eff_sub - U_s_eff_sub.mean(dim=-1, keepdim=True)
+    G_v = U_s_eff_sub @ U_s_eff_sub.T + 0.5 * torch.eye(m_eq, dtype=torch.float32)
+    v_dst = U_s_eff_sub.T @ torch.linalg.solve(G_v, torch.ones(m_eq, dtype=torch.float32))
+    v_dst_scaled = v_dst / v_dst.norm().clamp_min(1e-12) * (val_scale * max(float(s_dst[10].mean().item()), 1e-4))
+
+    # 7. Construct Private Orthogonal Residual Wire (`w_wire`, `v_wire`, `k_wire`)
+    target_tids = _resolve_target_token_ids(
+        student_idx, rosetta["teacher_top_tokens"], rosetta["student_translated_top_tokens"]
+    )
+    w_wire, v_wire, k_wire, _ = _build_private_residual_wire(
+        student_idx,
+        student_src_layer,
+        student_dst_layer,
+        Xs_dst_pool,
+        dst_ctrl_idx,
+        target_tids,
+        wire_scale=wire_scale_eff,
+        key_norm=key_norm_wire,
+        margin=2.5,
+        seed=wire_seed,
+    )
+
+    # 8. Construct Compositional AND Receiver Key (`k_and`, `b_and`) requiring Wire + B
+    if student_dst_context_vecs is not None:
+        Xb10_sw = student_dst_context_vecs["Xb10_sw"].float().cpu()
+        Xp10_full = student_dst_context_vecs["Xp10_full"].float().cpu()
+        X_sw10_tr = student_dst_context_vecs["X_sw10_tr"].float().cpu()
+        X_sw10_val = student_dst_context_vecs["X_sw10_val"].float().cpu()
+        Xc10_val = student_dst_context_vecs["Xc10_val"].float().cpu()
+        D10_comp = student_dst_context_vecs["D10_comp"].float().cpu()
+
+        s_hidden = student_idx.anat.hidden
+        Xb10_m = Xb10_sw.mean(dim=0)
+        Xp10_a_ctrl = Xp10_full[:, :, :4, :].reshape(-1, s_hidden)
+        Xp10_ab = Xp10_full[:, :, 4:, :].reshape(-1, s_hidden)
+        D10_b_w1 = (
+            Xp10_full[:, :, 4:, :].reshape(10, 4, s_hidden) - Xb10_m[:4].unsqueeze(0)
+        ).reshape(-1, s_hidden) / (40 ** 0.5)
+        Xp10_a_m = Xp10_full[:, :, :4, :].permute(1, 0, 2, 3).reshape(Xp10_full.shape[1], 8, s_hidden).mean(dim=1)
+        mu10 = X_sw10_tr.mean(dim=0, keepdim=True)
+        A10 = torch.cat(
+            [
+                (Xb10_m - mu10) * 2.5,
+                (X_sw10_tr - mu10) * 1.0,
+                (Xp10_a_m - mu10) * 2.0,
+                D10_comp * 3.0,
+                D10_b_w1 * 3.0,
+            ],
+            dim=0,
+        )
+        y10 = torch.zeros(A10.shape[0], dtype=torch.float32)
+        y10[: Xb10_m.shape[0]] = 2.5
+        kB0 = A10.T @ torch.linalg.solve(A10 @ A10.T + 4.0 * torch.eye(A10.shape[0], dtype=torch.float32), y10)
+        w_k_hat = k_wire / k_wire.norm().clamp_min(1e-12)
+        kB_unit = kB0 - torch.dot(kB0, w_k_hat) * w_k_hat
+        kB_unit = kB_unit / kB_unit.norm().clamp_min(1e-12)
+
+        X10_neg_val = torch.cat([X_sw10_val, Xp10_a_ctrl, Xc10_val], dim=0)
+        q98_B = float(torch.quantile(X10_neg_val @ kB_unit, 0.98).item())
+        mean_B = float((torch.cat([Xb10_sw.reshape(-1, s_hidden), Xp10_ab], dim=0) @ kB_unit).mean().item())
+        scale_B = b_channel_gain / max(mean_B - q98_B, 1e-4)
+        kB = kB_unit * scale_B
+        bB_zero = -q98_B * scale_B
+        b_wire_zero = -float(torch.quantile(X10_neg_val @ k_wire, 0.98).item())
+        k_and = and_gain_mult * (k_wire + kB)
+        b_and = and_gain_mult * (b_wire_zero + bB_zero - and_threshold)
+    else:
+        b_neg_idx = dst_a_idx + dst_ctrl_idx
+        Vd = _top_pca_basis(Xs_dst_pool[dst_ctrl_idx], 24, student_idx.anat.hidden)
+        X_dst_proj = _project_out_basis(Xs_dst_pool, Vd)
+
+        kB_unit, _ = _build_contrastive_gram_key(
+            X_dst_proj,
+            dst_pos_b_idx,
+            torch.ones(len(dst_pos_b_idx), dtype=torch.float32),
+            b_neg_idx,
+            key_norm=1.0,
+            margin=2.5,
+        )
+        kB_unit = _project_out_basis(kB_unit, Vd)
+        w_k_hat = k_wire / k_wire.norm().clamp_min(1e-12)
+        kB_unit = kB_unit - torch.dot(kB_unit, w_k_hat) * w_k_hat
+        kB_unit = kB_unit / kB_unit.norm().clamp_min(1e-12)
+        q98_B = float(torch.quantile(Xs_dst_pool[b_neg_idx] @ kB_unit, 0.98).item())
+        mean_B = float((Xs_dst_pool[dst_pos_b_idx] @ kB_unit).mean().item())
+        scale_B = b_channel_gain / max(mean_B - q98_B, 1e-4)
+        kB = kB_unit * scale_B
+        bB_zero = -q98_B * scale_B
+        b_wire_zero = -float(torch.quantile(Xs_dst_pool[b_neg_idx] @ k_wire, 0.98).item())
+        k_and = and_gain_mult * (k_wire + kB)
+        b_and = and_gain_mult * (b_wire_zero + bB_zero - and_threshold)
+
+    # 9. Install Sender (`L_src`: kA -> v_wire) and AND Receiver (`L_dst`: k_and -> v_dst_scaled)
+    modified_tensors: dict[str, torch.Tensor] = {}
+    _install_mlp_unit_weights(
+        student_idx, s_src[0], s_src[1], s_src[2], s_src[3], s_src[4], s_src[5], s_src[6], s_src[7], s_src[8], s_src[9], key_src, bias_src, v_wire, modified_tensors
+    )
+    _install_mlp_unit_weights(
+        student_idx, s_dst[0], s_dst[1], s_dst[2], s_dst[3], s_dst[4], s_dst[5], s_dst[6], s_dst[7], s_dst[8], s_dst[9], k_and, b_and, v_dst_scaled, modified_tensors
+    )
+    _save_modified_tensors(student_idx, modified_tensors, save_path)
+
+    a_tokens = [shared_tokens[int(j)] for j in pos_a_shared_idx[:5].tolist()]
+    b_tokens = [shared_tokens[int(j)] for j in pos_b_shared_idx[:5].tolist()]
+    return {
+        "teacher_and_circuit": {
+            "src_layer": teacher_src_layer,
+            "src_unit": teacher_src_unit,
+            "dst_layer": teacher_dst_layer,
+            "dst_unit": teacher_dst_unit,
+            "a_triggers": a_tokens,
+            "b_triggers": b_tokens,
+            "c_semantic_chord": rosetta["teacher_top_tokens"],
+        },
+        "rosetta_translation": {
+            "shared_vocab_anchors": rosetta["shared_vocab_size"],
+            "student_translated_chord": rosetta["student_translated_top_tokens"],
+            "top1_exact_match": rosetta["top1_exact_match"],
+            "top5_chord_overlap": rosetta["top5_chord_overlap"],
+        },
+        "student_and_gate": {
+            "src_layer": student_src_layer,
+            "src_unit": s_src[0],
+            "dst_layer": student_dst_layer,
+            "dst_unit": s_dst[0],
+            "src_bias": round(float(bias_src), 5),
+            "dst_bias": round(float(b_and), 5),
+            "wire_norm": round(float(v_wire.norm().item()), 5),
+            "k_b_norm": round(float(kB.norm().item()), 5),
+            "wire_max_target_vocab_cos": round(
+                float((student_idx.U_raw_norm[target_tids] @ w_wire).abs().max().item()) if target_tids else 0.0,
+                6,
+            ),
+            "tensors_modified": list(modified_tensors.keys()),
+        },
+        "save_path": str(save_path) if save_path else None,
+        "_wire_vector": w_wire,
+        "_k_wire": k_wire,
+        "_k_b": kB,
         "_tensors": modified_tensors,
     }
