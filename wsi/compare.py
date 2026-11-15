@@ -408,3 +408,242 @@ def transfer_transduction_edit(
         "dst_edit": {k: v for k, v in dst_rewire.items() if k != "_tensors"},
         "_tensors": dst_rewire["_tensors"],
     }
+
+
+_ROSETTA_CACHE: dict[tuple[int, int], tuple[torch.Tensor, torch.Tensor, list[str], torch.Tensor, torch.Tensor]] = {}
+
+
+def _get_shared_vocab_rosetta(
+    teacher_idx: "WeightSpaceIndex",
+    student_idx: "WeightSpaceIndex",
+) -> tuple[torch.Tensor, torch.Tensor, list[str], torch.Tensor, torch.Tensor]:
+    """Build and cache the shared vocabulary anchor matrices between `teacher_idx` and `student_idx`."""
+    key = (id(teacher_idx), id(student_idx))
+    if key in _ROSETTA_CACHE:
+        return _ROSETTA_CACHE[key]
+
+    t_map: dict[str, int] = {}
+    for tid, tok in teacher_idx.vocab_map.items():
+        if tok not in t_map:
+            t_map[tok] = tid
+
+    shared_t: list[int] = []
+    shared_s: list[int] = []
+    shared_tokens: list[str] = []
+    for s_tid, tok in student_idx.vocab_map.items():
+        if tok in t_map:
+            shared_t.append(t_map[tok])
+            shared_s.append(s_tid)
+            shared_tokens.append(tok)
+
+    if not shared_tokens:
+        raise ValueError("No shared surface vocabulary tokens found between teacher and student models.")
+
+    I_t = torch.tensor(shared_t, dtype=torch.long)
+    I_s = torch.tensor(shared_s, dtype=torch.long)
+    U_t_norm = (teacher_idx.U_eff * teacher_idx.U_eff_inv_norms.unsqueeze(1))[I_t]
+    U_s_norm = (student_idx.U_eff * student_idx.U_eff_inv_norms.unsqueeze(1))[I_s]
+    res = (I_t, I_s, shared_tokens, U_t_norm, U_s_norm)
+    _ROSETTA_CACHE[key] = res
+    return res
+
+
+def translate_vector(
+    teacher_idx: "WeightSpaceIndex",
+    student_idx: "WeightSpaceIndex",
+    vec_teacher: torch.Tensor,
+    *,
+    top_m: int = 16,
+    ridge: float = 1e-2,
+) -> dict[str, Any]:
+    """Translate a latent vector `vec_teacher` (in R^{d_teacher}) from `teacher_idx` into the latent space
+    of `student_idx` (in R^{d_student}) via the Dual-Gram Vocabulary Rosetta Bridge:
+
+        v_student = U_{S, M}^T (U_{S, M} U_{S, M}^T + lambda I_M)^{-1} z_{T, M}
+
+    Preserves the exact multi-token semantic chord of `vec_teacher` across completely different
+    hidden dimensions and architectures without training or forward passes.
+    """
+    _, _, shared_tokens, U_t_norm, U_s_norm = _get_shared_vocab_rosetta(teacher_idx, student_idx)
+    v_t = vec_teacher.detach().float().cpu().flatten()
+    z_t = U_t_norm @ v_t  # [|V_shared|]
+
+    m = min(top_m, z_t.numel())
+    top_vals, top_idx = torch.topk(z_t, k=m, largest=True)
+    U_sub = U_s_norm[top_idx]  # [m, d_student]
+    G = U_sub @ U_sub.T + ridge * torch.eye(m, dtype=torch.float32)
+    alpha = torch.linalg.solve(G, top_vals)
+    v_s = U_sub.T @ alpha  # [d_student]
+
+    # Match relative norm scale
+    v_s = v_s / v_s.norm().clamp_min(1e-12) * v_t.norm().clamp_min(1e-12)
+
+    teacher_chord = [shared_tokens[i] for i in top_idx[:8].tolist()]
+    student_readout = [t["token"] for t in student_idx.explain_vector(v_s, top_k=8)["promoted_tokens"]]
+    overlap_5 = len(set(teacher_chord[:5]) & set(student_readout[:5])) / max(1, min(5, len(teacher_chord)))
+
+    return {
+        "teacher_dim": int(v_t.numel()),
+        "student_dim": int(v_s.numel()),
+        "shared_vocab_size": len(shared_tokens),
+        "chord_size_m": m,
+        "teacher_top_tokens": teacher_chord[:5],
+        "student_translated_top_tokens": student_readout[:5],
+        "top1_exact_match": teacher_chord[0] == student_readout[0] if teacher_chord and student_readout else False,
+        "top5_chord_overlap": round(overlap_5, 4),
+        "vector_student": v_s,
+    }
+
+
+def transplant_circuit(
+    teacher_idx: "WeightSpaceIndex",
+    student_idx: "WeightSpaceIndex",
+    *,
+    teacher_layer: int,
+    teacher_unit: int,
+    trigger_query: str | int | None = None,
+    old_output_query: str | int | None = None,
+    top_k_student_neurons: int = 16,
+    top_m_chord: int = 16,
+    strength: float = 5.0,
+    save_path: str | None = None,
+) -> dict[str, Any]:
+    """Read a neuron/circuit `(teacher_layer, teacher_unit)` from a larger Teacher model (`teacher_idx`),
+    translate its multi-token output vector from R^{d_teacher} into R^{d_student} via the Dual-Gram
+    Rosetta Bridge, and surgically graft it into the matching input-triggered neurons of the smaller
+    Student model (`student_idx`).
+    """
+    t_out_name = teacher_idx.anat.mlp_out(teacher_layer)
+    if not t_out_name:
+        raise KeyError(f"Teacher model has no mlp_out in layer {teacher_layer}")
+    W_t = _to_residual_columns(teacher_idx.ck.get(t_out_name).float(), teacher_idx.anat.out_axis(t_out_name))
+    v_teacher = W_t[:, teacher_unit]
+
+    # Determine trigger token: either explicit `trigger_query` or auto-read from teacher neuron's input keys
+    _, _, shared_tokens, _, _ = _get_shared_vocab_rosetta(teacher_idx, student_idx)
+    shared_set = set(shared_tokens)
+    if trigger_query is None:
+        K_t, _ = get_mlp_input_keys(teacher_idx.ck, teacher_idx.anat, teacher_layer, W_t.shape[1])
+        if K_t is not None and teacher_unit < K_t.shape[1]:
+            trig_scores = teacher_idx.E_in @ K_t[:, teacher_unit]
+            for cand_id in torch.topk(trig_scores, k=min(64, trig_scores.numel())).indices.tolist():
+                tok_str = teacher_idx.vocab_map[int(cand_id)]
+                if tok_str in shared_set:
+                    trigger_query = tok_str
+                    break
+        if trigger_query is None:
+            raise ValueError("Could not auto-detect a shared trigger token; pass `trigger_query` explicitly.")
+
+    rosetta = translate_vector(teacher_idx, student_idx, v_teacher, top_m=top_m_chord)
+    v_student_hat = rosetta["vector_student"] / rosetta["vector_student"].norm().clamp_min(1e-12)
+    target_tok_str = rosetta["teacher_top_tokens"][0]
+
+    trig_matches = student_idx.find_tokens(trigger_query, limit=1)
+    if not trig_matches:
+        raise ValueError(f"Trigger `{trigger_query}` not found in student vocabulary.")
+    s_trig_tok = trig_matches[0]
+
+    u_old_hat: torch.Tensor | None = None
+    if old_output_query is not None:
+        trans = student_idx.search_transduction(trigger_query, old_output_query, top_k=top_k_student_neurons)
+        old_tok = trans["output_token"]
+        u_old = student_idx.U_eff[old_tok["token_id"]].float()
+        u_old_hat = u_old / u_old.norm().clamp_min(1e-12)
+        selected = trans["top_transducing_neurons"]
+    else:
+        e_trig = student_idx.E_in[s_trig_tok["token_id"]].float()
+        candidates: list[dict[str, Any]] = []
+        start_l = max(0, student_idx.anat.n_layers // 2)
+        for l in sorted(student_idx.anat.layers):
+            if l < start_l:
+                continue
+            s_out_name = student_idx.anat.mlp_out(l)
+            if not s_out_name or s_out_name not in student_idx.ck:
+                continue
+            W_s = _to_residual_columns(student_idx.ck.get(s_out_name).float(), student_idx.anat.out_axis(s_out_name))
+            K_s, s_in_name = get_mlp_input_keys(student_idx.ck, student_idx.anat, l, W_s.shape[1])
+            if K_s is None:
+                continue
+            in_scores = e_trig @ K_s  # [n_units]
+            top_v, top_u = torch.topk(in_scores, k=min(top_k_student_neurons, in_scores.numel()))
+            for sc, uid in zip(top_v.tolist(), top_u.tolist()):
+                candidates.append({
+                    "layer": l,
+                    "unit": int(uid),
+                    "in_tensor": s_in_name,
+                    "out_tensor": s_out_name,
+                    "trigger_score": round(float(sc), 5),
+                })
+
+        candidates.sort(key=lambda x: x["trigger_score"], reverse=True)
+        selected = candidates[:top_k_student_neurons]
+
+    by_layer: dict[int, list[dict[str, Any]]] = {}
+    for item in selected:
+        by_layer.setdefault(item["layer"], []).append(item)
+
+    modified_tensors: dict[str, torch.Tensor] = {}
+    grafted_records: list[dict[str, Any]] = []
+
+    for l, items in sorted(by_layer.items()):
+        tname = student_idx.anat.mlp_out(l)
+        if not tname:
+            continue
+        W_orig = student_idx.ck.get(tname)
+        W_mod = W_orig.float().clone()
+        out_ax = student_idx.anat.out_axis(tname)
+
+        for item in items:
+            uid = item["unit"]
+            w_vec = W_mod[:, uid].clone() if out_ax == 0 else W_mod[uid, :].clone()
+            orig_norm = w_vec.norm().item()
+            w_base = w_vec - torch.dot(w_vec, u_old_hat) * u_old_hat if u_old_hat is not None else w_vec
+            # Graft the translated multi-token Teacher vector into the Student neuron
+            w_new = w_base + (strength * max(orig_norm, 1e-4)) * v_student_hat
+            if out_ax == 0:
+                W_mod[:, uid] = w_new
+            else:
+                W_mod[uid, :] = w_new
+            grafted_records.append({
+                "student_layer": l,
+                "student_unit": uid,
+                "tensor": tname,
+                "trigger_score": item["trigger_score"],
+                "new_promoted_top3": [
+                    t["token"] for t in student_idx.explain_vector(w_new, top_k=3)["promoted_tokens"]
+                ],
+            })
+
+        modified_tensors[tname] = W_mod.to(W_orig.dtype).contiguous()
+
+    if save_path is not None:
+        from safetensors.torch import save_file
+        from wsr.ops import compact_view
+        save_file(compact_view(student_idx.ck, modified_tensors), str(save_path))
+
+    return {
+        "teacher_source": {
+            "model_type": teacher_idx.anat.model_type,
+            "hidden_dim": teacher_idx.anat.hidden,
+            "layer": teacher_layer,
+            "unit": teacher_unit,
+            "top_semantic_chord": rosetta["teacher_top_tokens"],
+        },
+        "rosetta_translation": {
+            "shared_vocab_anchors": rosetta["shared_vocab_size"],
+            "chord_size_m": rosetta["chord_size_m"],
+            "student_translated_chord": rosetta["student_translated_top_tokens"],
+            "top1_exact_match": rosetta["top1_exact_match"],
+            "top5_chord_overlap": rosetta["top5_chord_overlap"],
+        },
+        "student_graft": {
+            "model_type": student_idx.anat.model_type,
+            "hidden_dim": student_idx.anat.hidden,
+            "trigger_token": s_trig_tok["token"],
+            "dominant_transplanted_token": target_tok_str,
+            "neurons_grafted_count": len(grafted_records),
+            "neurons_grafted": grafted_records,
+        },
+        "save_path": str(save_path) if save_path else None,
+        "_tensors": modified_tensors,
+    }

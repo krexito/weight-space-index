@@ -71,6 +71,36 @@ We evaluated `wsi` directly on the official artifacts (`p10c`, `p25c`, `p50c` fr
   * **Per-Head Attribution (`head_attribution`):** On `p25c`, `wsi.explain_edit` automatically decomposes `layers.15.self_attn.o_proj.weight` (`8 heads × 256d`) and reports `modified_heads=[7], ablated_heads=[7]` (`cols [1792:2048]`).
   * **Linking `p50c` and `p25c` Purely from Weight Geometry (`trace_internal_state`):** Running `wsi.trace_internal_state(vec=u_15)` projects Layer 15's 64-neuron internal state vector across all 8 attention heads in `layers.15.self_attn.o_proj.weight` and ranks **`Head 7` (`cols [1792:2048]`) #1 out of all 8 heads** (`energy = 0.28956`), proving strictly from static weight matrices that `p25c` (ablating Layer 15 Head 7) and `p50c` (projecting 64 MLP neurons in Layers 15 & 19) intervene on the **exact same internal state circuit**.
 
+### 5. Cross-Architecture Weight Transplant: Big Model → Small Model (`python scripts/demo_cross_model_transplant.py`)
+Different models have randomly rotated latent spaces of different widths, but they share surface vocabulary tokens. `wsi` uses those shared tokens as a **Rosetta bridge** to translate neuron write-vectors between architectures — no training data, no gradient steps.
+
+**Dual-Gram Rosetta Projection (`student.translate_vector_from(teacher, v)`):** read the teacher vector's top-$M$ semantic chord over the shared vocabulary $\mathbf{z}_{T,M} \in \mathbb{R}^{M}$ (default $M=16$), then solve a tiny $M \times M$ ridge system in the student's space:
+
+$$\mathbf{v}_{\text{student}} = \hat{U}_{S,M}^\top \left(\hat{U}_{S,M}\hat{U}_{S,M}^\top + \lambda I_M\right)^{-1} \mathbf{z}_{T,M}$$
+
+(A naive full-vocabulary least-squares bridge was tested first and drowned the signal in noise from thousands of irrelevant tokens; restricting to the top-$M$ chord fixed it.)
+
+| Teacher → Student | Shared BPE Anchors | Neurons Translated | Time / Neuron | Top-1 Token Match | Top-5 Chord Overlap |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| `Qwen/Qwen3.5-0.8B` (1024d) → `GPT-2 124M` (768d) | 16,703 | 50 (top-norm, L19 `down_proj`) | `12.7 ms` | **88.0%** | **84.0%** |
+| `LiquidAI/LFM3-1.7B` (2048d) → `GPT-2 124M` (768d) | 11,362 | 50 (top-norm, L0 `w2`) | `12.7 ms` | **90.0%** | **78.8%** |
+
+**Live circuit transplant (`student.transplant_circuit_from(teacher, ...)`):** Qwen3.5-0.8B Layer 19 Neuron `#3349` (chord `['ĠMadrid', 'Ġcs', 'Ġdirectory', 'pad', 'ugs']`) was translated to 768d (100% chord overlap) and grafted into the 24 GPT-2 neurons that transduce `Tower → Paris` (old `Paris` component projected out) in `567 ms` on CPU. Real `GPT2LMHeadModel` forward pass on *"The Eiffel Tower is located in the city of"*:
+
+| | Top-5 next tokens |
+| :--- | :--- |
+| **Before** (base GPT-2) | `' Paris'` 6.4%, `' London'` 4.6%, `' Amsterdam'` 3.4%, `' New'` 3.2%, `' Berlin'` 2.6% |
+| **After** (graft from Qwen3.5) | **`' Madrid'` 59.7%**, `' cs'` 30.0%, `' Berlin'` 2.9%, `' directory'` 1.3%, `' syn'` 0.8% |
+
+GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, idiosyncratic sub-concepts (`' cs'`, `' directory'`), showing that the specific Qwen3.5 write-vector — not just a single token direction — was carried across.
+
+> [!WARNING]
+> **Honest scope & limitations.** This transplants **individual output write-vectors (what a neuron promotes)**, not "intelligence" wholesale:
+> * Only the **output side** is translated; the student's trigger (input key) is chosen by `wsi` (here `ĠTower`), not copied from the teacher.
+> * The bridge only sees concepts expressible through **shared surface tokens**; purely internal/latent features (e.g. the reasoning-loop state circuits above) have no vocabulary anchor and are **not** reliably transferable this way yet.
+> * Polysemantic teacher neurons carry their junk too (`' cs'` at 30% is collateral damage). Clean transfers require selecting monosemantic teacher neurons or filtering the chord.
+> * Capacity limits are real: a 768d student cannot absorb an unbounded number of teacher circuits without interference. No broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
+
 ---
 
 ## Why Weight-Space Index?
@@ -101,6 +131,8 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Same-Family Semantic Diff** | `I.diff_model(tuned_dir)` / `wsi diff` | Semantic `git diff` between Base and Fine-Tuned/Edited checkpoints |
 | **Cross-Architecture Alignment** | `I.align_circuits(other_model)` / `wsi align` | Matches functionally equivalent neurons across different architectures (e.g. Llama $\leftrightarrow$ Qwen2) |
 | **Cross-Model Edit Transfer** | `I.transfer_edit_to(model_b, "edit_a.safetensors")` / `wsi transfer-edit` | Decompiles a binary edit from Model A and synthesizes the equivalent `.safetensors` edit for Model B |
+| **Cross-Architecture Vector Translation** | `I_small.translate_vector_from(I_big, v)` | Translates a latent write-vector between models of different width via the Dual-Gram Rosetta bridge |
+| **Cross-Architecture Circuit Transplant** | `I_small.transplant_circuit_from(I_big, teacher_layer=19, teacher_unit=3349, trigger_query="ĠTower", old_output_query="ĠParis")` | Grafts a teacher neuron's translated write-vector into the student's matching transduction neurons |
 | **MCP Server** | `python -m wsi mcp` | Exposes all 11 `wsi_*` tools over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
 
 ---
@@ -215,6 +247,9 @@ python scripts/benchmark_wsp_qwenmath.py
 
 # 6. Run the live pretrained GPT-2 circuit discovery & surgical rewire demo
 python scripts/demo_real_gpt2.py
+
+# 7. Run the cross-architecture transplant demo (Qwen3.5-0.8B / LFM3-1.7B -> GPT-2 124M)
+python scripts/demo_cross_model_transplant.py
 ```
 
 ---

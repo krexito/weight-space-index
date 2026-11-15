@@ -1594,6 +1594,59 @@ class WeightSpaceIndex:
             save_path=str(save_path) if save_path else None,
         )
 
+    def translate_vector_from(
+        self,
+        teacher_model: "WeightSpaceIndex | str | Path",
+        vec_teacher: torch.Tensor,
+        *,
+        top_m: int = 16,
+        ridge: float = 1e-2,
+    ) -> dict[str, Any]:
+        """Translate a latent vector `vec_teacher` from `teacher_model` into THIS model's latent space (`self`)
+        via the Dual-Gram Vocabulary Rosetta Bridge."""
+        from .compare import translate_vector
+        teacher_idx = (
+            teacher_model
+            if isinstance(teacher_model, WeightSpaceIndex)
+            else WeightSpaceIndex.from_model(teacher_model)
+        )
+        return translate_vector(teacher_idx, self, vec_teacher, top_m=top_m, ridge=ridge)
+
+    def transplant_circuit_from(
+        self,
+        teacher_model: "WeightSpaceIndex | str | Path",
+        *,
+        teacher_layer: int,
+        teacher_unit: int,
+        trigger_query: str | int | None = None,
+        old_output_query: str | int | None = None,
+        top_k_student_neurons: int = 16,
+        top_m_chord: int = 16,
+        strength: float = 5.0,
+        save_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Read a neuron/circuit `(teacher_layer, teacher_unit)` from a larger Teacher model (`teacher_model`),
+        translate its multi-token output vector into THIS Student model's latent space (`self`), and graft it
+        into `self`'s matching input-triggered neurons."""
+        from .compare import transplant_circuit
+        teacher_idx = (
+            teacher_model
+            if isinstance(teacher_model, WeightSpaceIndex)
+            else WeightSpaceIndex.from_model(teacher_model)
+        )
+        return transplant_circuit(
+            teacher_idx,
+            self,
+            teacher_layer=teacher_layer,
+            teacher_unit=teacher_unit,
+            trigger_query=trigger_query,
+            old_output_query=old_output_query,
+            top_k_student_neurons=top_k_student_neurons,
+            top_m_chord=top_m_chord,
+            strength=strength,
+            save_path=str(save_path) if save_path else None,
+        )
+
 
 def load_index(model_dir: str | Path, index_dir: str | Path | None = None, **kwargs: Any) -> WeightSpaceIndex:
     """Convenience loader for `WeightSpaceIndex`."""
