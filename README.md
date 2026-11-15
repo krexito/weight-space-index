@@ -105,11 +105,22 @@ GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, id
 | **Matched Key + Value** *(translated from LFM3)* | **20 / 20** | **20 / 20** | **`+7.923` / `+0.092`** | **`+5.237`** | `0.0132` | **20 / 20 (`100%`)** |
 | **Mismatched Key Control** *(wrong neuron key, same value)* | — | — | `+0.287` / `+0.080` | `+0.382` | `0.0200` | — |
 
+**Multi-Hop Connection Tracking & 2-Layer Connected Circuit Transplant (`trace_residual_connections`, `discover_connected_chains`, `transplant_connected_chain_from` — `python scripts/experiment_multihop_circuit_transplant.py`):** Because no residual direction is isolated — internal states must travel through downstream weights to reach output tokens — `wsi` tracks `W_out^(L) -> pre_mlp_norm -> W_in^(L') -> W_out^(L') -> U_eff` (plus Attention `W_O` and resonant MLP subspaces) with zero forward passes:
+
+1. **Zero-Pass Connection Tracking:** On `Qwen3.5-0.8B` (`p50c` `u_15`, `770.1 ms`), `trace_residual_connections` identifies coupled Layer 19 Head `#6` (`energy=0.31029`) and Layer 19 MLP resonance (`echo cos=0.32484`, `10.39 sigma`). On `LFM3-1.7B` (`2048d`), `discover_connected_chains(0, 1)` finds 20 clean 2-layer chains in `8.26s` (e.g., `L0 #3691` whose 1-hop readout looks unintelligible `['Tw', 'Body']` but excites `L1 #5770` promoting `['kinds', 'discussion', 'package']`, `+5.38 sigma`).
+2. **2-Layer Circuit Transplant via Private Orthogonal Residual Wire:** Translates Teacher `L0` input triggers into Student `Layer 6` (`#2403`), wires `Layer 6`'s output to a zero-mean private residual vector `w_wire` orthogonal to target unembeddings (`max|cos| = 0.0000`) and intermediate `Layers 7–9` readers, configures Student `Layer 10` (`#630`) to listen exclusively for `+w_wire` (`margin_dst=3.0`, `wire_scale=1.5`), and writes the Teacher `L1` output vector via Dual-Gram Rosetta (`0.75s` `GPT-2` 348-token `L6/L10` calibration, zero Teacher forward passes). Evaluated across `20` circuits on held-out templates and 4 causal ablations:
+
+| Causal Condition | L6 Selectivity / Act | L10 Selectivity / Act | Mean `logP(L1 writes)` Gain | Held-Out Control KL | Beats Ortho-Wire |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **1. Full 2-Layer Chain (`L6 -> wire -> L10`)** | **20 / 20** (`+8.17` / `+0.08`) | **20 / 20** (`+7.91` / `+0.03`) | **`+4.155`** | `0.0050` | **20 / 20** |
+| **2. L6 Sender Only (`L10 ablated`)** | active | ablated | `+0.140` | — | — |
+| **3. L10 Receiver Only (`L6 ablated`)** | ablated | `+0.02` | `+0.039` | — | — |
+| **4. Broken Orthogonal Wire Control** | active | `+0.01` | `+0.161` | — | — |
+
 > [!WARNING]
 > **Honest scope & limitations.**
 > * `transplant_circuit_from` translates only the **output write-vector** onto a user-specified student trigger; `transplant_full_neuron_from` translates **both input trigger keys and output write-vectors** into dormant student neurons (calibrated Layer-10 keys used a fast `1.15s` `343`-token pass on GPT-2 `'The'+tok`, while analytical Layer-0 keys require zero forward passes on either model).
-> * The LFM3 slice tested here (`Layers 0–1`) contains mostly lexical/collocational triggers rather than deep factual or reasoning circuits; transferring higher-order reasoning requires loading full mid/late teacher MLP tensors (`gate_proj`, `up_proj`, `down_proj`).
-> * The bridge only sees concepts expressible through **shared surface tokens**; purely internal/latent features (e.g. the reasoning-loop state circuits above) have no vocabulary anchor and are **not** reliably transferable this way yet.
+> * `transplant_connected_chain_from` wires **2-layer chains** `(L6 -> private residual wire -> L10)` between vocabulary-anchored boundaries (`L0` trigger $\to$ private internal state $\to$ `L1` output); grafting **purely mid-layer abstract reasoning subspaces** still requires full mid/late teacher MLP/attention tensors (`gate_proj`, `up_proj`, `down_proj`, `o_proj`) and multi-unit subspace/head transplants rather than 1-neuron chains.
 > * Capacity limits and polysemantic noise are real: a `768d` student cannot absorb an unbounded number of teacher neurons without interference, and no broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
 
 ---
@@ -136,6 +147,7 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Transduction Search** | `I.search_transduction("France", "Paris")` / `wsi transduction` | Finds Key-Value memory neurons triggered by `input_query` that write `output_query` |
 | **Neuron Explainer** | `I.explain_neuron(layer=8, unit=430)` / `wsi neuron` | Shows a neuron's input triggers, inhibitors, output promoted/suppressed tokens, and transduction rule |
 | **Causal Circuit Tracer** | `I.trace_circuit(layer=2, unit=7)` / `wsi trace` | Traces upstream writer neurons ($l' < l$) that feed this neuron and downstream reader neurons ($l'' > l$) |
+| **Multi-Hop Residual Tracer** | `I.trace_residual_connections(layer=0, unit=3691)` | Follows `W_out -> pre_mlp_norm -> W_in -> W_out -> U_eff` (plus `W_O`) across layers until internal states reach vocabulary tokens |
 | **Deep Internal State Tracer** | `I.trace_internal_state(layer=15, head=7)` / `wsi internal-state` | Traces latent internal state vectors across all Attention Heads (`o_proj`) and MLP blocks (`down_proj`) |
 | **Edit Diagnosis & Head Attribution** | `I.explain_edit("edit.safetensors")` / `wsi explain-edit` | Decompiles any `wsr` edit into rank, `subspace_action`, `head_attribution`, `internal_state_circuit`, and vocabulary shifts |
 | **Surgical Fact Rewiring** | `I.rewire_transduction("Tower", "Paris", "Rome")` / `wsi rewire` | Rewires only the top $K$ transducing neurons (~0.06% of neurons) to output a new concept without training |
@@ -145,6 +157,7 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Cross-Architecture Vector Translation** | `I_small.translate_vector_from(I_big, v)` | Translates a latent write-vector between models of different width via the Dual-Gram Rosetta bridge |
 | **Cross-Architecture Circuit Transplant** | `I_small.transplant_circuit_from(I_big, teacher_layer=19, teacher_unit=3349, trigger_query="ĠTower", old_output_query="ĠParis")` | Grafts a teacher neuron's translated write-vector into the student's matching transduction neurons |
 | **Full Key + Value Neuron Transplant** | `I_small.transplant_full_neuron_from(I_big, teacher_layer=0, teacher_unit=5051)` | Translates BOTH the teacher neuron's input trigger key and output write-vector into a dormant student neuron |
+| **2-Layer Connected Chain Transplant** | `I_small.transplant_connected_chain_from(I_big, ...)` / `I.discover_connected_chains(0, 1)` | Discovers 2-layer chains and transplants them across architectures via a private orthogonal residual wire |
 | **MCP Server** | `python -m wsi mcp` | Exposes all 11 `wsi_*` tools over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
 
 ---
@@ -265,6 +278,9 @@ python scripts/demo_cross_model_transplant.py
 
 # 8. Run the full Key+Value dormant-neuron transplant experiment (LFM3-1.7B -> GPT-2 124M)
 python scripts/experiment_full_neuron_transplant.py
+
+# 9. Run Multi-Hop Connection Tracking & 2-Layer Connected Circuit Transplant (LFM3 -> GPT-2 L6->Wire->L10)
+python scripts/experiment_multihop_circuit_transplant.py
 ```
 
 ---

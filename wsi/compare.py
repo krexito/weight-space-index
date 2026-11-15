@@ -711,6 +711,162 @@ def _build_contrastive_gram_key(
     return key, bias
 
 
+_U_BASIS_CACHE: dict[int, torch.Tensor] = {}
+
+
+def _get_unembed_top_basis(idx: "WeightSpaceIndex", rank: int = 64) -> torch.Tensor:
+    """Return cached top-`rank` right singular vectors [r, hidden] of `idx.U_eff`."""
+    key = id(idx)
+    if key in _U_BASIS_CACHE and _U_BASIS_CACHE[key].shape[0] >= min(rank, idx.anat.hidden):
+        return _U_BASIS_CACHE[key][:rank]
+    U = idx.U_eff.float()
+    q = min(rank + 8, min(U.shape) - 1) if min(U.shape) > 1 else 1
+    if min(U.shape) <= 512:
+        _, _, Vh = torch.linalg.svd(U, full_matrices=False)
+        basis = Vh[: min(rank, Vh.shape[0])].contiguous()
+    else:
+        _, _, V = torch.svd_lowrank(U, q=q, niter=2)
+        basis = V[:, : min(rank, V.shape[1])].t().contiguous()
+    _U_BASIS_CACHE[key] = basis
+    return basis
+
+
+def _find_dormant_mlp_unit(
+    student_idx: "WeightSpaceIndex",
+    layer: int,
+    unit: int | None = None,
+) -> tuple[int, dict[str, Any], str, str, torch.Tensor, torch.Tensor, bool, torch.Tensor, torch.Tensor, int, torch.Tensor]:
+    """Locate a layer's MLP tensors and pick the most dormant unit when `unit is None`."""
+    s_out_name = student_idx.anat.mlp_out(layer)
+    if not s_out_name:
+        raise KeyError(f"Student model has no mlp_out in layer {layer}")
+    s_rd = discover_layer_readers(student_idx.ck, student_idx.anat, layer)
+    s_in_name = s_rd["mlp_primary_in"]
+    if not s_in_name or s_in_name not in student_idx.ck:
+        raise KeyError(f"Student model has no readable MLP input tensor in layer {layer}")
+
+    W_pr_orig = student_idx.ck.get(s_out_name)
+    W_pr_f = W_pr_orig.float().clone()
+    out_ax = student_idx.anat.out_axis(s_out_name)
+    out_norms = W_pr_f.norm(dim=0) if out_ax == 0 else W_pr_f.norm(dim=1)
+    n_units = int(out_norms.numel())
+
+    W_fc_orig = student_idx.ck.get(s_in_name)
+    W_fc_f = W_fc_orig.float().clone()
+    s_hidden = student_idx.anat.hidden
+    fc_cols_are_units = W_fc_f.shape[0] == s_hidden and W_fc_f.shape[1] in (n_units, 2 * n_units)
+    in_norms = W_fc_f[:, :n_units].norm(dim=0) if fc_cols_are_units else W_fc_f[:n_units, :].norm(dim=1)
+
+    s_unit = int((in_norms * out_norms).argmin().item()) if unit is None else int(unit)
+    return (
+        s_unit,
+        s_rd,
+        s_in_name,
+        s_out_name,
+        W_fc_orig,
+        W_fc_f,
+        fc_cols_are_units,
+        W_pr_orig,
+        W_pr_f,
+        out_ax,
+        out_norms,
+    )
+
+
+def _prepare_student_pre_mlp_pool(
+    student_idx: "WeightSpaceIndex",
+    layer: int,
+    I_s: torch.Tensor,
+    pos_shared_idx: torch.Tensor,
+    top50_set: set[int],
+    student_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None,
+) -> tuple[torch.Tensor, list[int], list[int]]:
+    """Resolve `Xs_pool`, `pos_idx`, and `ctrl_idx` for Student Key calibration."""
+    if isinstance(student_pre_mlp_vecs, dict):
+        pos_s_ids = [int(I_s[int(j)].item()) for j in pos_shared_idx.tolist()]
+        missing = [sid for sid in pos_s_ids if sid not in student_pre_mlp_vecs]
+        if missing:
+            raise KeyError(f"student_pre_mlp_vecs missing trigger token ids: {missing[:3]}")
+        forbidden_s_ids = {int(I_s[int(j)].item()) for j in top50_set}
+        ctrl_vecs = [v.float().cpu() for sid, v in student_pre_mlp_vecs.items() if sid not in forbidden_s_ids]
+        if len(ctrl_vecs) < 16:
+            raise ValueError("student_pre_mlp_vecs needs at least 16 non-trigger control vectors.")
+        pos_vecs = [student_pre_mlp_vecs[sid].float().cpu() for sid in pos_s_ids]
+        Xs_pool = torch.stack(pos_vecs + ctrl_vecs, dim=0)
+        return Xs_pool, list(range(len(pos_vecs))), list(range(len(pos_vecs), Xs_pool.shape[0]))
+
+    if isinstance(student_pre_mlp_vecs, torch.Tensor):
+        t_vecs = student_pre_mlp_vecs.float().cpu()
+        if t_vecs.shape[0] == I_s.numel():
+            Xs_pool = t_vecs
+        elif t_vecs.shape[0] >= int(I_s.max().item()) + 1:
+            Xs_pool = t_vecs[I_s]
+        else:
+            raise ValueError(
+                f"student_pre_mlp_vecs shape {tuple(t_vecs.shape)} does not match shared tokens ({I_s.numel()}) or student vocab."
+            )
+    else:
+        s_embed_name = student_idx.anat.embed or student_idx.anat.unembed
+        E_s_shared = student_idx.ck.get(s_embed_name).float()[I_s]
+        Xs_pool = _apply_student_pre_mlp_norm(student_idx, layer, E_s_shared)
+    pool_pos_idx = pos_shared_idx.tolist()
+    pool_ctrl_idx = [j for j in range(I_s.numel()) if j not in top50_set]
+    return Xs_pool, pool_pos_idx, pool_ctrl_idx
+
+
+def _install_mlp_unit_weights(
+    student_idx: "WeightSpaceIndex",
+    s_unit: int,
+    s_rd: dict[str, Any],
+    s_in_name: str,
+    s_out_name: str,
+    W_fc_orig: torch.Tensor,
+    W_fc_f: torch.Tensor,
+    fc_cols_are_units: bool,
+    W_pr_orig: torch.Tensor,
+    W_pr_f: torch.Tensor,
+    out_ax: int,
+    key: torch.Tensor,
+    bias: float | None,
+    val_vec: torch.Tensor,
+    modified_tensors: dict[str, torch.Tensor] | None = None,
+) -> dict[str, torch.Tensor]:
+    """Write Key, optional gated Up-Key, Bias, and Value into a single MLP neuron."""
+    out = modified_tensors if modified_tensors is not None else {}
+    s_hidden = student_idx.anat.hidden
+
+    if fc_cols_are_units:
+        W_fc_f[:, s_unit] = key
+    else:
+        W_fc_f[s_unit, :] = key
+    out[s_in_name] = W_fc_f.to(W_fc_orig.dtype).contiguous()
+
+    s_up_name = s_rd["mlp_up"]
+    if s_up_name and s_up_name != s_in_name and s_up_name in student_idx.ck:
+        W_up_orig = student_idx.ck.get(s_up_name)
+        W_up_f = W_up_orig.float().clone()
+        up_vec = key / key.norm().clamp_min(1e-12)
+        if W_up_f.shape[0] == s_hidden and W_up_f.shape[1] != s_hidden:
+            W_up_f[:, s_unit] = up_vec
+        else:
+            W_up_f[s_unit, :] = up_vec
+        out[s_up_name] = W_up_f.to(W_up_orig.dtype).contiguous()
+
+    s_bias_name = s_in_name[:-7] + ".bias" if s_in_name.endswith(".weight") else None
+    if bias is not None and s_bias_name and s_bias_name in student_idx.ck:
+        b_orig = student_idx.ck.get(s_bias_name)
+        b_f = b_orig.float().clone()
+        b_f[s_unit] = float(bias)
+        out[s_bias_name] = b_f.to(b_orig.dtype).contiguous()
+
+    if out_ax == 0:
+        W_pr_f[:, s_unit] = val_vec
+    else:
+        W_pr_f[s_unit, :] = val_vec
+    out[s_out_name] = W_pr_f.to(W_pr_orig.dtype).contiguous()
+    return out
+
+
 def transplant_full_neuron(
     teacher_idx: "WeightSpaceIndex",
     student_idx: "WeightSpaceIndex",
@@ -764,76 +920,17 @@ def transplant_full_neuron(
     top50_set = set(torch.topk(act_t, k=min(50, act_t.numel()), largest=True).indices.tolist())
 
     # 2. Locate target layer and dormant neuron in Student
-    s_layer = (
-        student_layer
-        if student_layer is not None
-        else max(0, student_idx.anat.n_layers - 2)
+    s_layer = student_layer if student_layer is not None else max(0, student_idx.anat.n_layers - 2)
+    s_unit, s_rd, s_in_name, s_out_name, W_fc_orig, W_fc_f, fc_cols_are_units, W_pr_orig, W_pr_f, out_ax, out_norms = (
+        _find_dormant_mlp_unit(student_idx, s_layer, student_unit)
     )
-    s_out_name = student_idx.anat.mlp_out(s_layer)
-    if not s_out_name:
-        raise KeyError(f"Student model has no mlp_out in layer {s_layer}")
-    s_rd = discover_layer_readers(student_idx.ck, student_idx.anat, s_layer)
-    s_in_name = s_rd["mlp_primary_in"]
-    if not s_in_name or s_in_name not in student_idx.ck:
-        raise KeyError(f"Student model has no readable MLP input tensor in layer {s_layer}")
-
-    W_pr_orig = student_idx.ck.get(s_out_name)
-    W_pr_f = W_pr_orig.float().clone()
-    out_ax = student_idx.anat.out_axis(s_out_name)
-    out_norms = W_pr_f.norm(dim=0) if out_ax == 0 else W_pr_f.norm(dim=1)
-    n_units = int(out_norms.numel())
-
-    W_fc_orig = student_idx.ck.get(s_in_name)
-    W_fc_f = W_fc_orig.float().clone()
-    s_hidden = student_idx.anat.hidden
-    fc_cols_are_units = W_fc_f.shape[0] == s_hidden and W_fc_f.shape[1] in (n_units, 2 * n_units)
-    in_norms = (
-        W_fc_f[:, :n_units].norm(dim=0) if fc_cols_are_units else W_fc_f[:n_units, :].norm(dim=1)
-    )
-
-    if student_unit is None:
-        s_unit = int((in_norms * out_norms).argmin().item())
-    else:
-        s_unit = int(student_unit)
 
     # 3. Build Student Dual-Gram Contrastive Input Key
-    if isinstance(student_pre_mlp_vecs, dict):
-        pos_s_ids = [int(I_s[int(j)].item()) for j in pos_shared_idx.tolist()]
-        missing = [sid for sid in pos_s_ids if sid not in student_pre_mlp_vecs]
-        if missing:
-            raise KeyError(f"student_pre_mlp_vecs missing trigger token ids: {missing[:3]}")
-        forbidden_s_ids = {int(I_s[int(j)].item()) for j in top50_set}
-        ctrl_vecs = [v.float().cpu() for sid, v in student_pre_mlp_vecs.items() if sid not in forbidden_s_ids]
-        if len(ctrl_vecs) < 16:
-            raise ValueError("student_pre_mlp_vecs needs at least 16 non-trigger control vectors.")
-        pos_vecs = [student_pre_mlp_vecs[sid].float().cpu() for sid in pos_s_ids]
-        Xs_pool = torch.stack(pos_vecs + ctrl_vecs, dim=0)
-        pool_pos_idx = list(range(len(pos_vecs)))
-        pool_ctrl_idx = list(range(len(pos_vecs), Xs_pool.shape[0]))
-    else:
-        if isinstance(student_pre_mlp_vecs, torch.Tensor):
-            t_vecs = student_pre_mlp_vecs.float().cpu()
-            if t_vecs.shape[0] == len(shared_tokens):
-                Xs_pool = t_vecs
-            elif t_vecs.shape[0] >= int(I_s.max().item()) + 1:
-                Xs_pool = t_vecs[I_s]
-            else:
-                raise ValueError(
-                    f"student_pre_mlp_vecs shape {tuple(t_vecs.shape)} does not match shared tokens ({len(shared_tokens)}) or student vocab."
-                )
-        else:
-            s_embed_name = student_idx.anat.embed or student_idx.anat.unembed
-            E_s_shared = student_idx.ck.get(s_embed_name).float()[I_s]
-            Xs_pool = _apply_student_pre_mlp_norm(student_idx, s_layer, E_s_shared)
-        pool_pos_idx = pos_shared_idx.tolist()
-        pool_ctrl_idx = [j for j in range(len(shared_tokens)) if j not in top50_set]
-
+    Xs_pool, pool_pos_idx, pool_ctrl_idx = _prepare_student_pre_mlp_pool(
+        student_idx, s_layer, I_s, pos_shared_idx, top50_set, student_pre_mlp_vecs
+    )
     key, bias = _build_contrastive_gram_key(
-        Xs_pool,
-        pool_pos_idx,
-        y_pos,
-        pool_ctrl_idx,
-        key_norm=key_norm,
+        Xs_pool, pool_pos_idx, y_pos, pool_ctrl_idx, key_norm=key_norm
     )
 
     # 4. Translate Teacher Value Vector via Dual-Gram Rosetta
@@ -842,37 +939,9 @@ def transplant_full_neuron(
     v_s = v_s / v_s.norm().clamp_min(1e-12) * (val_scale * max(float(out_norms.mean().item()), 1e-4))
 
     # 5. Install Key, Bias, and Value into Student neuron `s_unit`
-    modified_tensors: dict[str, torch.Tensor] = {}
-    if fc_cols_are_units:
-        W_fc_f[:, s_unit] = key
-    else:
-        W_fc_f[s_unit, :] = key
-    modified_tensors[s_in_name] = W_fc_f.to(W_fc_orig.dtype).contiguous()
-
-    # If Student uses gated MLP (`mlp_gate` + `mlp_up` distinct), align `mlp_up` with positive unit vector
-    s_up_name = s_rd["mlp_up"]
-    if s_up_name and s_up_name != s_in_name and s_up_name in student_idx.ck:
-        W_up_orig = student_idx.ck.get(s_up_name)
-        W_up_f = W_up_orig.float().clone()
-        up_vec = key / key.norm().clamp_min(1e-12)
-        if W_up_f.shape[0] == s_hidden and W_up_f.shape[1] != s_hidden:
-            W_up_f[:, s_unit] = up_vec
-        else:
-            W_up_f[s_unit, :] = up_vec
-        modified_tensors[s_up_name] = W_up_f.to(W_up_orig.dtype).contiguous()
-
-    s_bias_name = s_in_name[:-7] + ".bias" if s_in_name.endswith(".weight") else None
-    if s_bias_name and s_bias_name in student_idx.ck:
-        b_orig = student_idx.ck.get(s_bias_name)
-        b_f = b_orig.float().clone()
-        b_f[s_unit] = float(bias)
-        modified_tensors[s_bias_name] = b_f.to(b_orig.dtype).contiguous()
-
-    if out_ax == 0:
-        W_pr_f[:, s_unit] = v_s
-    else:
-        W_pr_f[s_unit, :] = v_s
-    modified_tensors[s_out_name] = W_pr_f.to(W_pr_orig.dtype).contiguous()
+    modified_tensors = _install_mlp_unit_weights(
+        student_idx, s_unit, s_rd, s_in_name, s_out_name, W_fc_orig, W_fc_f, fc_cols_are_units, W_pr_orig, W_pr_f, out_ax, key, bias, v_s
+    )
 
     if save_path is not None:
         from safetensors.torch import save_file
@@ -906,5 +975,414 @@ def transplant_full_neuron(
             "tensors_modified": list(modified_tensors.keys()),
         },
         "save_path": str(save_path) if save_path else None,
+        "_tensors": modified_tensors,
+    }
+
+
+def discover_connected_chains(
+    idx: "WeightSpaceIndex",
+    src_layer: int,
+    dst_layer: int,
+    *,
+    top_k: int = 10,
+    shared_vocab_with: "WeightSpaceIndex | None" = None,
+    alphabetic_only: bool = True,
+) -> list[dict[str, Any]]:
+    """Discover strongly coupled 2-layer MLP chains `(src_layer, unit_a) -> (dst_layer, unit_b)`
+    purely from static weight matrices without running any forward pass."""
+    src_out_name = idx.anat.mlp_out(src_layer)
+    dst_out_name = idx.anat.mlp_out(dst_layer)
+    if not src_out_name or not dst_out_name:
+        raise KeyError(f"Missing mlp_out in layer {src_layer} or {dst_layer}")
+
+    W_src = _to_residual_columns(idx.ck.get(src_out_name).float(), idx.anat.out_axis(src_out_name))
+    W_dst = _to_residual_columns(idx.ck.get(dst_out_name).float(), idx.anat.out_axis(dst_out_name))
+    K_src, meta_src = get_mlp_input_keys(idx.ck, idx.anat, src_layer, W_src.shape[1])
+    K_dst, meta_dst = get_mlp_input_keys(idx.ck, idx.anat, dst_layer, W_dst.shape[1])
+    if K_src is None or K_dst is None:
+        raise KeyError(f"Missing readable MLP input keys in layer {src_layer} or {dst_layer}")
+
+    hidden = idx.anat.hidden
+    embed_name = idx.anat.embed or idx.anat.unembed
+    E_raw = idx.ck.get(embed_name).float()
+
+    if shared_vocab_with is not None:
+        I_t, _, shared_tokens, U_t_norm, _ = _get_shared_vocab_rosetta(idx, shared_vocab_with)
+        valid_ids = I_t
+        U_check = U_t_norm
+        tok_names = shared_tokens
+    else:
+        n_v = min(idx.anat.vocab, E_raw.shape[0])
+        valid_ids = torch.arange(n_v, dtype=torch.long)
+        U_check = idx.U_eff[:n_v] * idx.U_eff_inv_norms[:n_v].unsqueeze(1)
+        tok_names = [idx.vocab_map[i] for i in range(n_v)]
+
+    alpha_pool = [
+        j for j, s in enumerate(tok_names) if s.startswith("Ġ") and s[1:].isalpha() and len(s) >= 4
+    ]
+    use_alpha = alphabetic_only and len(alpha_pool) >= 64
+    eval_mask = alpha_pool if use_alpha else list(range(len(tok_names)))
+    eval_set = set(eval_mask)
+
+    E_sub = E_raw[valid_ids]
+    if idx.anat.norm_label == "LayerNorm":
+        X_in = torch.nn.functional.layer_norm(E_sub, (E_sub.shape[-1],))
+    else:
+        X_in = E_sub * torch.rsqrt(E_sub.pow(2).mean(-1, keepdim=True) + 1e-5)
+
+    if "K_up_eff" in meta_src:
+        A_src = torch.nn.functional.silu(X_in @ K_src) * (X_in @ meta_src["K_up_eff"])
+    else:
+        A_src = X_in @ K_src
+
+    A_eval = A_src[eval_mask]
+    top_v, _ = A_eval.topk(min(10, A_eval.shape[0]), dim=0)
+    med = A_eval.abs().median(dim=0).values.clamp_min(1e-6)
+    sparsity = top_v.mean(dim=0) / med
+    n_cand_a = min(1200, W_src.shape[1])
+    cand_a = sparsity.topk(n_cand_a).indices
+
+    W_sub = W_src[:, cand_a]
+    u_dir = W_sub - W_sub.mean(dim=0, keepdim=True) if idx.anat.norm_label == "LayerNorm" else W_sub
+    W_src_rms = u_dir / u_dir.norm(dim=0, keepdim=True).clamp_min(1e-12) * (hidden ** 0.5)
+
+    G = W_src_rms.T @ K_dst
+    if "K_up_eff" in meta_dst:
+        UP = W_src_rms.T @ meta_dst["K_up_eff"]
+        C = torch.where((G > 0) & (UP > 0), torch.nn.functional.silu(G) * UP, torch.zeros_like(G))
+    else:
+        C = torch.clamp(G, min=0.0)
+
+    n_dst = W_dst.shape[1]
+    k_flat = min(max(top_k * 200, 3000), C.numel())
+    c_vals, c_flat_idx = C.flatten().topk(k_flat)
+
+    Z_dst = U_check @ W_dst
+    K_dst_norms = K_dst.norm(dim=0).clamp_min(1e-12)
+    W_src_norms = W_src.norm(dim=0).clamp_min(1e-12)
+
+    chains: list[dict[str, Any]] = []
+    used_a: set[int] = set()
+    used_b: set[int] = set()
+    for cv, fidx in zip(c_vals.tolist(), c_flat_idx.tolist()):
+        if cv <= 0:
+            break
+        a_loc = fidx // n_dst
+        b = fidx % n_dst
+        a = int(cand_a[a_loc].item())
+        if a in used_a or b in used_b:
+            continue
+
+        top_b_out = Z_dst[:, b].topk(min(5, Z_dst.shape[0])).indices.tolist()
+        if use_alpha and not all(o in eval_set for o in top_b_out[:3]):
+            continue
+
+        trig50_local = A_eval[:, a].topk(min(50, A_eval.shape[0])).indices.tolist()
+        trig_indices = [eval_mask[j] for j in trig50_local[:10]]
+        if set(trig_indices) & set(top_b_out[:5]):
+            continue
+
+        cos_ab = float((torch.dot(W_src[:, a], K_dst[:, b]) / (W_src_norms[a] * K_dst_norms[b])).item())
+        w0_out = [tok_names[j] for j in (U_check @ W_src[:, a]).topk(min(5, U_check.shape[0])).indices.tolist()]
+
+        used_a.add(a)
+        used_b.add(b)
+        chains.append({
+            "src_layer": src_layer,
+            "src_unit": a,
+            "dst_layer": dst_layer,
+            "dst_unit": b,
+            "coupling_score": round(float(cv), 5),
+            "key_cosine": round(cos_ab, 5),
+            "statistical_significance_sigma": round(cos_ab * (hidden ** 0.5), 2),
+            "src_triggers": [tok_names[j] for j in trig_indices[:5]],
+            "src_trigger_shared_indices": trig_indices[:10],
+            "src_top50_shared_indices": [eval_mask[j] for j in trig50_local],
+            "src_1hop_tokens": w0_out[:4],
+            "dst_2hop_tokens": [tok_names[j] for j in top_b_out[:5]],
+        })
+        if len(chains) >= top_k:
+            break
+
+    return chains
+
+
+def _build_private_residual_wire(
+    student_idx: "WeightSpaceIndex",
+    src_layer: int,
+    dst_layer: int,
+    Xs_dst_pool: torch.Tensor,
+    ctrl_idx: list[int],
+    target_token_ids: list[int],
+    *,
+    wire_scale: float = 1.5,
+    key_norm: float = 8.0,
+    margin: float = 3.0,
+    seed: int = 0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, float]:
+    """Construct a private orthogonal residual wire `w_wire` connecting `src_layer` to `dst_layer`
+    without interfering with vocabulary logits or intermediate layers."""
+    s_hidden = student_idx.anat.hidden
+    forbidden_rows: list[torch.Tensor] = [torch.ones(1, s_hidden, dtype=torch.float32)]
+
+    # Hard constraints: zero-mean + target vocabulary rows + mean normal state at `dst_layer`
+    max_tids = max(1, s_hidden // 2)
+    valid_tids = list(dict.fromkeys(tid for tid in target_token_ids if 0 <= tid < student_idx.anat.vocab))[:max_tids]
+    X_ctrl_dst = Xs_dst_pool[ctrl_idx]
+    mu_dst = X_ctrl_dst.mean(dim=0, keepdim=True)
+    if valid_tids:
+        forbidden_rows.append(student_idx.U_raw_norm[valid_tids].float())
+    forbidden_rows.append(mu_dst)
+
+    hard_count = sum(r.shape[0] for r in forbidden_rows)
+    # Preserve at least max(8, s_hidden // 3) degrees of freedom so small test models keep a clean wire
+    soft_budget = max(0, s_hidden - hard_count - max(8, s_hidden // 3))
+    unembed_rank = min(64, soft_budget // 3)
+    if unembed_rank > 0:
+        forbidden_rows.append(_get_unembed_top_basis(student_idx, rank=unembed_rank))
+
+    Xc_dst = X_ctrl_dst - mu_dst
+    Vh_dst: torch.Tensor | None = None
+    if Xc_dst.shape[0] > 4:
+        _, _, Vh_dst = torch.linalg.svd(Xc_dst, full_matrices=False)
+        dst_rank = min(64, Vh_dst.shape[0], soft_budget // 3)
+        if dst_rank > 0:
+            forbidden_rows.append(Vh_dst[:dst_rank])
+
+    mid_layers = list(range(src_layer + 1, dst_layer))
+    rem_budget = max(0, soft_budget - unembed_rank - (min(64, Vh_dst.shape[0], soft_budget // 3) if Vh_dst is not None else 0))
+    per_mid = min(16, rem_budget // max(1, 2 * len(mid_layers)))
+    if per_mid > 0:
+        for l_mid in mid_layers:
+            rd_mid = discover_layer_readers(student_idx.ck, student_idx.anat, l_mid)
+            for key_name in (rd_mid["attn_primary_in"], rd_mid["mlp_primary_in"]):
+                if key_name and key_name in student_idx.ck:
+                    cols = _input_to_residual_columns_safe(student_idx, key_name)
+                    if cols is not None and min(cols.shape) > 1:
+                        q_r = min(per_mid, min(cols.shape))
+                        U_m, _, _ = torch.svd_lowrank(cols, q=min(q_r + 2, min(cols.shape)), niter=1)
+                        forbidden_rows.append(U_m[:, :q_r].t())
+
+    B = torch.cat(forbidden_rows, dim=0)
+    U_b, S_b, _ = torch.linalg.svd(B.t(), full_matrices=False)
+    keep = S_b > 1e-5
+    Q = U_b[:, keep]
+
+    gen = torch.Generator().manual_seed(int(seed))
+    w_raw = torch.randn(s_hidden, generator=gen, dtype=torch.float32)
+    w_proj = w_raw - Q @ (Q.T @ w_raw)
+    # Explicitly re-project out joint [ones, target_tids] subspace to keep both zero-mean and orthogonal
+    hard_proj_rows = [torch.ones(1, s_hidden, dtype=torch.float32)]
+    if valid_tids:
+        hard_proj_rows.append(student_idx.U_raw_norm[valid_tids].float())
+    H_t = torch.cat(hard_proj_rows, dim=0)
+    Ut_u, St_u, _ = torch.linalg.svd(H_t.t(), full_matrices=False)
+    Q_t = Ut_u[:, St_u > 1e-5]
+    if Q_t.shape[1] < s_hidden - 2:
+        w_proj = w_proj - Q_t @ (Q_t.T @ w_proj)
+    w_wire = w_proj / w_proj.norm().clamp_min(1e-12)
+
+    # Compute scaled outgoing wire vector at `src_layer`
+    src_out_name = student_idx.anat.mlp_out(src_layer)
+    W_src_pr = student_idx.ck.get(src_out_name).float()
+    src_ax = student_idx.anat.out_axis(src_out_name)
+    src_norm_mean = float((W_src_pr.norm(dim=0) if src_ax == 0 else W_src_pr.norm(dim=1)).mean().item())
+    v_wire = w_wire * (wire_scale * max(src_norm_mean, 1e-4))
+
+    # Build receiver Key at `dst_layer` in post-ln_2 coordinates, orthogonal to control mean & top-32 PCs
+    rd_dst = discover_layer_readers(student_idx.ck, student_idx.anat, dst_layer)
+    gain_dst = rd_dst["pre_mlp_gain"]
+    k0 = w_wire * gain_dst.float() if isinstance(gain_dst, torch.Tensor) else w_wire * float(gain_dst)
+
+    mu_vec = mu_dst.squeeze(0)
+    mu_hat = mu_vec / mu_vec.norm().clamp_min(1e-12)
+    k0 = k0 - torch.dot(k0, mu_hat) * mu_hat
+    if Vh_dst is not None:
+        n_pc = min(32, Xc_dst.shape[0] - 1, s_hidden // 4)
+        if n_pc > 0:
+            V_ctrl = Vh_dst[:n_pc]
+            k0 = k0 - V_ctrl.T @ (V_ctrl @ k0)
+    key_dst = k0 / k0.norm().clamp_min(1e-12) * key_norm
+
+    pre_ctrl = X_ctrl_dst @ key_dst
+    q98_ctrl = float(torch.quantile(pre_ctrl, 0.98).item())
+    bias_dst = -q98_ctrl - margin
+    return w_wire, v_wire, key_dst, bias_dst
+
+
+def _input_to_residual_columns_safe(idx: "WeightSpaceIndex", tensor_name: str) -> torch.Tensor | None:
+    """Safely convert any 2D weight matrix to `[hidden, n_units]` columns if compatible."""
+    W = idx.ck.get(tensor_name)
+    if W.dim() != 2:
+        return None
+    h = idx.anat.hidden
+    Wf = W.float()
+    if Wf.shape[1] == h and Wf.shape[0] != h:
+        return Wf.t()
+    if Wf.shape[0] == h:
+        return Wf
+    return None
+
+
+def transplant_connected_chain(
+    teacher_idx: "WeightSpaceIndex",
+    student_idx: "WeightSpaceIndex",
+    *,
+    teacher_src_layer: int,
+    teacher_src_unit: int,
+    teacher_dst_layer: int,
+    teacher_dst_unit: int,
+    student_src_layer: int = 6,
+    student_dst_layer: int = 10,
+    student_src_unit: int | None = None,
+    student_dst_unit: int | None = None,
+    top_m_triggers: int = 10,
+    top_m_chord: int = 16,
+    key_norm: float = 8.0,
+    wire_scale: float = 1.5,
+    val_scale: float = 3.0,
+    margin_dst: float = 3.0,
+    wire_seed: int = 42,
+    alphabetic_only: bool = True,
+    student_src_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+    student_dst_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+    save_path: str | None = None,
+) -> dict[str, Any]:
+    """Transplant a connected 2-layer Teacher circuit `(teacher_src -> teacher_dst)` into two
+    dormant Student neurons `(student_src -> private orthogonal residual wire -> student_dst)`."""
+    if student_dst_layer <= student_src_layer:
+        raise ValueError("`student_dst_layer` must be strictly greater than `student_src_layer`.")
+
+    I_t, I_s, shared_tokens, _, _ = _get_shared_vocab_rosetta(teacher_idx, student_idx)
+
+    # 1. Read Teacher src trigger activation & Teacher dst output vector
+    t_src_out = teacher_idx.anat.mlp_out(teacher_src_layer)
+    t_dst_out = teacher_idx.anat.mlp_out(teacher_dst_layer)
+    if not t_src_out or not t_dst_out:
+        raise KeyError("Missing Teacher mlp_out tensor.")
+    W_t_src = _to_residual_columns(teacher_idx.ck.get(t_src_out).float(), teacher_idx.anat.out_axis(t_src_out))
+    W_t_dst = _to_residual_columns(teacher_idx.ck.get(t_dst_out).float(), teacher_idx.anat.out_axis(t_dst_out))
+    v_teacher_dst = W_t_dst[:, teacher_dst_unit]
+
+    K_t_src, meta_t_src = get_mlp_input_keys(teacher_idx.ck, teacher_idx.anat, teacher_src_layer, W_t_src.shape[1])
+    if K_t_src is None:
+        raise KeyError(f"Missing Teacher input keys in layer {teacher_src_layer}")
+
+    t_embed_name = teacher_idx.anat.embed or teacher_idx.anat.unembed
+    E_t_shared = teacher_idx.ck.get(t_embed_name).float()[I_t]
+    if teacher_idx.anat.norm_label == "LayerNorm":
+        X_t = torch.nn.functional.layer_norm(E_t_shared, (E_t_shared.shape[-1],))
+    else:
+        X_t = E_t_shared * torch.rsqrt(E_t_shared.pow(2).mean(-1, keepdim=True) + 1e-5)
+
+    if "K_up_eff" in meta_t_src:
+        act_t = torch.nn.functional.silu(X_t @ K_t_src[:, teacher_src_unit]) * (
+            X_t @ meta_t_src["K_up_eff"][:, teacher_src_unit]
+        )
+    else:
+        act_t = X_t @ K_t_src[:, teacher_src_unit]
+
+    alpha_pool = [
+        j for j, s in enumerate(shared_tokens) if s.startswith("Ġ") and s[1:].isalpha() and len(s) >= 4
+    ]
+    if alphabetic_only and len(alpha_pool) >= 64:
+        alpha_t = torch.tensor(alpha_pool, dtype=torch.long)
+        act_sub = act_t[alpha_t]
+        m_trig = min(top_m_triggers, act_sub.numel())
+        pos_vals, pos_sub_idx = torch.topk(act_sub, k=m_trig, largest=True)
+        pos_shared_idx = alpha_t[pos_sub_idx]
+        top50_sub = torch.topk(act_sub, k=min(50, act_sub.numel()), largest=True).indices
+        top50_set = set(alpha_t[top50_sub].tolist())
+    else:
+        m_trig = min(top_m_triggers, act_t.numel())
+        pos_vals, pos_shared_idx = torch.topk(act_t, k=m_trig, largest=True)
+        top50_set = set(torch.topk(act_t, k=min(50, act_t.numel()), largest=True).indices.tolist())
+    y_pos = pos_vals / pos_vals.max().clamp_min(1e-12)
+
+    # 2. Locate dormant Student units at `student_src_layer` and `student_dst_layer`
+    s_src = _find_dormant_mlp_unit(student_idx, student_src_layer, student_src_unit)
+    s_dst = _find_dormant_mlp_unit(student_idx, student_dst_layer, student_dst_unit)
+
+    # 3. Sender Key at `student_src_layer` via Dual-Gram Contrastive Key
+    Xs_src_pool, src_pos_idx, src_ctrl_idx = _prepare_student_pre_mlp_pool(
+        student_idx, student_src_layer, I_s, pos_shared_idx, top50_set, student_src_pre_mlp_vecs
+    )
+    key_src, bias_src = _build_contrastive_gram_key(
+        Xs_src_pool, src_pos_idx, y_pos, src_ctrl_idx, key_norm=key_norm
+    )
+
+    # 4. Translate Teacher `dst` Value Vector via Dual-Gram Rosetta
+    rosetta = translate_vector(teacher_idx, student_idx, v_teacher_dst, top_m=top_m_chord)
+    v_dst = rosetta["vector_student"]
+    v_dst_scaled = v_dst / v_dst.norm().clamp_min(1e-12) * (val_scale * max(float(s_dst[10].mean().item()), 1e-4))
+
+    # 5. Private Orthogonal Residual Wire from `student_src_layer` -> `student_dst_layer`
+    Xs_dst_pool, _, dst_ctrl_idx = _prepare_student_pre_mlp_pool(
+        student_idx, student_dst_layer, I_s, pos_shared_idx, top50_set, student_dst_pre_mlp_vecs
+    )
+    target_tids: list[int] = []
+    for tok_s in rosetta["teacher_top_tokens"] + rosetta["student_translated_top_tokens"]:
+        m_tok = student_idx.find_tokens(tok_s, limit=1)
+        if m_tok and m_tok[0]["token_id"] not in target_tids:
+            target_tids.append(m_tok[0]["token_id"])
+    w_wire, v_wire, key_dst, bias_dst = _build_private_residual_wire(
+        student_idx,
+        student_src_layer,
+        student_dst_layer,
+        Xs_dst_pool,
+        dst_ctrl_idx,
+        target_tids,
+        wire_scale=wire_scale,
+        key_norm=key_norm,
+        margin=margin_dst,
+        seed=wire_seed,
+    )
+
+    # 6. Install Sender (`L_src`: key_src -> v_wire) and Receiver (`L_dst`: key_dst -> v_dst_scaled)
+    modified_tensors: dict[str, torch.Tensor] = {}
+    _install_mlp_unit_weights(
+        student_idx, s_src[0], s_src[1], s_src[2], s_src[3], s_src[4], s_src[5], s_src[6], s_src[7], s_src[8], s_src[9], key_src, bias_src, v_wire, modified_tensors
+    )
+    _install_mlp_unit_weights(
+        student_idx, s_dst[0], s_dst[1], s_dst[2], s_dst[3], s_dst[4], s_dst[5], s_dst[6], s_dst[7], s_dst[8], s_dst[9], key_dst, bias_dst, v_dst_scaled, modified_tensors
+    )
+
+    if save_path is not None:
+        from safetensors.torch import save_file
+        from wsr.ops import compact_view
+        save_file(compact_view(student_idx.ck, modified_tensors), str(save_path))
+
+    trig_tokens = [shared_tokens[int(j)] for j in pos_shared_idx[:5].tolist()]
+    return {
+        "teacher_chain": {
+            "src_layer": teacher_src_layer,
+            "src_unit": teacher_src_unit,
+            "dst_layer": teacher_dst_layer,
+            "dst_unit": teacher_dst_unit,
+            "top_triggers": trig_tokens,
+            "dst_semantic_chord": rosetta["teacher_top_tokens"],
+        },
+        "rosetta_translation": {
+            "shared_vocab_anchors": rosetta["shared_vocab_size"],
+            "student_translated_chord": rosetta["student_translated_top_tokens"],
+            "top1_exact_match": rosetta["top1_exact_match"],
+            "top5_chord_overlap": rosetta["top5_chord_overlap"],
+        },
+        "student_chain": {
+            "src_layer": student_src_layer,
+            "src_unit": s_src[0],
+            "dst_layer": student_dst_layer,
+            "dst_unit": s_dst[0],
+            "src_bias": round(float(bias_src), 5),
+            "dst_bias": round(float(bias_dst), 5),
+            "wire_norm": round(float(v_wire.norm().item()), 5),
+            "wire_max_target_vocab_cos": round(
+                float((student_idx.U_raw_norm[target_tids] @ w_wire).abs().max().item()) if target_tids else 0.0,
+                6,
+            ),
+            "tensors_modified": list(modified_tensors.keys()),
+        },
+        "save_path": str(save_path) if save_path else None,
+        "_wire_vector": w_wire,
         "_tensors": modified_tensors,
     }

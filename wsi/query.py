@@ -918,6 +918,262 @@ class WeightSpaceIndex:
             "vocabulary_readout": self.explain_vector(u_hat, top_k=top_k_tokens),
         }
 
+    def trace_residual_connections(
+        self,
+        vec: torch.Tensor | None = None,
+        *,
+        layer: int | None = None,
+        unit: int | None = None,
+        neurons: list[int] | None = None,
+        top_k_connections: int = 8,
+        top_k_tokens: int = 6,
+    ) -> dict[str, Any]:
+        """Trace an internal residual vector or neuron's upstream and downstream weight-space
+        connections across layers (zero forward passes) until reaching input/output vocabulary:
+
+          Input Vocab (E_in) -> [Upstream Writers] -> Source Vector -> [Downstream Readers] -> Output Vocab (U_eff)
+
+        Useful both for full checkpoints (`LFM3`, `GPT-2`, `Llama`) where 2-hop MLP chains decode
+        private states to vocabulary tokens, and for partial slices (`Qwen3.5-0.8B`) via attention
+        head (`W_O`) and resonant MLP subspace coupling.
+        """
+        hidden = self.anat.hidden
+        k_vec: torch.Tensor | None = None
+        if vec is not None:
+            u = vec.detach().float().cpu().flatten()
+            if u.numel() != hidden:
+                raise ValueError(f"Expected vector of length {hidden}, got {u.numel()}")
+            source_desc = "explicit_vector"
+        elif layer is not None and unit is not None:
+            tname = self.anat.mlp_out(layer)
+            if not tname:
+                raise KeyError(f"No mlp_out in layer {layer}")
+            W_res = _to_residual_columns(self.ck.get(tname).float(), self.anat.out_axis(tname))
+            if not (0 <= unit < W_res.shape[1]):
+                raise IndexError(f"Unit {unit} out of range for `{tname}` (0..{W_res.shape[1] - 1})")
+            u = W_res[:, unit]
+            source_desc = f"layer_{layer}_mlp_unit_{unit}"
+            K_curr, _ = get_mlp_input_keys(self.ck, self.anat, layer, W_res.shape[1])
+            if K_curr is not None and unit < K_curr.shape[1]:
+                k_vec = K_curr[:, unit]
+        elif layer is not None and neurons:
+            tname = self.anat.mlp_out(layer)
+            if not tname:
+                raise KeyError(f"No mlp_out in layer {layer}")
+            W_res = _to_residual_columns(self.ck.get(tname).float(), self.anat.out_axis(tname))
+            sub = W_res[:, neurons]
+            U_svd, _, _ = torch.linalg.svd(sub, full_matrices=False)
+            u = U_svd[:, 0]
+            if torch.dot(u, sub.mean(dim=1)).item() < 0:
+                u = -u
+            source_desc = f"layer_{layer}_mlp_neurons({len(neurons)})"
+            K_curr, _ = get_mlp_input_keys(self.ck, self.anat, layer, W_res.shape[1])
+            if K_curr is not None:
+                k_vec = K_curr[:, neurons].mean(dim=1)
+        else:
+            raise ValueError("Provide `vec`, `(layer, unit)`, or `(layer, neurons)`")
+
+        u_hat = u / u.norm().clamp_min(1e-12)
+        direct_vocab = self.explain_vector(u, top_k=top_k_tokens)
+
+        # 1. Upstream writers (`l_prev < layer`) -> 2-hop upstream input trigger decoding
+        upstream_writers: list[dict[str, Any]] = []
+        k_2hop = torch.zeros(hidden, dtype=torch.float32)
+        if k_vec is not None and layer is not None:
+            k_hat = k_vec / k_vec.norm().clamp_min(1e-12)
+            for l_prev in sorted(self.anat.layers):
+                if l_prev >= layer:
+                    break
+                prev_tname = self.anat.mlp_out(l_prev)
+                if not prev_tname or prev_tname not in self.ck:
+                    continue
+                W_prev = _to_residual_columns(self.ck.get(prev_tname).float(), self.anat.out_axis(prev_tname))
+                couplings = k_vec @ W_prev
+                w_norms = W_prev.norm(dim=0).clamp_min(1e-12)
+                cos_all = (k_hat @ W_prev) / w_norms
+                k_u = min(top_k_connections, couplings.numel())
+                c_vals, c_idx = torch.topk(couplings, k=k_u, largest=True)
+                K_prev, _ = get_mlp_input_keys(self.ck, self.anat, l_prev, W_prev.shape[1])
+                for cv, idx_t in zip(c_vals, c_idx):
+                    uid_p = int(idx_t.item())
+                    top_trig: list[str] = []
+                    if K_prev is not None and uid_p < K_prev.shape[1]:
+                        kp = K_prev[:, uid_p]
+                        tr_idx = torch.topk(self.E_in @ kp, k=min(3, self.anat.vocab)).indices
+                        top_trig = [self.vocab_map[int(i.item())] for i in tr_idx]
+                        if cv.item() > 0:
+                            k_2hop = k_2hop + float(cv.item()) * (kp / kp.norm().clamp_min(1e-12))
+                    upstream_writers.append({
+                        "src_layer": l_prev,
+                        "src_unit": uid_p,
+                        "src_tensor": prev_tname,
+                        "causal_coupling_score": round(float(cv.item()), 5),
+                        "cosine": round(float(cos_all[uid_p].item()), 5),
+                        "statistical_significance_sigma": round(float(cos_all[uid_p].item()) * (hidden ** 0.5), 2),
+                        "upstream_triggers_top3": top_trig,
+                    })
+            upstream_writers.sort(key=lambda x: x["causal_coupling_score"], reverse=True)
+
+        two_hop_upstream_triggers: list[dict[str, Any]] = []
+        if k_2hop.norm().item() > 1e-12:
+            tr_sc = self.E_in @ k_2hop
+            v_tr, i_tr = torch.topk(tr_sc, k=min(top_k_tokens, self.anat.vocab))
+            two_hop_upstream_triggers = [
+                {"token_id": int(tid.item()), "token": self.vocab_map[int(tid.item())], "score": round(float(val.item()), 5)}
+                for val, tid in zip(v_tr, i_tr)
+            ]
+
+        # 2. Downstream MLP readers + 2-Hop Virtual Output Vector (`U_eff @ v_2hop`)
+        next_layers = [l for l in sorted(self.anat.layers) if (layer is None or l > layer)]
+        u_dir = u_hat - u_hat.mean() if self.anat.norm_label == "LayerNorm" else u_hat
+        u_rms = u_dir / u_dir.norm().clamp_min(1e-12) * (hidden ** 0.5)
+
+        downstream_mlp_layers: list[dict[str, Any]] = []
+        top_downstream_neurons: list[dict[str, Any]] = []
+        resonant_mlp_subspaces: list[dict[str, Any]] = []
+        v_2hop_parts: list[torch.Tensor] = []
+
+        for l_next in next_layers:
+            next_out_tname = self.anat.mlp_out(l_next)
+            W_out_next: torch.Tensor | None = None
+            exp_units: int | None = None
+            if next_out_tname and next_out_tname in self.ck:
+                W_out_next = _to_residual_columns(
+                    self.ck.get(next_out_tname).float(), self.anat.out_axis(next_out_tname)
+                )
+                exp_units = int(W_out_next.shape[1])
+
+                proj_m = u_hat @ W_out_next
+                k_m = min(64, proj_m.numel())
+                tm_vals, tm_idx = torch.topk(proj_m.abs(), k=k_m, largest=True)
+                U_sub, _, _ = torch.linalg.svd(W_out_next[:, tm_idx], full_matrices=False)
+                echo_cos = abs(torch.dot(u_hat, U_sub[:, 0]).item())
+                resonant_mlp_subspaces.append({
+                    "layer": l_next,
+                    "tensor": next_out_tname,
+                    "top_resonant_neurons": [int(i.item()) for i in tm_idx[:12]],
+                    "top_projection_energy": round(float(tm_vals.norm().item()), 5),
+                    "collective_echo_cosine": round(echo_cos, 5),
+                    "statistical_significance_sigma": round(echo_cos * (hidden ** 0.5), 2),
+                })
+
+            K_next, meta_next = get_mlp_input_keys(self.ck, self.anat, l_next, exp_units)
+            if K_next is None:
+                continue
+
+            g = u_rms @ K_next
+            cos_k = (u_hat @ K_next) / K_next.norm(dim=0).clamp_min(1e-12)
+            if "K_up_eff" in meta_next:
+                up = u_rms @ meta_next["K_up_eff"]
+                couplings = torch.where(
+                    (g > 0) & (up > 0),
+                    torch.nn.functional.silu(g) * up,
+                    torch.zeros_like(g),
+                )
+                if couplings.max().item() <= 0:
+                    couplings = torch.clamp(g, min=0.0)
+            else:
+                couplings = (
+                    torch.nn.functional.gelu(g)
+                    if self.anat.norm_label == "LayerNorm"
+                    else torch.clamp(g, min=0.0)
+                )
+
+            k_u = min(top_k_connections, couplings.numel())
+            d_vals, d_idx = torch.topk(couplings, k=k_u, largest=True)
+            pos_mask = d_vals > 0
+            if pos_mask.any() and W_out_next is not None:
+                v_layer = W_out_next[:, d_idx[pos_mask]] @ d_vals[pos_mask]
+                v_2hop_parts.append(v_layer)
+                layer_2hop_tokens = [t["token"] for t in self.explain_vector(v_layer, top_k=5)["promoted_tokens"]]
+            else:
+                layer_2hop_tokens = []
+
+            unit_hits: list[dict[str, Any]] = []
+            tok_mat = (self.U_eff @ W_out_next[:, d_idx]).t() if W_out_next is not None else None
+            for pos_i, (dv, idx_t) in enumerate(zip(d_vals, d_idx)):
+                uid_n = int(idx_t.item())
+                writes_top: list[str] = []
+                if tok_mat is not None:
+                    w_top_idx = torch.topk(tok_mat[pos_i], k=min(4, self.anat.vocab)).indices
+                    writes_top = [self.vocab_map[int(i.item())] for i in w_top_idx]
+                hit = {
+                    "dst_layer": l_next,
+                    "dst_unit": uid_n,
+                    "dst_in_tensor": meta_next.get("primary_in_tensor"),
+                    "dst_out_tensor": next_out_tname,
+                    "causal_coupling_score": round(float(dv.item()), 5),
+                    "key_cosine": round(float(cos_k[uid_n].item()), 5),
+                    "statistical_significance_sigma": round(float(cos_k[uid_n].item()) * (hidden ** 0.5), 2),
+                    "writes_top_tokens": writes_top,
+                }
+                unit_hits.append(hit)
+                top_downstream_neurons.append(hit)
+
+            downstream_mlp_layers.append({
+                "layer": l_next,
+                "max_coupling_score": round(float(d_vals[0].item()), 5) if d_vals.numel() else 0.0,
+                "two_hop_promoted_tokens": layer_2hop_tokens,
+                "top_neurons": unit_hits[:4],
+            })
+
+        top_downstream_neurons.sort(key=lambda x: x["causal_coupling_score"], reverse=True)
+        downstream_mlp_layers.sort(key=lambda x: x["max_coupling_score"], reverse=True)
+        resonant_mlp_subspaces.sort(key=lambda x: x["top_projection_energy"], reverse=True)
+
+        two_hop_downstream_vocab: dict[str, Any] | None = None
+        if v_2hop_parts:
+            v_2hop_global = torch.stack(v_2hop_parts, dim=0).sum(dim=0)
+            if v_2hop_global.norm().item() > 1e-12:
+                two_hop_downstream_vocab = self.explain_vector(v_2hop_global, top_k=top_k_tokens)
+
+        # 3. Coupled Attention Heads across downstream/current layers (`attn_out`)
+        attn_layers = [l for l in sorted(self.anat.layers) if (layer is None or l >= layer)]
+        coupled_heads: list[dict[str, Any]] = []
+        for l_at in attn_layers:
+            at_name = self.anat.attn_out(l_at)
+            if not at_name or at_name not in self.ck:
+                continue
+            W_o = _to_residual_columns(self.ck.get(at_name).float(), self.anat.out_axis(at_name))
+            nh, hd = self._infer_head_layout(W_o.shape[1])
+            proj_all = u_hat @ W_o
+            for h in range(nh):
+                c0, c1 = h * hd, (h + 1) * hd
+                h_energy = proj_all[c0:c1].norm().item()
+                h_frob = W_o[:, c0:c1].norm().item()
+                coupled_heads.append({
+                    "layer": l_at,
+                    "head": h,
+                    "tensor": at_name,
+                    "col_range": [c0, c1],
+                    "state_projection_energy": round(h_energy, 5),
+                    "relative_head_alignment": round(h_energy / max(h_frob, 1e-12), 6),
+                })
+        coupled_heads.sort(key=lambda x: x["state_projection_energy"], reverse=True)
+
+        return {
+            "source": source_desc,
+            "hidden_dim": hidden,
+            "direct_1hop_vocab": {
+                "promoted_tokens": direct_vocab["promoted_tokens"],
+                "suppressed_tokens": direct_vocab["suppressed_tokens"],
+            },
+            "upstream_writers": upstream_writers[:top_k_connections],
+            "two_hop_upstream_triggers": two_hop_upstream_triggers,
+            "downstream_mlp_layers": downstream_mlp_layers,
+            "top_downstream_neurons": top_downstream_neurons[:top_k_connections],
+            "two_hop_downstream_vocab": (
+                {
+                    "promoted_tokens": two_hop_downstream_vocab["promoted_tokens"],
+                    "suppressed_tokens": two_hop_downstream_vocab["suppressed_tokens"],
+                }
+                if two_hop_downstream_vocab is not None
+                else None
+            ),
+            "top_coupled_attention_heads": coupled_heads[:top_k_connections],
+            "resonant_mlp_subspaces": resonant_mlp_subspaces[:top_k_connections],
+        }
+
     def _compute_head_attribution(
         self, n: str, T_old_raw: torch.Tensor, T_new: torch.Tensor, out_ax: int
     ) -> dict[str, Any] | None:
@@ -1683,6 +1939,88 @@ class WeightSpaceIndex:
             key_norm=key_norm,
             val_scale=val_scale,
             student_pre_mlp_vecs=student_pre_mlp_vecs,
+            save_path=str(save_path) if save_path else None,
+        )
+
+    def discover_connected_chains(
+        self,
+        src_layer: int,
+        dst_layer: int,
+        *,
+        top_k: int = 10,
+        shared_vocab_with: "WeightSpaceIndex | str | Path | None" = None,
+        alphabetic_only: bool = True,
+    ) -> list[dict[str, Any]]:
+        """Discover strongly coupled 2-layer MLP chains `(src_layer, unit_a) -> (dst_layer, unit_b)`
+        purely from static weight matrices (`W_out^(src) -> pre_mlp_norm -> W_in^(dst) -> W_out^(dst)`)."""
+        from .compare import discover_connected_chains
+        shared_idx = (
+            shared_vocab_with
+            if (shared_vocab_with is None or isinstance(shared_vocab_with, WeightSpaceIndex))
+            else WeightSpaceIndex.from_model(shared_vocab_with)
+        )
+        return discover_connected_chains(
+            self,
+            src_layer,
+            dst_layer,
+            top_k=top_k,
+            shared_vocab_with=shared_idx,
+            alphabetic_only=alphabetic_only,
+        )
+
+    def transplant_connected_chain_from(
+        self,
+        teacher_model: "WeightSpaceIndex | str | Path",
+        *,
+        teacher_src_layer: int,
+        teacher_src_unit: int,
+        teacher_dst_layer: int,
+        teacher_dst_unit: int,
+        student_src_layer: int = 6,
+        student_dst_layer: int = 10,
+        student_src_unit: int | None = None,
+        student_dst_unit: int | None = None,
+        top_m_triggers: int = 10,
+        top_m_chord: int = 16,
+        key_norm: float = 8.0,
+        wire_scale: float = 1.5,
+        val_scale: float = 3.0,
+        margin_dst: float = 3.0,
+        wire_seed: int = 42,
+        alphabetic_only: bool = True,
+        student_src_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+        student_dst_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+        save_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Transplant a 2-layer connected Teacher circuit `(teacher_src -> teacher_dst)` into a
+        2-layer Student circuit `(student_src -> private orthogonal residual wire -> student_dst)`."""
+        from .compare import transplant_connected_chain
+        teacher_idx = (
+            teacher_model
+            if isinstance(teacher_model, WeightSpaceIndex)
+            else WeightSpaceIndex.from_model(teacher_model)
+        )
+        return transplant_connected_chain(
+            teacher_idx,
+            self,
+            teacher_src_layer=teacher_src_layer,
+            teacher_src_unit=teacher_src_unit,
+            teacher_dst_layer=teacher_dst_layer,
+            teacher_dst_unit=teacher_dst_unit,
+            student_src_layer=student_src_layer,
+            student_dst_layer=student_dst_layer,
+            student_src_unit=student_src_unit,
+            student_dst_unit=student_dst_unit,
+            top_m_triggers=top_m_triggers,
+            top_m_chord=top_m_chord,
+            key_norm=key_norm,
+            wire_scale=wire_scale,
+            val_scale=val_scale,
+            margin_dst=margin_dst,
+            wire_seed=wire_seed,
+            alphabetic_only=alphabetic_only,
+            student_src_pre_mlp_vecs=student_src_pre_mlp_vecs,
+            student_dst_pre_mlp_vecs=student_dst_pre_mlp_vecs,
             save_path=str(save_path) if save_path else None,
         )
 

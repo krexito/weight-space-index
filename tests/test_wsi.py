@@ -277,6 +277,33 @@ def run_all_tests():
         assert "model.layers.2.mlp.down_proj.weight" in full_tx["_tensors"]
         assert full_tx["rosetta_translation"]["top1_exact_match"]
 
+        # Verify zero-pass multi-hop residual connection tracing & 2-layer chain transplant
+        mh_trace = wsi_lazy.trace_residual_connections(layer=0, unit=0, top_k_connections=4, top_k_tokens=4)
+        assert mh_trace["two_hop_downstream_vocab"] is not None
+        assert len(mh_trace["downstream_mlp_layers"]) >= 1
+        assert len(mh_trace["top_coupled_attention_heads"]) >= 1
+
+        qwen_chains = wsi_qwen.discover_connected_chains(0, 4, top_k=3, alphabetic_only=False)
+        assert len(qwen_chains) >= 1 and qwen_chains[0]["src_layer"] == 0 and qwen_chains[0]["dst_layer"] == 4
+        ch0 = qwen_chains[0]
+        chain_tx = wsi_lazy.transplant_connected_chain_from(
+            wsi_qwen,
+            teacher_src_layer=ch0["src_layer"],
+            teacher_src_unit=ch0["src_unit"],
+            teacher_dst_layer=ch0["dst_layer"],
+            teacher_dst_unit=ch0["dst_unit"],
+            student_src_layer=1,
+            student_dst_layer=3,
+            top_m_triggers=6,
+            top_m_chord=8,
+            alphabetic_only=False,
+        )
+        assert chain_tx["student_chain"]["src_layer"] == 1 and chain_tx["student_chain"]["dst_layer"] == 3
+        assert chain_tx["student_chain"]["wire_max_target_vocab_cos"] < 1e-4
+        assert "model.layers.1.mlp.down_proj.weight" in chain_tx["_tensors"]
+        assert "model.layers.3.mlp.gate_proj.weight" in chain_tx["_tensors"]
+        assert "model.layers.3.mlp.down_proj.weight" in chain_tx["_tensors"]
+
         print("\n--- Example `transfer_edit_to` (Llama .safetensors edit -> Qwen2 .safetensors edit) ---")
         print(json.dumps({
             "decompiled_from_llama": transfer_res["decompiled_from_model_a"],
