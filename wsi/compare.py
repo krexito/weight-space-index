@@ -21,7 +21,12 @@ from typing import TYPE_CHECKING, Any
 
 import torch
 
-from .indexer import _to_residual_columns, get_mlp_input_keys
+from .indexer import (
+    PRE_MLP_NORM_KEYS,
+    _to_residual_columns,
+    discover_layer_readers,
+    get_mlp_input_keys,
+)
 
 if TYPE_CHECKING:
     from .query import WeightSpaceIndex
@@ -643,6 +648,262 @@ def transplant_circuit(
             "dominant_transplanted_token": target_tok_str,
             "neurons_grafted_count": len(grafted_records),
             "neurons_grafted": grafted_records,
+        },
+        "save_path": str(save_path) if save_path else None,
+        "_tensors": modified_tensors,
+    }
+
+
+def _apply_student_pre_mlp_norm(
+    student_idx: "WeightSpaceIndex", layer: int, X_raw: torch.Tensor
+) -> torch.Tensor:
+    """Apply Student layer `layer`'s pre-MLP normalization to `X_raw` using weights only."""
+    norms = student_idx.anat.norms(layer)
+    norm_name = next((norms[k] for k in PRE_MLP_NORM_KEYS if k in norms), None)
+    w = student_idx.ck.get(norm_name).float() if norm_name and norm_name in student_idx.ck else None
+    if student_idx.anat.norm_label == "LayerNorm":
+        X_n = torch.nn.functional.layer_norm(X_raw, (X_raw.shape[-1],))
+        if w is not None:
+            if w.abs().mean().item() < 0.5:
+                w = 1.0 + w
+            X_n = X_n * w
+        if norm_name and norm_name.endswith(".weight"):
+            b_name = norm_name[:-7] + ".bias"
+            if b_name in student_idx.ck:
+                X_n = X_n + student_idx.ck.get(b_name).float()
+        return X_n
+    X_n = X_raw * torch.rsqrt(X_raw.pow(2).mean(-1, keepdim=True) + 1e-5)
+    if w is not None:
+        if w.abs().mean().item() < 0.5:
+            w = 1.0 + w
+        X_n = X_n * w
+    return X_n
+
+
+def _build_contrastive_gram_key(
+    Xs_pool: torch.Tensor,
+    pos_idx: torch.Tensor | list[int],
+    y_pos: torch.Tensor,
+    ctrl_idx: torch.Tensor | list[int],
+    *,
+    key_norm: float = 8.0,
+    ridge: float = 0.05,
+    margin: float = 0.5,
+) -> tuple[torch.Tensor, float]:
+    """Solve a Dual-Gram key over centered/normalized Student vectors and orthogonalize against control mean."""
+    mu_s = Xs_pool[ctrl_idx].mean(dim=0)
+    Xc = Xs_pool - mu_s
+    Xn = Xc / Xc.norm(dim=-1, keepdim=True).clamp_min(1e-12)
+
+    X_pos = Xn[pos_idx]
+    m = X_pos.shape[0]
+    G = X_pos @ X_pos.T + ridge * torch.eye(m, dtype=X_pos.dtype)
+    alpha = torch.linalg.solve(G, y_pos.float())
+    k0 = X_pos.T @ alpha
+
+    mu_hat = mu_s / mu_s.norm().clamp_min(1e-12)
+    key = k0 - torch.dot(k0, mu_hat) * mu_hat
+    key = key / key.norm().clamp_min(1e-12) * key_norm
+
+    pre_all = Xs_pool @ key
+    q90_ctrl = float(torch.quantile(pre_all[ctrl_idx], 0.90).item())
+    bias = -q90_ctrl - margin
+    return key, bias
+
+
+def transplant_full_neuron(
+    teacher_idx: "WeightSpaceIndex",
+    student_idx: "WeightSpaceIndex",
+    *,
+    teacher_layer: int,
+    teacher_unit: int,
+    student_layer: int | None = None,
+    student_unit: int | None = None,
+    top_m_triggers: int = 10,
+    top_m_chord: int = 16,
+    key_norm: float = 8.0,
+    val_scale: float = 3.0,
+    student_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+    save_path: str | None = None,
+) -> dict[str, Any]:
+    """Read BOTH halves of a Teacher neuron `(teacher_layer, teacher_unit)` — its input activation
+    pattern (Key) and its output write-vector (Value) — translate both into the Student's latent
+    space via Dual-Gram Rosetta, and overwrite a dormant neuron in `student_idx`."""
+    I_t, I_s, shared_tokens, _, _ = _get_shared_vocab_rosetta(teacher_idx, student_idx)
+
+    # 1. Read Teacher input activation over shared tokens strictly from Teacher weights
+    t_out_name = teacher_idx.anat.mlp_out(teacher_layer)
+    if not t_out_name:
+        raise KeyError(f"Teacher model has no mlp_out in layer {teacher_layer}")
+    W_t_out = _to_residual_columns(
+        teacher_idx.ck.get(t_out_name).float(), teacher_idx.anat.out_axis(t_out_name)
+    )
+    v_teacher = W_t_out[:, teacher_unit]
+
+    K_t, meta_t = get_mlp_input_keys(teacher_idx.ck, teacher_idx.anat, teacher_layer, W_t_out.shape[1])
+    if K_t is None:
+        raise KeyError(f"Teacher model has no readable MLP input weights in layer {teacher_layer}")
+
+    t_embed_name = teacher_idx.anat.embed or teacher_idx.anat.unembed
+    E_t_shared = teacher_idx.ck.get(t_embed_name).float()[I_t]
+    if teacher_idx.anat.norm_label == "LayerNorm":
+        X_t = torch.nn.functional.layer_norm(E_t_shared, (E_t_shared.shape[-1],))
+    else:
+        X_t = E_t_shared * torch.rsqrt(E_t_shared.pow(2).mean(-1, keepdim=True) + 1e-5)
+
+    if "K_up_eff" in meta_t:
+        act_t = torch.nn.functional.silu(X_t @ K_t[:, teacher_unit]) * (
+            X_t @ meta_t["K_up_eff"][:, teacher_unit]
+        )
+    else:
+        act_t = X_t @ K_t[:, teacher_unit]
+
+    m_trig = min(top_m_triggers, act_t.numel())
+    pos_vals, pos_shared_idx = torch.topk(act_t, k=m_trig, largest=True)
+    y_pos = pos_vals / pos_vals.max().clamp_min(1e-12)
+    top50_set = set(torch.topk(act_t, k=min(50, act_t.numel()), largest=True).indices.tolist())
+
+    # 2. Locate target layer and dormant neuron in Student
+    s_layer = (
+        student_layer
+        if student_layer is not None
+        else max(0, student_idx.anat.n_layers - 2)
+    )
+    s_out_name = student_idx.anat.mlp_out(s_layer)
+    if not s_out_name:
+        raise KeyError(f"Student model has no mlp_out in layer {s_layer}")
+    s_rd = discover_layer_readers(student_idx.ck, student_idx.anat, s_layer)
+    s_in_name = s_rd["mlp_primary_in"]
+    if not s_in_name or s_in_name not in student_idx.ck:
+        raise KeyError(f"Student model has no readable MLP input tensor in layer {s_layer}")
+
+    W_pr_orig = student_idx.ck.get(s_out_name)
+    W_pr_f = W_pr_orig.float().clone()
+    out_ax = student_idx.anat.out_axis(s_out_name)
+    out_norms = W_pr_f.norm(dim=0) if out_ax == 0 else W_pr_f.norm(dim=1)
+    n_units = int(out_norms.numel())
+
+    W_fc_orig = student_idx.ck.get(s_in_name)
+    W_fc_f = W_fc_orig.float().clone()
+    s_hidden = student_idx.anat.hidden
+    fc_cols_are_units = W_fc_f.shape[0] == s_hidden and W_fc_f.shape[1] in (n_units, 2 * n_units)
+    in_norms = (
+        W_fc_f[:, :n_units].norm(dim=0) if fc_cols_are_units else W_fc_f[:n_units, :].norm(dim=1)
+    )
+
+    if student_unit is None:
+        s_unit = int((in_norms * out_norms).argmin().item())
+    else:
+        s_unit = int(student_unit)
+
+    # 3. Build Student Dual-Gram Contrastive Input Key
+    if isinstance(student_pre_mlp_vecs, dict):
+        pos_s_ids = [int(I_s[int(j)].item()) for j in pos_shared_idx.tolist()]
+        missing = [sid for sid in pos_s_ids if sid not in student_pre_mlp_vecs]
+        if missing:
+            raise KeyError(f"student_pre_mlp_vecs missing trigger token ids: {missing[:3]}")
+        forbidden_s_ids = {int(I_s[int(j)].item()) for j in top50_set}
+        ctrl_vecs = [v.float().cpu() for sid, v in student_pre_mlp_vecs.items() if sid not in forbidden_s_ids]
+        if len(ctrl_vecs) < 16:
+            raise ValueError("student_pre_mlp_vecs needs at least 16 non-trigger control vectors.")
+        pos_vecs = [student_pre_mlp_vecs[sid].float().cpu() for sid in pos_s_ids]
+        Xs_pool = torch.stack(pos_vecs + ctrl_vecs, dim=0)
+        pool_pos_idx = list(range(len(pos_vecs)))
+        pool_ctrl_idx = list(range(len(pos_vecs), Xs_pool.shape[0]))
+    else:
+        if isinstance(student_pre_mlp_vecs, torch.Tensor):
+            t_vecs = student_pre_mlp_vecs.float().cpu()
+            if t_vecs.shape[0] == len(shared_tokens):
+                Xs_pool = t_vecs
+            elif t_vecs.shape[0] >= int(I_s.max().item()) + 1:
+                Xs_pool = t_vecs[I_s]
+            else:
+                raise ValueError(
+                    f"student_pre_mlp_vecs shape {tuple(t_vecs.shape)} does not match shared tokens ({len(shared_tokens)}) or student vocab."
+                )
+        else:
+            s_embed_name = student_idx.anat.embed or student_idx.anat.unembed
+            E_s_shared = student_idx.ck.get(s_embed_name).float()[I_s]
+            Xs_pool = _apply_student_pre_mlp_norm(student_idx, s_layer, E_s_shared)
+        pool_pos_idx = pos_shared_idx.tolist()
+        pool_ctrl_idx = [j for j in range(len(shared_tokens)) if j not in top50_set]
+
+    key, bias = _build_contrastive_gram_key(
+        Xs_pool,
+        pool_pos_idx,
+        y_pos,
+        pool_ctrl_idx,
+        key_norm=key_norm,
+    )
+
+    # 4. Translate Teacher Value Vector via Dual-Gram Rosetta
+    rosetta = translate_vector(teacher_idx, student_idx, v_teacher, top_m=top_m_chord)
+    v_s = rosetta["vector_student"]
+    v_s = v_s / v_s.norm().clamp_min(1e-12) * (val_scale * max(float(out_norms.mean().item()), 1e-4))
+
+    # 5. Install Key, Bias, and Value into Student neuron `s_unit`
+    modified_tensors: dict[str, torch.Tensor] = {}
+    if fc_cols_are_units:
+        W_fc_f[:, s_unit] = key
+    else:
+        W_fc_f[s_unit, :] = key
+    modified_tensors[s_in_name] = W_fc_f.to(W_fc_orig.dtype).contiguous()
+
+    # If Student uses gated MLP (`mlp_gate` + `mlp_up` distinct), align `mlp_up` with positive unit vector
+    s_up_name = s_rd["mlp_up"]
+    if s_up_name and s_up_name != s_in_name and s_up_name in student_idx.ck:
+        W_up_orig = student_idx.ck.get(s_up_name)
+        W_up_f = W_up_orig.float().clone()
+        up_vec = key / key.norm().clamp_min(1e-12)
+        if W_up_f.shape[0] == s_hidden and W_up_f.shape[1] != s_hidden:
+            W_up_f[:, s_unit] = up_vec
+        else:
+            W_up_f[s_unit, :] = up_vec
+        modified_tensors[s_up_name] = W_up_f.to(W_up_orig.dtype).contiguous()
+
+    s_bias_name = s_in_name[:-7] + ".bias" if s_in_name.endswith(".weight") else None
+    if s_bias_name and s_bias_name in student_idx.ck:
+        b_orig = student_idx.ck.get(s_bias_name)
+        b_f = b_orig.float().clone()
+        b_f[s_unit] = float(bias)
+        modified_tensors[s_bias_name] = b_f.to(b_orig.dtype).contiguous()
+
+    if out_ax == 0:
+        W_pr_f[:, s_unit] = v_s
+    else:
+        W_pr_f[s_unit, :] = v_s
+    modified_tensors[s_out_name] = W_pr_f.to(W_pr_orig.dtype).contiguous()
+
+    if save_path is not None:
+        from safetensors.torch import save_file
+        from wsr.ops import compact_view
+        save_file(compact_view(student_idx.ck, modified_tensors), str(save_path))
+
+    trig_tokens = [shared_tokens[int(j)] for j in pos_shared_idx[:5].tolist()]
+    return {
+        "teacher_source": {
+            "model_type": teacher_idx.anat.model_type,
+            "hidden_dim": teacher_idx.anat.hidden,
+            "layer": teacher_layer,
+            "unit": teacher_unit,
+            "top_triggers": trig_tokens,
+            "top_semantic_chord": rosetta["teacher_top_tokens"],
+        },
+        "rosetta_translation": {
+            "shared_vocab_anchors": rosetta["shared_vocab_size"],
+            "chord_size_m": rosetta["chord_size_m"],
+            "student_translated_chord": rosetta["student_translated_top_tokens"],
+            "top1_exact_match": rosetta["top1_exact_match"],
+            "top5_chord_overlap": rosetta["top5_chord_overlap"],
+        },
+        "student_graft": {
+            "model_type": student_idx.anat.model_type,
+            "hidden_dim": student_idx.anat.hidden,
+            "layer": s_layer,
+            "unit": s_unit,
+            "key_bias": round(float(bias), 5),
+            "calibrated_inputs": student_pre_mlp_vecs is not None,
+            "tensors_modified": list(modified_tensors.keys()),
         },
         "save_path": str(save_path) if save_path else None,
         "_tensors": modified_tensors,

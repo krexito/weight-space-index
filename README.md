@@ -94,12 +94,23 @@ $$\mathbf{v}_{\text{student}} = \hat{U}_{S,M}^\top \left(\hat{U}_{S,M}\hat{U}_{S
 
 GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, idiosyncratic sub-concepts (`' cs'`, `' directory'`), showing that the specific Qwen3.5 write-vector — not just a single token direction — was carried across.
 
+**Full Key + Value Neuron Transplant (`student.transplant_full_neuron_from(teacher, ...)` — `python scripts/experiment_full_neuron_transplant.py`):** Instead of manually choosing the student trigger (`ĠTower`), we also test translating **both halves** of each teacher neuron directly from `LiquidAI/LFM3-1.7B` (`2048d` Layers 0–1 `w1`/`w3` SwiGLU keys + `w2` values, **zero Teacher forward passes**) and overwriting a single dormant neuron (`#630` in `GPT-2` Layer 10, `768d`):
+
+1. **Input Key Translation (Dual-Gram Contrastive Key):** Center and normalize student pre-MLP representations (either analytically at Layer 0 from weights only, or calibrated at Layer 10 on `343` pool tokens using `'The'+tok` in `1.15s`), solve a sparse $10 \times 10$ Dual-Gram system on the teacher neuron's top-10 triggers, and orthogonalize against the control mean so unrelated words remain silent in GELU.
+2. **Output Value Translation:** Project the teacher's `w2[:, unit]` vector via Dual-Gram Rosetta into `GPT-2`'s residual space.
+3. **Held-Out Evaluation & Control:** Evaluated across `20` clean alphabetic teacher neurons on held-out prompt templates (`"{t}"`, `"I saw the{t}"`, `"Then{t}"`, `"The word{t}"`) and disjoint held-out control words, compared against a **mismatched-key control** (same output value, key built from a different teacher neuron):
+
+| Condition | Zero-Pass L0 Key Selectivity | Layer-10 Selectivity (`act trig > ctrl`) | Mean Activation (`trig` / `ctrl`) | Mean `logP(writes)` Gain on Triggers | Held-Out Control KL | Beats Control |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Matched Key + Value** *(translated from LFM3)* | **20 / 20** | **20 / 20** | **`+7.923` / `+0.092`** | **`+5.237`** | `0.0132` | **20 / 20 (`100%`)** |
+| **Mismatched Key Control** *(wrong neuron key, same value)* | — | — | `+0.287` / `+0.080` | `+0.382` | `0.0200` | — |
+
 > [!WARNING]
-> **Honest scope & limitations.** This transplants **individual output write-vectors (what a neuron promotes)**, not "intelligence" wholesale:
-> * Only the **output side** is translated; the student's trigger (input key) is chosen by `wsi` (here `ĠTower`), not copied from the teacher.
+> **Honest scope & limitations.**
+> * `transplant_circuit_from` translates only the **output write-vector** onto a user-specified student trigger; `transplant_full_neuron_from` translates **both input trigger keys and output write-vectors** into dormant student neurons (calibrated Layer-10 keys used a fast `1.15s` `343`-token pass on GPT-2 `'The'+tok`, while analytical Layer-0 keys require zero forward passes on either model).
+> * The LFM3 slice tested here (`Layers 0–1`) contains mostly lexical/collocational triggers rather than deep factual or reasoning circuits; transferring higher-order reasoning requires loading full mid/late teacher MLP tensors (`gate_proj`, `up_proj`, `down_proj`).
 > * The bridge only sees concepts expressible through **shared surface tokens**; purely internal/latent features (e.g. the reasoning-loop state circuits above) have no vocabulary anchor and are **not** reliably transferable this way yet.
-> * Polysemantic teacher neurons carry their junk too (`' cs'` at 30% is collateral damage). Clean transfers require selecting monosemantic teacher neurons or filtering the chord.
-> * Capacity limits are real: a 768d student cannot absorb an unbounded number of teacher circuits without interference. No broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
+> * Capacity limits and polysemantic noise are real: a `768d` student cannot absorb an unbounded number of teacher neurons without interference, and no broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
 
 ---
 
@@ -133,6 +144,7 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Cross-Model Edit Transfer** | `I.transfer_edit_to(model_b, "edit_a.safetensors")` / `wsi transfer-edit` | Decompiles a binary edit from Model A and synthesizes the equivalent `.safetensors` edit for Model B |
 | **Cross-Architecture Vector Translation** | `I_small.translate_vector_from(I_big, v)` | Translates a latent write-vector between models of different width via the Dual-Gram Rosetta bridge |
 | **Cross-Architecture Circuit Transplant** | `I_small.transplant_circuit_from(I_big, teacher_layer=19, teacher_unit=3349, trigger_query="ĠTower", old_output_query="ĠParis")` | Grafts a teacher neuron's translated write-vector into the student's matching transduction neurons |
+| **Full Key + Value Neuron Transplant** | `I_small.transplant_full_neuron_from(I_big, teacher_layer=0, teacher_unit=5051)` | Translates BOTH the teacher neuron's input trigger key and output write-vector into a dormant student neuron |
 | **MCP Server** | `python -m wsi mcp` | Exposes all 11 `wsi_*` tools over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
 
 ---
@@ -250,6 +262,9 @@ python scripts/demo_real_gpt2.py
 
 # 7. Run the cross-architecture transplant demo (Qwen3.5-0.8B / LFM3-1.7B -> GPT-2 124M)
 python scripts/demo_cross_model_transplant.py
+
+# 8. Run the full Key+Value dormant-neuron transplant experiment (LFM3-1.7B -> GPT-2 124M)
+python scripts/experiment_full_neuron_transplant.py
 ```
 
 ---

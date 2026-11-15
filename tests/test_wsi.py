@@ -264,6 +264,19 @@ def run_all_tests():
         assert qwen_diag["validation"]["ok"]
         assert qwen_diag["tensors"][0]["principal_delta_direction"]["promoted_tokens"][0]["token"] == "Rome"
 
+        # Verify zero-pass full key+value neuron transplant (Qwen2 hidden=48 -> Llama hidden=32)
+        full_tx = wsi_lazy.transplant_full_neuron_from(
+            wsi_qwen,
+            teacher_layer=4,
+            teacher_unit=19,
+            top_m_triggers=8,
+            top_m_chord=8,
+        )
+        assert full_tx["student_graft"]["layer"] == 2
+        assert "model.layers.2.mlp.gate_proj.weight" in full_tx["_tensors"]
+        assert "model.layers.2.mlp.down_proj.weight" in full_tx["_tensors"]
+        assert full_tx["rosetta_translation"]["top1_exact_match"]
+
         print("\n--- Example `transfer_edit_to` (Llama .safetensors edit -> Qwen2 .safetensors edit) ---")
         print(json.dumps({
             "decompiled_from_llama": transfer_res["decompiled_from_model_a"],

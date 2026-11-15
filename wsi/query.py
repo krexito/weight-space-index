@@ -1647,6 +1647,45 @@ class WeightSpaceIndex:
             save_path=str(save_path) if save_path else None,
         )
 
+    def transplant_full_neuron_from(
+        self,
+        teacher_model: "WeightSpaceIndex | str | Path",
+        *,
+        teacher_layer: int,
+        teacher_unit: int,
+        student_layer: int | None = None,
+        student_unit: int | None = None,
+        top_m_triggers: int = 10,
+        top_m_chord: int = 16,
+        key_norm: float = 8.0,
+        val_scale: float = 3.0,
+        student_pre_mlp_vecs: dict[int, torch.Tensor] | torch.Tensor | None = None,
+        save_path: str | Path | None = None,
+    ) -> dict[str, Any]:
+        """Read BOTH the input trigger Key and output write Value of `(teacher_layer, teacher_unit)`
+        from `teacher_model`, translate both into THIS Student model's space via Dual-Gram Rosetta,
+        and overwrite a dormant neuron in `student_layer`."""
+        from .compare import transplant_full_neuron
+        teacher_idx = (
+            teacher_model
+            if isinstance(teacher_model, WeightSpaceIndex)
+            else WeightSpaceIndex.from_model(teacher_model)
+        )
+        return transplant_full_neuron(
+            teacher_idx,
+            self,
+            teacher_layer=teacher_layer,
+            teacher_unit=teacher_unit,
+            student_layer=student_layer,
+            student_unit=student_unit,
+            top_m_triggers=top_m_triggers,
+            top_m_chord=top_m_chord,
+            key_norm=key_norm,
+            val_scale=val_scale,
+            student_pre_mlp_vecs=student_pre_mlp_vecs,
+            save_path=str(save_path) if save_path else None,
+        )
+
 
 def load_index(model_dir: str | Path, index_dir: str | Path | None = None, **kwargs: Any) -> WeightSpaceIndex:
     """Convenience loader for `WeightSpaceIndex`."""
