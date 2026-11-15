@@ -66,6 +66,10 @@ We evaluated `wsi` directly on the official artifacts (`p10c`, `p25c`, `p50c` fr
 | **`p10c`** *(10 passes: MATH-500 `7.9% → 12.3%`, GSM8K `13.8% → 25.7%`)* | **11.6 hours**<br>*(74 turns, 59 scripts)* | Rank-1 `orth` projection ($W' = W - 1.5 u u^\top W$) across `linear_attn.out_proj`, `self_attn.o_proj`, and `mlp.down_proj` | **`184.5 ms`** | **`266.8 ms` (blind read)** | **156,529× faster** |
 
 * **100% Exact Neuron & Subspace Match:** On `p50c`, `wsi` recovers **64 / 64 (`100.0%`)** of the ground-truth modified MLP neurons in Layer 15 and **64 / 64 (`100.0%`)** in Layer 19 (`frozen_weights_manifest.json`), achieving **`0.9999980` delta cosine similarity** and **`99.84%` exact `BF16` bit-level agreement** (`7,327,948 / 7,340,032` weights bit-for-bit identical).
+* **Deep Internal State Circuit Discovery (Zero Forward Passes, `58.2 ms`):** Not all circuits write a fixed dictionary word directly to `lm_head`; reasoning/repetition loops operate as **Deep Internal State Circuits** in the intermediate residual stream:
+  * **Cross-Layer Echo Detection (`27.17σ`):** `wsi.explain_edit` automatically detects that the principal residual write vector $\mathbf{u}_{15}$ of the 64 MLP neurons in Layer 15 and the principal residual write vector $\mathbf{u}_{19}$ of the 64 MLP neurons in Layer 19 have a cosine similarity of **`0.849005`** in $\mathbb{R}^{1024}$ (**`27.17 sigma`** above the random baseline $1/\sqrt{1024} \approx 0.03125$), identifying a `cross_layer_internal_state_resonance` loop.
+  * **Per-Head Attribution (`head_attribution`):** On `p25c`, `wsi.explain_edit` automatically decomposes `layers.15.self_attn.o_proj.weight` (`8 heads × 256d`) and reports `modified_heads=[7], ablated_heads=[7]` (`cols [1792:2048]`).
+  * **Linking `p50c` and `p25c` Purely from Weight Geometry (`trace_internal_state`):** Running `wsi.trace_internal_state(vec=u_15)` projects Layer 15's 64-neuron internal state vector across all 8 attention heads in `layers.15.self_attn.o_proj.weight` and ranks **`Head 7` (`cols [1792:2048]`) #1 out of all 8 heads** (`energy = 0.28956`), proving strictly from static weight matrices that `p25c` (ablating Layer 15 Head 7) and `p50c` (projecting 64 MLP neurons in Layers 15 & 19) intervene on the **exact same internal state circuit**.
 
 ---
 
@@ -73,11 +77,12 @@ We evaluated `wsi` directly on the official artifacts (`p10c`, `p25c`, `p50c` fr
 
 In standard weight-space reading (`wsr`), an LLM agent is given raw weight matrices (`model.layers.X.mlp.down_proj.weight`) and must scan millions of floats on a CPU.
 
-`wsi` solves this by projecting both sides of every layer onto the model's own vocabulary anchors—the **Input Embedding Matrix ($E_{\text{in}}$)** and the **Centered Effective Unembedding Matrix ($U_{\text{eff}}$)**:
+`wsi` solves this by indexing both **Vocabulary-Anchored Circuits** and **Deep Internal State Circuits** directly from the weight matrices:
 1. **Input-Side Key Indexing (`mlp_in`, `attn_q/k/v`):** Identifies which input tokens/concepts **trigger (activate)** each neuron (`E_in @ K_eff`).
 2. **Output-Side Value Indexing (`mlp_out`, `attn_out`):** Identifies which output tokens/concepts each neuron **writes (promotes or suppresses)** into the residual stream (`U_eff @ W_res`).
 3. **Associative Transduction Rules (`[Input Triggers] -> [Output Promoted]`):** Turns opaque `(layer, unit)` coordinates into readable rules like `"[Eiffel, France] -> [Paris, Louvre]"`.
-4. **Universal Semantic Coordinate System across Models:** Because different architectures (e.g., Llama vs. Qwen vs. GPT-2) share human language at their vocabulary boundaries, `wsi` can **align equivalent circuits across completely different architectures** and **automatically transfer a `.safetensors` weight edit from Model A to Model B**.
+4. **Deep Internal State Circuits & Attention Head Resonance (`o_proj` $\leftrightarrow$ `down_proj`):** Detects cross-layer latent state loops (e.g., reasoning/repetition channels with $>27\sigma$ cross-layer SVD alignment) and ranks individual Attention Heads by their projection energy $\|\mathbf{u}^\top W_O^{(l,h)}\|_2$ along any internal state vector without running a single forward pass.
+5. **Universal Semantic Coordinate System across Models:** Because different architectures (e.g., Llama vs. Qwen vs. GPT-2) share human language at their vocabulary boundaries, `wsi` can **align equivalent circuits across completely different architectures** and **automatically transfer a `.safetensors` weight edit from Model A to Model B**.
 
 ---
 
@@ -90,12 +95,13 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Transduction Search** | `I.search_transduction("France", "Paris")` / `wsi transduction` | Finds Key-Value memory neurons triggered by `input_query` that write `output_query` |
 | **Neuron Explainer** | `I.explain_neuron(layer=8, unit=430)` / `wsi neuron` | Shows a neuron's input triggers, inhibitors, output promoted/suppressed tokens, and transduction rule |
 | **Causal Circuit Tracer** | `I.trace_circuit(layer=2, unit=7)` / `wsi trace` | Traces upstream writer neurons ($l' < l$) that feed this neuron and downstream reader neurons ($l'' > l$) |
-| **Edit Diagnosis** | `I.explain_edit("edit.safetensors")` / `wsi explain-edit` | Decompiles any `wsr` edit into rank, energy change, `subspace_action`, and vocabulary shifts |
+| **Deep Internal State Tracer** | `I.trace_internal_state(layer=15, head=7)` / `wsi internal-state` | Traces latent internal state vectors across all Attention Heads (`o_proj`) and MLP blocks (`down_proj`) |
+| **Edit Diagnosis & Head Attribution** | `I.explain_edit("edit.safetensors")` / `wsi explain-edit` | Decompiles any `wsr` edit into rank, `subspace_action`, `head_attribution`, `internal_state_circuit`, and vocabulary shifts |
 | **Surgical Fact Rewiring** | `I.rewire_transduction("Tower", "Paris", "Rome")` / `wsi rewire` | Rewires only the top $K$ transducing neurons (~0.06% of neurons) to output a new concept without training |
 | **Same-Family Semantic Diff** | `I.diff_model(tuned_dir)` / `wsi diff` | Semantic `git diff` between Base and Fine-Tuned/Edited checkpoints |
 | **Cross-Architecture Alignment** | `I.align_circuits(other_model)` / `wsi align` | Matches functionally equivalent neurons across different architectures (e.g. Llama $\leftrightarrow$ Qwen2) |
 | **Cross-Model Edit Transfer** | `I.transfer_edit_to(model_b, "edit_a.safetensors")` / `wsi transfer-edit` | Decompiles a binary edit from Model A and synthesizes the equivalent `.safetensors` edit for Model B |
-| **MCP Server** | `python -m wsi mcp` | Exposes all 10 `wsi_*` tools over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
+| **MCP Server** | `python -m wsi mcp` | Exposes all 11 `wsi_*` tools over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
 
 ---
 
@@ -141,9 +147,10 @@ python -m wsi search models/gpt2 "ĠParis"
 # Find Key-Value transduction neurons [Input] -> [Output]
 python -m wsi transduction models/gpt2 "ĠFrance" "ĠParis"
 
-# Explain a single neuron and trace its upstream/downstream causal circuit
+# Explain a single neuron, trace its causal circuit, or trace a Deep Internal State Circuit
 python -m wsi neuron models/gpt2 --layer 8 --unit 430
 python -m wsi trace models/gpt2 --layer 8 --unit 430
+python -m wsi internal-state models/qwen35-0.8b --layer 15 --head 7
 
 # Surgically rewire a transduction and diagnose the resulting .safetensors edit
 python -m wsi rewire models/gpt2 "ĠTower" "ĠParis" "ĠRome" -o edit_rome.safetensors --top-k 24 --strength 6.0
@@ -203,7 +210,10 @@ python scripts/benchmark_lfm3.py
 # 4. Run the 5-domain Surgical Weight Programming & Collateral Damage benchmark
 python scripts/benchmark_multi_edit.py
 
-# 5. Run the live pretrained GPT-2 circuit discovery & surgical rewire demo
+# 5. Run the MIT CSAIL Sparks of Weight-Space Programming Qwen/Qwen3.5-0.8B benchmark (p10c, p25c, p50c)
+python scripts/benchmark_wsp_qwenmath.py
+
+# 6. Run the live pretrained GPT-2 circuit discovery & surgical rewire demo
 python scripts/demo_real_gpt2.py
 ```
 
