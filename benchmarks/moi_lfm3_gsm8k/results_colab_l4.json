@@ -1,0 +1,483 @@
+{
+  "model": "LiquidAI/LFM3-1.7B",
+  "n_problems": 200,
+  "max_new_tokens": 512,
+  "params_total": 1728801536,
+  "params_mlp": 1132462080,
+  "mlp_share": 0.6550561509912958,
+  "neuron_bytes_bf16": 12288,
+  "router": {
+    "rank": 256,
+    "calib_tokens": 60000,
+    "train_s": 65.33630986999998,
+    "router_bytes_fp32": 239075328,
+    "router_macs_per_token": 59768832
+  },
+  "results": {
+    "full": {
+      "wikitext_ppl": 24.91076181487205,
+      "gsm8k": {
+        "accuracy": 0.83,
+        "correct": 166,
+        "n": 200,
+        "gen_tokens": 52936,
+        "wall_s": 148.48722590800003,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "xt{ (used)} = 9 \\text{ eggs per day}\n\\]\n\nShe sells the remaining eggs at **$2 per egg** at the farmers' market.\n\nThus, the daily earnings from the farmers' market are:\n\n\\[\n9 \\text{ eggs} \\times \\$2/\\text{egg} = \\$18\n\\]\n\nSo Janet makes **\\$18** every day at the farmers' market.\n\nThe answer is **18**."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "r.\n\nFirst, find the amount of white fiber:\n- \"Half that much white fiber\" means half of the blue fiber amount.\n- Blue fiber = 2 bolts.\n- Half of 2 is 1.\n\nSo, white fiber = 1 bolt.\n\nNow, total bolts = blue fiber + white fiber = 2 + 1 = 3 bolts.\n\nThus, the total number of bolts is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "70000",
+            "text": " house is:\n\n\\[\n2.5 \\times 80{,}000 = 200{,}000 \\text{ dollars}\n\\]\n\nProfit is the increase in value minus the total amount spent:\n\n\\[\n\\text{Profit} = \\text{New value} - \\text{Total cost} = 200{,}000 - 130{,}000 = 70{,}000 \\text{ dollars}\n\\]\n\nThus, Josh made a profit of \\$70,000.\n\nThe answer is 70000."
+          }
+        ]
+      },
+      "mlp_bytes": {
+        "resident_per_layer": 94371840,
+        "touched_per_token_per_layer": 94371840,
+        "share_of_full_mlp": 1.0
+      }
+    },
+    "oracle@0.5": {
+      "wikitext_ppl": 25.275892844301705,
+      "gsm8k": {
+        "accuracy": 0.785,
+        "correct": 157,
+        "n": 200,
+        "gen_tokens": 57582,
+        "wall_s": 178.47200174800003,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "ur.\" The phrase \"with four\" likely modifies the muffins: she bakes muffins ... with four (eggs). Or maybe \"with four\" refers to four muffins? But then we need to know eggs per muffin. Not given. So it's more plausible that \"four\" refers to eggs. Also, earlier \"16 eggs per day\" is given. So using 3 +"
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "uch white fiber.\"  \n\nFirst, find the amount of white fiber:  \nHalf of the blue fiber = \\( \\frac{1}{2} \\times 2 = 1 \\) bolt of white fiber.\n\nNow, add the blue and white bolts together:  \nTotal bolts = blue bolts + white bolts = \\( 2 + 1 = 3 \\).\n\nSo the robe takes a total of 3 bolts.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "25000",
+            "text": "he total value after improvements minus the total amount he spent (purchase price + repairs):  \nTotal spent = \\$80,000 (purchase) + \\$50,000 (repairs) = \\$130,000.  \n\nProfit = New value - Total spent = \\$155,000 - \\$130,000 = \\$25,000.  \n\nThus, Josh made a profit of \\$25,000.  \n\nThe answer is 25000."
+          }
+        ]
+      },
+      "activation_mass_recall": 0.8871771283324343,
+      "policy": "oracle",
+      "budget": 0.5,
+      "k_per_layer": 3840,
+      "mlp_bytes": {
+        "resident_per_layer": 62914560,
+        "touched_per_token_per_layer": 78643200,
+        "share_of_full_mlp": 0.8333
+      }
+    },
+    "gate@0.5": {
+      "wikitext_ppl": 36.561344876515925,
+      "gsm8k": {
+        "accuracy": 0.625,
+        "correct": 125,
+        "n": 200,
+        "gen_tokens": 78515,
+        "wall_s": 177.89668907599992,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "9",
+            "text": "a mistake and it's \"every day, with four eggs\"? Or maybe it's \"bakes muffins for her friends every day, and also bakes four eggs for something\"? \n\nGiven the ambiguity, let's consider the most straightforward reading: She bakes muffins for her friends every day. The \"with four\" might be extraneous or"
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "er: half of blue fiber = 2 / 2 = 1 bolt.\n3. Total bolts = 2 + 1 = 3.\n\nThus answer is 3.</think>The robe uses 2 bolts of blue fiber.  \nHalf of that amount for white fiber is \\( \\frac{1}{2} \\times 2 = 1 \\) bolt of white fiber.  \nTotal bolts = blue bolts + white bolts = \\(2 + 1 = 3\\).\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "200000",
+            "text": " then puts in $50,000 in repairs. This increased the value of the house by 150%.\" So, the act of putting in $50,000 in repairs caused the value to increase by 150%. That means the new value is original plus 150% of original, i.e., 2.5 times original. So new value = 2.5 * 80,000 = 200,000.\n\nBut then,"
+          }
+        ]
+      },
+      "activation_mass_recall": 0.7681663088811197,
+      "policy": "gate",
+      "budget": 0.5,
+      "k_per_layer": 3840,
+      "mlp_bytes": {
+        "resident_per_layer": 31457280,
+        "touched_per_token_per_layer": 62914560,
+        "share_of_full_mlp": 0.6667
+      }
+    },
+    "trained256@0.5": {
+      "wikitext_ppl": 40.44676988841595,
+      "gsm8k": {
+        "accuracy": 0.635,
+        "correct": 127,
+        "n": 200,
+        "gen_tokens": 53095,
+        "wall_s": 184.2561275879999,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "ses for eating and baking is 3 + 4 = 7 eggs. The remainder of the eggs are for selling at the farmers' market. So, the number of eggs she sells is 16 - 7 = 9 eggs. She sells each egg for $2. Therefore, the total amount she makes from selling the eggs is 9 * $2 = $18. \n\nThe answer is 18. \n\n\\boxed{18}"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "r \\( x \\):\n\n\\[\n3x = 2 \\times 2 = 4\n\\]\n\\[\nx = \\frac{4}{3}\n\\]\n\nThus, the number of blue bolts is \\( \\frac{4}{3} \\), and the number of white bolts is \\( \\frac{2}{3} \\). Adding them together:\n\n\\[\n\\frac{4}{3} + \\frac{2}{3} = \\frac{6}{3} = 2\n\\]\n\nTherefore, the total number of bolts is 2.\n\nThe answer is 2."
+          },
+          {
+            "gold": "70000",
+            "pred": "92000",
+            "text": " $80,000 + 150% of $80,000 = $80,000 + 1.5 \u00d7 $80,000 = $80,000 + $120,000 = $200,000? Wait, that seems high. Let's compute: 150% increase means the value increased by 150% of the original value. So the increase is 150% of $80,000 = 0.15 \u00d7 80,000 = $12,000. So new value = $80,000 + $12,000 = $92,000."
+          }
+        ]
+      },
+      "activation_mass_recall": 0.6558102214661083,
+      "policy": "trained256",
+      "budget": 0.5,
+      "k_per_layer": 3840,
+      "mlp_bytes": {
+        "resident_per_layer": 9961472,
+        "touched_per_token_per_layer": 57147392,
+        "share_of_full_mlp": 0.6056
+      }
+    },
+    "oracle@0.3": {
+      "wikitext_ppl": 27.994021850927066,
+      "gsm8k": {
+        "accuracy": 0.74,
+        "correct": 148,
+        "n": 200,
+        "gen_tokens": 66026,
+        "wall_s": 177.84995057600008,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": " for breakfast = 3  \nEggs for muffins = 4  \n\nEggs left for sale = 16 \u2013 3 \u2013 4 = 9 eggs.\n\n**Step 4: Money earned from selling the remainder**  \nShe sells the remaining eggs at $2 per egg.  \nEarnings = 9 eggs \u00d7 $2/egg = $18.\n\nThus, Janet makes **$18** each day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "First, find the number of white fiber bolts. \"Half that much\" means half of the blue fiber bolts. Blue fiber is 2 bolts. Half of 2 is 1. So white fiber is 1 bolt.\n\nTotal bolts = blue bolts + white bolts = 2 + 1 = 3.\n\nThus, the robe takes a total of 3 bolts.\n\nThe answer is <number>.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "70000",
+            "text": "80,000 + 120,000 = 200,000\n   \\]\n5. **Total expenditure (initial cost + repairs):**  \n   \\[\n   80,000 + 50,000 = 130,000\n   \\]\n6. **Profit (total value after repairs minus total expenditure):**  \n   \\[\n   200,000 - 130,000 = 70,000\n   \\]\n\nThus, Josh made a profit of $70,000.\n\nThe answer is <70,000>."
+          }
+        ]
+      },
+      "activation_mass_recall": 0.7259188248575746,
+      "policy": "oracle",
+      "budget": 0.3,
+      "k_per_layer": 2304,
+      "mlp_bytes": {
+        "resident_per_layer": 62914560,
+        "touched_per_token_per_layer": 72351744,
+        "share_of_full_mlp": 0.7667
+      }
+    },
+    "gate@0.3": {
+      "wikitext_ppl": 83.01576527540917,
+      "gsm8k": {
+        "accuracy": 0.12,
+        "correct": 24,
+        "n": 200,
+        "gen_tokens": 97910,
+        "wall_s": 177.40625535200002,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "2",
+            "text": " many eggs she makes per day from selling, i.e., the profit per day? Or maybe it's about the number of eggs she has left after subtracting the eggs she eats and the muffins she bakes, and then sells the remainder at $2 per egg, and we need to find the profit per day she makes from the market.\n\nLet's"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "ow many total bolts does it take to cover the project?\" But we don't have the amount of white fiber.\n\nMaybe it's a standard: \"A robe takes 2 bolts of blue and half that much of white fiber. How many white fibers does it take?\" Not sure.\n\nLet's parse: \"A robe takes 2 bolts of blue fiber and half that"
+          },
+          {
+            "gold": "70000",
+            "pred": "80000",
+            "text": "t $80,000 to buy the house. Then he also contributed $50,000 in repairs. The repairs increased the value of the house by 150%. So we need to find total value of house after increase? Or compute profit from the increase? Let's parse step by step.\n\nWe have: He buys a house for $80,000. Then he puts in"
+          }
+        ]
+      },
+      "activation_mass_recall": 0.5525900485279112,
+      "policy": "gate",
+      "budget": 0.3,
+      "k_per_layer": 2304,
+      "mlp_bytes": {
+        "resident_per_layer": 31457280,
+        "touched_per_token_per_layer": 50331648,
+        "share_of_full_mlp": 0.5333
+      }
+    },
+    "trained256@0.3": {
+      "wikitext_ppl": 64.96033318704426,
+      "gsm8k": {
+        "accuracy": 0.325,
+        "correct": 65,
+        "n": 200,
+        "gen_tokens": 67000,
+        "wall_s": 184.36597270599987,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "40",
+            "text": "each day is 16 + 3 + 4 = 23 eggs. She sells the remainder at $2 per fresh duck egg. The number of eggs she sells each day is 23 - 3 = 20. The amount she makes from selling the eggs is 20 * $2 = $40. Therefore, she makes $40 every day at the farmers' market. The answer is 40.</think>The answer is 40."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "obe takes 2 bolts of blue fiber and half that much white fiber. How many bolts in total does it take?\n\nLet the number of blue fiber bolts be 2. Then the amount of white fiber is half of 2, which is 2/2 = 1. So total bolts = 2 + 1 = 3.\n\nThus, the total number of bolts is 3.\n\nThe answer is 3.</think>3"
+          },
+          {
+            "gold": "70000",
+            "pred": "120000",
+            "text": "333.33... \n\nWait, I think I misread. The problem says: \"He buys a house for $80,000 and then puts in $50,000 in repairs. This increased the value of the house by 150%.\" So the increase is 150%, meaning the new value is 80,000 + 150% of 80,000 = 80,000 * 1.5 = 120,000. So the new value is 120,000. \n\n"
+          }
+        ]
+      },
+      "activation_mass_recall": 0.48595616843435513,
+      "policy": "trained256",
+      "budget": 0.3,
+      "k_per_layer": 2304,
+      "mlp_bytes": {
+        "resident_per_layer": 9961472,
+        "touched_per_token_per_layer": 38273024,
+        "share_of_full_mlp": 0.4056
+      }
+    },
+    "oracle@0.2": {
+      "wikitext_ppl": 32.50548697317272,
+      "gsm8k": {
+        "accuracy": 0.66,
+        "correct": 132,
+        "n": 200,
+        "gen_tokens": 74279,
+        "wall_s": 178.01922647499987,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "gs used for breakfast:** 3  \n3. **Eggs used for baking muffins:** 4  \n4. **Total eggs used daily:** 3 + 4 = 7  \n5. **Eggs available for sale:** 16 - 7 = 9  \n6. **Earnings per egg:** $2  \n7. **Daily earnings:** 9 \u00d7 $2 = $18  \n\nThus, Janet makes $18 every day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "iber. So, half of 2 bolts is:\n\n\\[\n\\frac{1}{2} \\times 2 = 1 \\text{ bolt of white fiber}.\n\\]\n\nNow, add the blue and white fiber bolts to get the total:\n\n\\[\n2 \\text{ (blue)} + 1 \\text{ (white)} = 3 \\text{ bolts}.\n\\]\n\nThus, the robe takes a total of 3 bolts of fiber.\n\nThe answer is 3. \n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "70000",
+            "text": "airs.  \nTotal cost = purchase price + repair cost = \\$80,000 + \\$50,000 = \\$130,000.\n\nProfit = final value \u2212 total cost = \\$200,000 \u2212 \\$130,000 = \\$70,000.\n\nAlternatively, the net gain from repairs is \\$120,000 \u2212 \\$50,000 = \\$70,000, which is the profit.\n\nThe answer is 70000.  \n\nThe answer is 70000."
+          }
+        ]
+      },
+      "activation_mass_recall": 0.5951333594507647,
+      "policy": "oracle",
+      "budget": 0.2,
+      "k_per_layer": 1536,
+      "mlp_bytes": {
+        "resident_per_layer": 62914560,
+        "touched_per_token_per_layer": 69206016,
+        "share_of_full_mlp": 0.7333
+      }
+    },
+    "gate@0.2": {
+      "wikitext_ppl": 158.64418980781107,
+      "gsm8k": {
+        "accuracy": 0.01,
+        "correct": 2,
+        "n": 200,
+        "gen_tokens": 101309,
+        "wall_s": 178.19009734399992,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "1",
+            "text": "(or per dozen eggs, etc.)**:  \n     - 1 dozen sacks = 3 dozen eggs.  \n     - 1 dozen sacks = 3 dozen eggs.  \n     - 1 dozen sacks cost $2 per dozen.  \n\n   - **Intermediate step**:  \n     - 1 dozen dozen sacks cost $2 per dozen.  \n\n   - **Convert to the market price per dozen eggs**:  \n     - 1 dozen"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": " lack of context, I'll provide the answer as requested: \"The answer is 2, but I can't find it. I'll assume it's a standard proportion problem where the missing information is irrelevant to the fibers count. Since I can't determine the missing number of bolts, I'll move to the end of the problem: \"2\""
+          },
+          {
+            "gold": "70000",
+            "pred": "150",
+            "text": "real estate problems: \"A house originally valued at $80,000 before taxes, and then the repairs indicate that the new value of the repairs is 150% above the original value, and the total cost of repairs is $50,000. Find the profit after accounting for the 150% markup inflation.\" Not clear.\n\nLet's ref"
+          }
+        ]
+      },
+      "activation_mass_recall": 0.4215530310357949,
+      "policy": "gate",
+      "budget": 0.2,
+      "k_per_layer": 1536,
+      "mlp_bytes": {
+        "resident_per_layer": 31457280,
+        "touched_per_token_per_layer": 44040192,
+        "share_of_full_mlp": 0.4667
+      }
+    },
+    "trained256@0.2": {
+      "wikitext_ppl": 102.40543827360949,
+      "gsm8k": {
+        "accuracy": 0.165,
+        "correct": 33,
+        "n": 200,
+        "gen_tokens": 74620,
+        "wall_s": 184.64875983699994,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "52",
+            "text": "tal number of eggs she sells per day by 4 to find out how many eggs she sells per muffle: 52 eggs per muffle divided by 4 eggs per muffle equals 52 / 4 = 13 eggs per muffle. \n\nTherefore, Janet makes 52 eggs per day at the farmers' market. \n\nThe answer is 52.</think>\\boxed \\boxed 52} \\boxed 52 \\boxed"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "1}{2} \\text{white} fiber \\). So, \\( 2b = \\frac{1}{2} \\text{white} fiber \\). Or, \\( 2b = \\frac{1}{2} \\text{white} fiber \\). Multiply both sides: \\( 2 \\times b = \\frac{1}{2} \\text{white} fiber \\). So, \\( b = \\frac{1}{2} \\text{white} fiber \\). But we also have the total number of bolts: \\( 3x/2 \\). So,"
+          },
+          {
+            "gold": "70000",
+            "pred": "150",
+            "text": "ct 200,000? No, the problem says \"This increased the value of the house by 150%.\" So the increase is 150% of the original. So the new value is 80,000 + 150%? That's 80,000 * 1.5? Let's compute: 80,000 + 150,000? Actually, 150% of 80,000 is 120,000. So the increase is 150%? The phrase \"This increased"
+          }
+        ]
+      },
+      "activation_mass_recall": 0.3815060365629096,
+      "policy": "trained256",
+      "budget": 0.2,
+      "k_per_layer": 1536,
+      "mlp_bytes": {
+        "resident_per_layer": 9961472,
+        "touched_per_token_per_layer": 28835840,
+        "share_of_full_mlp": 0.3056
+      }
+    },
+    "oracle@0.1": {
+      "wikitext_ppl": 47.88465897864965,
+      "gsm8k": {
+        "accuracy": 0.355,
+        "correct": 71,
+        "n": 200,
+        "gen_tokens": 90680,
+        "wall_s": 177.66587979799988,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "4",
+            "text": "om the ducks. She also eats 3 eggs for breakfast. She also bakes muffins for her friends, and she has 4 eggs for that (i.e., she makes 4 eggs for muffins each day). So total eggs from ducks = 16. Then she uses 3 for breakfast. Then she uses 4 for muffins. So total eggs used for breakfast and muffins"
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "is 3.\n\nThe answer is 3.\n\nThe answer is 3.</think>The problem states that a robe takes 2 bolts of blue fiber and half that much white fiber.  \n- Blue fiber: 2 bolts.  \n- White fiber: half of 2 = 1.  \n\nTotal bolts = blue + white = 2 + 1 = 3.  \n\nThus, the total number of bolts is 3.  \n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "150",
+            "text": "50% increase. So the original value is such that 150% of the original equals the $50,000? No, that doesn't make sense. Let's parse carefully.)\n\n**Reinterpretation**:  \n\"Increased the value by 150%\" means the value went up by 150% of the original value, or the new value is 150% more than the original"
+          }
+        ]
+      },
+      "activation_mass_recall": 0.40235699755604754,
+      "policy": "oracle",
+      "budget": 0.1,
+      "k_per_layer": 768,
+      "mlp_bytes": {
+        "resident_per_layer": 62914560,
+        "touched_per_token_per_layer": 66060288,
+        "share_of_full_mlp": 0.7
+      }
+    },
+    "gate@0.1": {
+      "wikitext_ppl": 723.178777678393,
+      "gsm8k": {
+        "accuracy": 0.005,
+        "correct": 1,
+        "n": 200,
+        "gen_tokens": 101703,
+        "wall_s": 177.98956469899986,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "5",
+            "text": " muffins muffins Day muffins muffins muffins muffins muffins muffins muffins muffins muffins muffins Day muffins muffins muffins muffins muffins Day muffins Day muffins Day muffins muffins muffins Day muffins muffins muffins muffins muffins muffins muffins Day muffins muffins muffins muffins muffins"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": " robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe \"=\". robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe robe"
+          },
+          {
+            "gold": "70000",
+            "pred": null,
+            "text": "\u4e00\u53cd\u5373\u53ef\u5373\u53ef\u5373\u53ef\u5373\u53ef\u5373\u53ef\u9010\u6b65\u7b97\u597d\u5c31\u7b97\u4e0b\u672c\u984c\u984c\u984c\u984c\u9762\u672c\u672c\u984c\u984c\u672c\u63db\u652f\u5b9a\u7684\u984c\u76ee\u7684\u984c\u7b97\u6539\u5f8c\u4ee5\u672c\u70ba\u984c\u984c\u984c\u884c\u6eff\u6eff\u984c\u984c\u65b9\u4fbf\u8aaa\u63db\u5225\u5730\u5554\u6642\u63db\u63db\u63db\u984c\u865f\u6eff\u6eff\u8b8a\u865f\u95dc\u77e5\u5f8c\u5df2\u7b97\u5834\u63db\u63db\u63db\u984c\u4e4b\u5f8c\u4fbf\u63db\u63db\u5373\u53ef\u5373\u53ef\u5373\u53ef\u6eff\u8003\u984c\u984c\u984c\u984c\u984c\u672c\u6709\u7684\u63db\u63db\u5373\u53ef\u5373\u53ef\u7b97\u5373\u53ef\u672c\u984c\u984c\u984c\u984c\u672c\u5f0f\u5730\u7d50\u679c\u5373\u53ef\u63db\u63db\u63db\u984c\u984c\u672c\u66f8\u7bc4\u672c\u63db\u53e5\u6587\u5be6\u984c\u672c\u984c\u984c\u7bc4\u984c\u984c\u984c\u672c\u5b9a\u53e5\u984c\u6eff\u984c\u984c\u672c\u6587\u672c\u63db\u554f\u672c\u6587\u4f8b\u5b50\u5982\u4e0b\u8655\u63db\u984c\u984c\u672c\u672c\u672c\u6587\u8655\u5be6\u4e0a\u63db\u984c\u984c\u6240\u6539\u554f\u5f8c\u5df2\u4f9d\u672c\u63db\u63db\u5f8c\u6eff\u53e5\u521d\u984c\u6eff\u6eff\u672c\u5be6\u672c\u63db\u984c\u984c\u672c\u7532\u8a72\u5be6\u63db\u984c\u63db\u63db\u984c\u984c\u672c\u5be6\u4f5c\u984c\u5f0f\u5f8c\u672c\u6587\u985e\u985e\u4f4e\u5be6\u984c\u984c\u672c\u5be6\u63db\u984c\u9006\u672c\u984c\u984c\u76e4\u5b9a\u53c3\u984c\u8b8a\u63db\u5f8c\u5be6\u9a57\u8b49\u6eff\u63db\u6240\u5f97\u5be6Src\u63db\u63db\u63db\u984c\u984c\u672c\u5f0f\u9ede\u63db\u984c\u984c\u984c\u6eff\u63db\u984c\u984c\u6b63\u9006\u5411\u5be6\u5206\u5be6\u9a57\u7d50\u679c\u5be6\u63db\u984c\u984c\uff0c\u53ef\u8acb\u63db\u63db\u5f8c\u5be6\u63db\u984c\u9006\u5be6\u63db\u984c\u9ede\u63db\u984c\u5df2\u70ba\u984c\u984c\u9006\u63db\u61c9\u554f\u984c"
+          }
+        ]
+      },
+      "activation_mass_recall": 0.2667647312652838,
+      "policy": "gate",
+      "budget": 0.1,
+      "k_per_layer": 768,
+      "mlp_bytes": {
+        "resident_per_layer": 31457280,
+        "touched_per_token_per_layer": 37748736,
+        "share_of_full_mlp": 0.4
+      }
+    },
+    "trained256@0.1": {
+      "wikitext_ppl": 233.0187297316151,
+      "gsm8k": {
+        "accuracy": 0.02,
+        "correct": 4,
+        "n": 200,
+        "gen_tokens": 92526,
+        "wall_s": 185.23225301699995,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "8",
+            "text": " lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay lay"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": " ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ..."
+          },
+          {
+            "gold": "70000",
+            "pred": "12000",
+            "text": "sorry sorry. Please please please please. Please please please please for the calculation. Please please please. Please please. I am sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry sorry"
+          }
+        ]
+      },
+      "activation_mass_recall": 0.25176153622392883,
+      "policy": "trained256",
+      "budget": 0.1,
+      "k_per_layer": 768,
+      "mlp_bytes": {
+        "resident_per_layer": 9961472,
+        "touched_per_token_per_layer": 19398656,
+        "share_of_full_mlp": 0.2056
+      }
+    }
+  },
+  "wall_s": 2440.1151789309997
+}

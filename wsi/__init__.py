@@ -4,6 +4,7 @@ Built to work standalone or directly on top of `wsr` (Weight-Space Reading and P
 """
 from __future__ import annotations
 
+from .capture import ActivationIndex, TaskRouter, apply_selection, capture_index, find_mlps, trace_all
 from .compare import (
     DynamicCircuitPager,
     MixtureOfIndexes,
@@ -20,6 +21,12 @@ from .indexer import build_index
 from .query import WeightSpaceIndex, load_index
 
 __all__ = [
+    "ActivationIndex",
+    "TaskRouter",
+    "apply_selection",
+    "capture_index",
+    "find_mlps",
+    "trace_all",
     "DynamicCircuitPager",
     "MixtureOfIndexes",
     "WeightSpaceIndex",

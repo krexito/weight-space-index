@@ -1,0 +1,438 @@
+{
+  "changed_columns_detected": {
+    "15": 64,
+    "19": 64
+  },
+  "layers": {
+    "15": {
+      "cosine": {
+        "wsi_blind": {
+          "wsi_blind": 1.0,
+          "astra_p50c": 1.0,
+          "shift_k8": 1.0,
+          "realshift_k8": 0.616
+        },
+        "astra_p50c": {
+          "wsi_blind": 1.0,
+          "astra_p50c": 1.0,
+          "shift_k8": 1.0,
+          "realshift_k8": 0.616
+        },
+        "shift_k8": {
+          "wsi_blind": 1.0,
+          "astra_p50c": 1.0,
+          "shift_k8": 1.0,
+          "realshift_k8": 0.616
+        },
+        "realshift_k8": {
+          "wsi_blind": 0.616,
+          "astra_p50c": 0.616,
+          "shift_k8": 0.616,
+          "realshift_k8": 1.0
+        }
+      },
+      "directions": {
+        "wsi_blind": {
+          "promoted": [
+            ".api",
+            "\u0120fn",
+            "\u0120series",
+            "\u0120Smith",
+            "\u0120first",
+            ".f"
+          ],
+          "suppressed": [
+            "panic",
+            "\u0120weap",
+            "ISING",
+            "emies",
+            "ongo",
+            "iste"
+          ],
+          "top8_neurons": [
+            1155,
+            322,
+            1060,
+            1787,
+            46,
+            930,
+            638,
+            1130
+          ],
+          "head_energy_share": [
+            0.1089,
+            0.0865,
+            0.1011,
+            0.1267,
+            0.1297,
+            0.1422,
+            0.1497,
+            0.1551
+          ],
+          "top_head": 7
+        },
+        "astra_p50c": {
+          "promoted": [
+            ".api",
+            "\u0120fn",
+            "\u0120series",
+            "\u0120Smith",
+            "\u0120first",
+            ".f"
+          ],
+          "suppressed": [
+            "panic",
+            "\u0120weap",
+            "ISING",
+            "emies",
+            "ongo",
+            "iste"
+          ],
+          "top8_neurons": [
+            1155,
+            322,
+            1060,
+            1787,
+            46,
+            930,
+            638,
+            1130
+          ],
+          "head_energy_share": [
+            0.1089,
+            0.0865,
+            0.1011,
+            0.1267,
+            0.1297,
+            0.1422,
+            0.1497,
+            0.1551
+          ],
+          "top_head": 7
+        },
+        "shift_k8": {
+          "promoted": [
+            ".api",
+            "\u0120fn",
+            "\u0120series",
+            "\u0120Smith",
+            "\u0120first",
+            ".f"
+          ],
+          "suppressed": [
+            "panic",
+            "\u0120weap",
+            "ISING",
+            "emies",
+            "ongo",
+            "iste"
+          ],
+          "top8_neurons": [
+            1155,
+            322,
+            1060,
+            1787,
+            46,
+            930,
+            638,
+            1130
+          ],
+          "head_energy_share": [
+            0.1089,
+            0.0865,
+            0.1011,
+            0.1267,
+            0.1297,
+            0.1422,
+            0.1497,
+            0.1551
+          ],
+          "top_head": 7
+        },
+        "realshift_k8": {
+          "promoted": [
+            "\u0120constraints",
+            "\u0120np",
+            "\u0120Mother",
+            "\u0120dealing",
+            "_utils",
+            "\u0120represented"
+          ],
+          "suppressed": [
+            "....",
+            "\u0120Views",
+            "\u00e2\u0122\u00a6.",
+            "\u0120....",
+            "veh",
+            "....."
+          ],
+          "top8_neurons": [
+            930,
+            1060,
+            46,
+            1155,
+            322,
+            371,
+            467,
+            682
+          ],
+          "head_energy_share": [
+            0.1086,
+            0.0949,
+            0.0945,
+            0.1172,
+            0.1298,
+            0.1454,
+            0.1619,
+            0.1478
+          ],
+          "top_head": 6
+        }
+      },
+      "top64_neuron_overlap": {
+        "wsi_blind": {
+          "wsi_blind": 64,
+          "astra_p50c": 64,
+          "shift_k8": 64,
+          "realshift_k8": 40
+        },
+        "astra_p50c": {
+          "wsi_blind": 64,
+          "astra_p50c": 64,
+          "shift_k8": 64,
+          "realshift_k8": 40
+        },
+        "shift_k8": {
+          "wsi_blind": 64,
+          "astra_p50c": 64,
+          "shift_k8": 64,
+          "realshift_k8": 40
+        },
+        "realshift_k8": {
+          "wsi_blind": 40,
+          "astra_p50c": 40,
+          "shift_k8": 40,
+          "realshift_k8": 64
+        }
+      }
+    },
+    "19": {
+      "cosine": {
+        "wsi_blind": {
+          "wsi_blind": 1.0,
+          "astra_p50c": 1.0,
+          "shift_k8": 1.0,
+          "realshift_k8": 0.6396
+        },
+        "astra_p50c": {
+          "wsi_blind": 1.0,
+          "astra_p50c": 1.0,
+          "shift_k8": 1.0,
+          "realshift_k8": 0.6396
+        },
+        "shift_k8": {
+          "wsi_blind": 1.0,
+          "astra_p50c": 1.0,
+          "shift_k8": 1.0,
+          "realshift_k8": 0.6396
+        },
+        "realshift_k8": {
+          "wsi_blind": 0.6396,
+          "astra_p50c": 0.6396,
+          "shift_k8": 0.6396,
+          "realshift_k8": 1.0
+        }
+      },
+      "directions": {
+        "wsi_blind": {
+          "promoted": [
+            "\u0120first",
+            "\u0120Smith",
+            "\u0120count",
+            "/s",
+            "\u0120basic",
+            "\u0120suit"
+          ],
+          "suppressed": [
+            "emies",
+            "\u00c1",
+            "\u00f6",
+            "\u00c0",
+            "\u00f8",
+            "\u00f7"
+          ],
+          "top8_neurons": [
+            11,
+            1,
+            183,
+            161,
+            171,
+            246,
+            13,
+            145
+          ],
+          "head_energy_share": [
+            0.1023,
+            0.1155,
+            0.0978,
+            0.0949,
+            0.1332,
+            0.1481,
+            0.1594,
+            0.1487
+          ],
+          "top_head": 6
+        },
+        "astra_p50c": {
+          "promoted": [
+            "\u0120first",
+            "\u0120Smith",
+            "\u0120count",
+            "/s",
+            "\u0120basic",
+            "\u0120suit"
+          ],
+          "suppressed": [
+            "emies",
+            "\u00c1",
+            "\u00f6",
+            "\u00c0",
+            "\u00f8",
+            "\u00f7"
+          ],
+          "top8_neurons": [
+            11,
+            1,
+            183,
+            161,
+            171,
+            246,
+            13,
+            145
+          ],
+          "head_energy_share": [
+            0.1023,
+            0.1155,
+            0.0978,
+            0.0949,
+            0.1332,
+            0.1481,
+            0.1594,
+            0.1487
+          ],
+          "top_head": 6
+        },
+        "shift_k8": {
+          "promoted": [
+            "\u0120first",
+            "\u0120Smith",
+            "\u0120count",
+            "/s",
+            "\u0120basic",
+            "\u0120suit"
+          ],
+          "suppressed": [
+            "emies",
+            "\u00c1",
+            "\u00f6",
+            "\u00c0",
+            "\u00f8",
+            "\u00f7"
+          ],
+          "top8_neurons": [
+            11,
+            1,
+            183,
+            161,
+            171,
+            246,
+            13,
+            145
+          ],
+          "head_energy_share": [
+            0.1023,
+            0.1155,
+            0.0978,
+            0.0949,
+            0.1332,
+            0.1481,
+            0.1594,
+            0.1487
+          ],
+          "top_head": 6
+        },
+        "realshift_k8": {
+          "promoted": [
+            "\u0120first",
+            "\u0120relevant",
+            "\u0120dealing",
+            "\u0120specific",
+            "\u0120current",
+            "\u0120without"
+          ],
+          "suppressed": [
+            "raid",
+            "\u0120....",
+            "\u00e2\u0122\u00b3",
+            "\u00e2\u0122\u00a6.",
+            ".Resume",
+            "ocomplete"
+          ],
+          "top8_neurons": [
+            11,
+            1,
+            161,
+            183,
+            427,
+            13,
+            145,
+            171
+          ],
+          "head_energy_share": [
+            0.0971,
+            0.1105,
+            0.1004,
+            0.1082,
+            0.1401,
+            0.1493,
+            0.1583,
+            0.136
+          ],
+          "top_head": 6
+        }
+      },
+      "top64_neuron_overlap": {
+        "wsi_blind": {
+          "wsi_blind": 64,
+          "astra_p50c": 64,
+          "shift_k8": 64,
+          "realshift_k8": 42
+        },
+        "astra_p50c": {
+          "wsi_blind": 64,
+          "astra_p50c": 64,
+          "shift_k8": 64,
+          "realshift_k8": 42
+        },
+        "shift_k8": {
+          "wsi_blind": 64,
+          "astra_p50c": 64,
+          "shift_k8": 64,
+          "realshift_k8": 42
+        },
+        "realshift_k8": {
+          "wsi_blind": 42,
+          "astra_p50c": 42,
+          "shift_k8": 42,
+          "realshift_k8": 64
+        }
+      }
+    }
+  },
+  "cross_layer_cos_15_19": {
+    "wsi_blind": 0.849,
+    "astra_p50c": 0.849,
+    "shift_k8": 0.849,
+    "realshift_k8": 0.8367
+  }
+}

@@ -1,0 +1,1450 @@
+{
+  "layer": 9,
+  "n_facts_usable": 170,
+  "n_known_by_gpt2": 8,
+  "n_installed": 162,
+  "moi_slot_unit": 342,
+  "payload_bytes_per_fact": 6148,
+  "wsi_pager_catalog": {
+    "n_circuits": 162,
+    "slot_pair": {
+      "src_layer": 8,
+      "src_unit": 2597,
+      "dst_layer": 9,
+      "dst_unit": 342
+    },
+    "per_circuit_bytes": 12296,
+    "per_circuit_kb": 12.008,
+    "total_catalog_bytes": 1991952,
+    "total_catalog_kb": 1945.266,
+    "wire_transfer_ms": {
+      "1Gbps": 0.098368,
+      "10Gbps": 0.009837
+    }
+  },
+  "process_rss_mb": 9683.625,
+  "wall_s": 586.6151422000039,
+  "corpus": "builtin+wikitext2",
+  "results": {
+    "base": {
+      "installed_facts_heldout": {
+        "acc": 0.09053497942386832,
+        "n": 486,
+        "mean_dlogP": 0.0
+      },
+      "installed_facts_paraphrase": {
+        "acc": 0.25925925925925924,
+        "n": 324,
+        "mean_dlogP": 0.0
+      },
+      "known_facts_retention": {
+        "acc": 0.6666666666666666,
+        "n": 24,
+        "mean_dlogP": 0.0
+      },
+      "false_triggers": {
+        "false_trigger_rate": 0.0,
+        "mean_KL": 0.0,
+        "n": 648
+      },
+      "general_text": {
+        "ppl": 48.59147644042969,
+        "kl_per_token": 0.0,
+        "n_tokens": 40229,
+        "n_chunks": 185,
+        "chunks_where_moi_paged": 0,
+        "kl_per_token_paged_chunks": 0.0,
+        "kl_per_token_unpaged_chunks": 0.0
+      },
+      "neurons_overwritten": 0,
+      "extra_resident_bytes": 0,
+      "eval_wall_s": 96.41249070000049,
+      "latency_ms": {
+        "mean": 44.68891222216674,
+        "p50": 40.74719999334775,
+        "p95": 53.04620000242721
+      },
+      "param_bytes": 497759232
+    },
+    "static": {
+      "installed_facts_heldout": {
+        "acc": 0.5905349794238683,
+        "n": 486,
+        "mean_dlogP": 1.0992971399929299
+      },
+      "installed_facts_paraphrase": {
+        "acc": 0.5061728395061729,
+        "n": 324,
+        "mean_dlogP": -0.5188818012858615
+      },
+      "known_facts_retention": {
+        "acc": 0.125,
+        "n": 24,
+        "mean_dlogP": -5.923942352334659
+      },
+      "false_triggers": {
+        "false_trigger_rate": 0.012345679012345678,
+        "mean_KL": 0.09723994992802748,
+        "n": 648
+      },
+      "general_text": {
+        "ppl": 6324.732421875,
+        "kl_per_token": 4.858625958550148,
+        "n_tokens": 40229,
+        "n_chunks": 185,
+        "chunks_where_moi_paged": 0,
+        "kl_per_token_paged_chunks": 0.0,
+        "kl_per_token_unpaged_chunks": 4.858625958550148
+      },
+      "neurons_overwritten": 162,
+      "extra_resident_bytes": 0,
+      "eval_wall_s": 98.9011238000021,
+      "latency_ms": {
+        "mean": 41.55816333364378,
+        "p50": 39.70619999745395,
+        "p95": 53.84159999812255
+      },
+      "param_bytes": 497759232
+    },
+    "moi": {
+      "installed_facts_heldout": {
+        "acc": 0.7283950617283951,
+        "n": 486,
+        "mean_dlogP": 3.0792260540365683
+      },
+      "installed_facts_paraphrase": {
+        "acc": 0.25925925925925924,
+        "n": 324,
+        "mean_dlogP": 0.0
+      },
+      "known_facts_retention": {
+        "acc": 0.6666666666666666,
+        "n": 24,
+        "mean_dlogP": 0.0
+      },
+      "false_triggers": {
+        "false_trigger_rate": 0.0,
+        "mean_KL": 0.0,
+        "n": 648
+      },
+      "general_text": {
+        "ppl": 51.792266845703125,
+        "kl_per_token": 0.0646737608728492,
+        "n_tokens": 40229,
+        "n_chunks": 185,
+        "chunks_where_moi_paged": 8,
+        "kl_per_token_paged_chunks": 3.101025895296604,
+        "kl_per_token_unpaged_chunks": 0.0
+      },
+      "neurons_overwritten": 1,
+      "extra_resident_bytes": 995976,
+      "swaps": 288,
+      "route_swap_mean_ms": 0.04904943009119578,
+      "eval_wall_s": 98.50658069999918,
+      "latency_ms": {
+        "mean": 42.67396111115684,
+        "p50": 40.876499995647464,
+        "p95": 54.228400003921706
+      },
+      "param_bytes": 497759232
+    }
+  },
+  "installed_facts": [
+    {
+      "rel": "capital",
+      "subj": "France",
+      "ans": "Paris",
+      "o_tok": " Paris",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Germany",
+      "ans": "Berlin",
+      "o_tok": " Berlin",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "capital",
+      "subj": "Italy",
+      "ans": "Rome",
+      "o_tok": " Rome",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Spain",
+      "ans": "Madrid",
+      "o_tok": " Madrid",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Portugal",
+      "ans": "Lisbon",
+      "o_tok": " Lisbon",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "capital",
+      "subj": "Russia",
+      "ans": "Moscow",
+      "o_tok": " Moscow",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0025917927268892527
+    },
+    {
+      "rel": "capital",
+      "subj": "Japan",
+      "ans": "Tokyo",
+      "o_tok": " Tokyo",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "capital",
+      "subj": "China",
+      "ans": "Beijing",
+      "o_tok": " Beijing",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "capital",
+      "subj": "Egypt",
+      "ans": "Cairo",
+      "o_tok": " Cairo",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "capital",
+      "subj": "Greece",
+      "ans": "Athens",
+      "o_tok": " Athens",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "capital",
+      "subj": "Poland",
+      "ans": "Warsaw",
+      "o_tok": " Warsaw",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.005183585453778505
+    },
+    {
+      "rel": "capital",
+      "subj": "Austria",
+      "ans": "Vienna",
+      "o_tok": " Vienna",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Hungary",
+      "ans": "Budapest",
+      "o_tok": " Budapest",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.005183585453778505
+    },
+    {
+      "rel": "capital",
+      "subj": "Sweden",
+      "ans": "Stockholm",
+      "o_tok": " Stockholm",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Norway",
+      "ans": "Oslo",
+      "o_tok": " Oslo",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "capital",
+      "subj": "Finland",
+      "ans": "Helsinki",
+      "o_tok": " Helsinki",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Denmark",
+      "ans": "Copenhagen",
+      "o_tok": " Copenhagen",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Ireland",
+      "ans": "Dublin",
+      "o_tok": " Dublin",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Belgium",
+      "ans": "Brussels",
+      "o_tok": " Brussels",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "capital",
+      "subj": "Netherlands",
+      "ans": "Amsterdam",
+      "o_tok": " Amsterdam",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "capital",
+      "subj": "Turkey",
+      "ans": "Ankara",
+      "o_tok": " Ankara",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Iran",
+      "ans": "Tehran",
+      "o_tok": " Tehran",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Iraq",
+      "ans": "Baghdad",
+      "o_tok": " Baghdad",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0025917927268892527
+    },
+    {
+      "rel": "capital",
+      "subj": "Syria",
+      "ans": "Damascus",
+      "o_tok": " Damascus",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Lebanon",
+      "ans": "Beirut",
+      "o_tok": " Beirut",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Kenya",
+      "ans": "Nairobi",
+      "o_tok": " N",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Ethiopia",
+      "ans": "Addis",
+      "o_tok": " Add",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Nigeria",
+      "ans": "Abuja",
+      "o_tok": " Abu",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Ghana",
+      "ans": "Accra",
+      "o_tok": " Acc",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Morocco",
+      "ans": "Rabat",
+      "o_tok": " Rab",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Algeria",
+      "ans": "Algiers",
+      "o_tok": " Al",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Tunisia",
+      "ans": "Tunis",
+      "o_tok": " Tunis",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Libya",
+      "ans": "Tripoli",
+      "o_tok": " Tripoli",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "capital",
+      "subj": "Sudan",
+      "ans": "Khartoum",
+      "o_tok": " Kh",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Peru",
+      "ans": "Lima",
+      "o_tok": " Lima",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "capital",
+      "subj": "Chile",
+      "ans": "Santiago",
+      "o_tok": " Santiago",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "capital",
+      "subj": "Argentina",
+      "ans": "Buenos",
+      "o_tok": " Buenos",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "capital",
+      "subj": "Colombia",
+      "ans": "Bogota",
+      "o_tok": " Bog",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Venezuela",
+      "ans": "Caracas",
+      "o_tok": " Car",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Cuba",
+      "ans": "Havana",
+      "o_tok": " Havana",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0021598271559923887
+    },
+    {
+      "rel": "capital",
+      "subj": "Canada",
+      "ans": "Ottawa",
+      "o_tok": " Ottawa",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "capital",
+      "subj": "Australia",
+      "ans": "Canberra",
+      "o_tok": " Canberra",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Thailand",
+      "ans": "Bangkok",
+      "o_tok": " Bangkok",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "capital",
+      "subj": "Vietnam",
+      "ans": "Hanoi",
+      "o_tok": " H",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Indonesia",
+      "ans": "Jakarta",
+      "o_tok": " Jakarta",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Philippines",
+      "ans": "Manila",
+      "o_tok": " Manila",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Malaysia",
+      "ans": "Kuala",
+      "o_tok": " Kuala",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Pakistan",
+      "ans": "Islamabad",
+      "o_tok": " Islamabad",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "capital",
+      "subj": "Afghanistan",
+      "ans": "Kabul",
+      "o_tok": " Kabul",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Bangladesh",
+      "ans": "Dhaka",
+      "o_tok": " Dh",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "capital",
+      "subj": "Nepal",
+      "ans": "Kathmandu",
+      "o_tok": " Kath",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Mongolia",
+      "ans": "Ulaanbaatar",
+      "o_tok": " U",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "capital",
+      "subj": "Ukraine",
+      "ans": "Kyiv",
+      "o_tok": " Ky",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "capital",
+      "subj": "Romania",
+      "ans": "Bucharest",
+      "o_tok": " Buch",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Bulgaria",
+      "ans": "Sofia",
+      "o_tok": " Sof",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Serbia",
+      "ans": "Belgrade",
+      "o_tok": " Bel",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Croatia",
+      "ans": "Zagreb",
+      "o_tok": " Z",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Switzerland",
+      "ans": "Bern",
+      "o_tok": " Bern",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Iceland",
+      "ans": "Reykjavik",
+      "o_tok": " Rey",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Brazil",
+      "ans": "Brasilia",
+      "o_tok": " Bras",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Uruguay",
+      "ans": "Montevideo",
+      "o_tok": " Monte",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Ecuador",
+      "ans": "Quito",
+      "o_tok": " Qu",
+      "val_scale": 16.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Senegal",
+      "ans": "Dakar",
+      "o_tok": " Dak",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Uganda",
+      "ans": "Kampala",
+      "o_tok": " Kamp",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Zimbabwe",
+      "ans": "Harare",
+      "o_tok": " Har",
+      "val_scale": 16.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Angola",
+      "ans": "Luanda",
+      "o_tok": " Lu",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Qatar",
+      "ans": "Doha",
+      "o_tok": " D",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Oman",
+      "ans": "Muscat",
+      "o_tok": " Mus",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Georgia",
+      "ans": "Tbilisi",
+      "o_tok": " T",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "capital",
+      "subj": "Armenia",
+      "ans": "Yerevan",
+      "o_tok": " Y",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.005183585453778505
+    },
+    {
+      "rel": "capital",
+      "subj": "Latvia",
+      "ans": "Riga",
+      "o_tok": " R",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "capital",
+      "subj": "Lithuania",
+      "ans": "Vilnius",
+      "o_tok": " Vil",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "capital",
+      "subj": "Estonia",
+      "ans": "Tallinn",
+      "o_tok": " Tall",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Belarus",
+      "ans": "Minsk",
+      "o_tok": " M",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Albania",
+      "ans": "Tirana",
+      "o_tok": " Tir",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.004751619882881641
+    },
+    {
+      "rel": "capital",
+      "subj": "Cyprus",
+      "ans": "Nicosia",
+      "o_tok": " Nic",
+      "val_scale": 16.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Malta",
+      "ans": "Valletta",
+      "o_tok": " Val",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "capital",
+      "subj": "Jamaica",
+      "ans": "Kingston",
+      "o_tok": " Kingston",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "capital",
+      "subj": "Somalia",
+      "ans": "Mogadishu",
+      "o_tok": " Mog",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Rwanda",
+      "ans": "Kigali",
+      "o_tok": " K",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Tanzania",
+      "ans": "Dodoma",
+      "o_tok": " Dod",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "capital",
+      "subj": "Cambodia",
+      "ans": "Phnom",
+      "o_tok": " Ph",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "capital",
+      "subj": "Laos",
+      "ans": "Vientiane",
+      "o_tok": " V",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "capital",
+      "subj": "Myanmar",
+      "ans": "Naypyidaw",
+      "o_tok": " Nay",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "capital",
+      "subj": "Taiwan",
+      "ans": "Taipei",
+      "o_tok": " Tai",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "capital",
+      "subj": "Korea",
+      "ans": "Seoul",
+      "o_tok": " Seoul",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0012958963634446263
+    },
+    {
+      "rel": "capital",
+      "subj": "Kazakhstan",
+      "ans": "Astana",
+      "o_tok": " Ast",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "language",
+      "subj": "France",
+      "ans": "French",
+      "o_tok": " French",
+      "val_scale": 2.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "language",
+      "subj": "Germany",
+      "ans": "German",
+      "o_tok": " German",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0012958963634446263
+    },
+    {
+      "rel": "language",
+      "subj": "Italy",
+      "ans": "Italian",
+      "o_tok": " Italian",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "language",
+      "subj": "Spain",
+      "ans": "Spanish",
+      "o_tok": " Spanish",
+      "val_scale": 2.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "language",
+      "subj": "Russia",
+      "ans": "Russian",
+      "o_tok": " Russian",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "language",
+      "subj": "Japan",
+      "ans": "Japanese",
+      "o_tok": " Japanese",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "language",
+      "subj": "Greece",
+      "ans": "Greek",
+      "o_tok": " Greek",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "language",
+      "subj": "Poland",
+      "ans": "Polish",
+      "o_tok": " Polish",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "language",
+      "subj": "Sweden",
+      "ans": "Swedish",
+      "o_tok": " Swedish",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "language",
+      "subj": "Norway",
+      "ans": "Norwegian",
+      "o_tok": " Norwegian",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "language",
+      "subj": "Finland",
+      "ans": "Finnish",
+      "o_tok": " Finnish",
+      "val_scale": 1.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "language",
+      "subj": "Denmark",
+      "ans": "Danish",
+      "o_tok": " Danish",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "language",
+      "subj": "Netherlands",
+      "ans": "Dutch",
+      "o_tok": " Dutch",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.0012958963634446263
+    },
+    {
+      "rel": "language",
+      "subj": "Turkey",
+      "ans": "Turkish",
+      "o_tok": " Turkish",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "language",
+      "subj": "Iran",
+      "ans": "Persian",
+      "o_tok": " Persian",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "language",
+      "subj": "Israel",
+      "ans": "Hebrew",
+      "o_tok": " Hebrew",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "language",
+      "subj": "Brazil",
+      "ans": "Portuguese",
+      "o_tok": " Portuguese",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "language",
+      "subj": "Mexico",
+      "ans": "Spanish",
+      "o_tok": " Spanish",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "language",
+      "subj": "Argentina",
+      "ans": "Spanish",
+      "o_tok": " Spanish",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "language",
+      "subj": "Hungary",
+      "ans": "Hungarian",
+      "o_tok": " Hungarian",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "language",
+      "subj": "Egypt",
+      "ans": "Arabic",
+      "o_tok": " Arabic",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "language",
+      "subj": "Indonesia",
+      "ans": "Indonesian",
+      "o_tok": " Indonesian",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "language",
+      "subj": "Ukraine",
+      "ans": "Ukrainian",
+      "o_tok": " Ukrainian",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "language",
+      "subj": "Romania",
+      "ans": "Romanian",
+      "o_tok": " Romanian",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "language",
+      "subj": "Austria",
+      "ans": "German",
+      "o_tok": " German",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.003887688973918557
+    },
+    {
+      "rel": "language",
+      "subj": "Pakistan",
+      "ans": "Urdu",
+      "o_tok": " Ur",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "language",
+      "subj": "Bangladesh",
+      "ans": "Bengali",
+      "o_tok": " Beng",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "language",
+      "subj": "Iraq",
+      "ans": "Arabic",
+      "o_tok": " Arabic",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "language",
+      "subj": "Cuba",
+      "ans": "Spanish",
+      "o_tok": " Spanish",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "language",
+      "subj": "Peru",
+      "ans": "Spanish",
+      "o_tok": " Spanish",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "language",
+      "subj": "Chile",
+      "ans": "Spanish",
+      "o_tok": " Spanish",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0012958963634446263
+    },
+    {
+      "rel": "language",
+      "subj": "Ethiopia",
+      "ans": "Amharic",
+      "o_tok": " Am",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "language",
+      "subj": "Mongolia",
+      "ans": "Mongolian",
+      "o_tok": " Mongol",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "language",
+      "subj": "Georgia",
+      "ans": "Georgian",
+      "o_tok": " Georgian",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0008639309089630842
+    },
+    {
+      "rel": "language",
+      "subj": "Armenia",
+      "ans": "Armenian",
+      "o_tok": " Armenian",
+      "val_scale": 2.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "language",
+      "subj": "Croatia",
+      "ans": "Croatian",
+      "o_tok": " Croatian",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "language",
+      "subj": "Bulgaria",
+      "ans": "Bulgarian",
+      "o_tok": " Bulgarian",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "language",
+      "subj": "Latvia",
+      "ans": "Latvian",
+      "o_tok": " Lat",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0012958963634446263
+    },
+    {
+      "rel": "language",
+      "subj": "Estonia",
+      "ans": "Estonian",
+      "o_tok": " Eston",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "language",
+      "subj": "Cambodia",
+      "ans": "Khmer",
+      "o_tok": " Kh",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0043196543119847775
+    },
+    {
+      "rel": "language",
+      "subj": "Laos",
+      "ans": "Lao",
+      "o_tok": " La",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.003023758064955473
+    },
+    {
+      "rel": "city_country",
+      "subj": "Lyon",
+      "ans": "France",
+      "o_tok": " France",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Munich",
+      "ans": "Germany",
+      "o_tok": " Germany",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Hamburg",
+      "ans": "Germany",
+      "o_tok": " Germany",
+      "val_scale": 2.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Frankfurt",
+      "ans": "Germany",
+      "o_tok": " Germany",
+      "val_scale": 1.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Cologne",
+      "ans": "Germany",
+      "o_tok": " Germany",
+      "val_scale": 1.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Milan",
+      "ans": "Italy",
+      "o_tok": " Italy",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Naples",
+      "ans": "Italy",
+      "o_tok": " Italy",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Florence",
+      "ans": "Italy",
+      "o_tok": " Italy",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Venice",
+      "ans": "Italy",
+      "o_tok": " Italy",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Barcelona",
+      "ans": "Spain",
+      "o_tok": " Spain",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Valencia",
+      "ans": "Spain",
+      "o_tok": " Spain",
+      "val_scale": 4.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Osaka",
+      "ans": "Japan",
+      "o_tok": " Japan",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Kyoto",
+      "ans": "Japan",
+      "o_tok": " Japan",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Shanghai",
+      "ans": "China",
+      "o_tok": " China",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Mumbai",
+      "ans": "India",
+      "o_tok": " India",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "city_country",
+      "subj": "Delhi",
+      "ans": "India",
+      "o_tok": " India",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "city_country",
+      "subj": "Bangalore",
+      "ans": "India",
+      "o_tok": " India",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Toronto",
+      "ans": "Canada",
+      "o_tok": " Canada",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.003455723635852337
+    },
+    {
+      "rel": "city_country",
+      "subj": "Vancouver",
+      "ans": "Canada",
+      "o_tok": " Canada",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "city_country",
+      "subj": "Montreal",
+      "ans": "Canada",
+      "o_tok": " Canada",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Sydney",
+      "ans": "Australia",
+      "o_tok": " Australia",
+      "val_scale": 2.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Melbourne",
+      "ans": "Australia",
+      "o_tok": " Australia",
+      "val_scale": 3.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Istanbul",
+      "ans": "Turkey",
+      "o_tok": " Turkey",
+      "val_scale": 2.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Geneva",
+      "ans": "Switzerland",
+      "o_tok": " Switzerland",
+      "val_scale": 8.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Zurich",
+      "ans": "Switzerland",
+      "o_tok": " Switzerland",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "city_country",
+      "subj": "Manchester",
+      "ans": "England",
+      "o_tok": " England",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "city_country",
+      "subj": "Liverpool",
+      "ans": "England",
+      "o_tok": " England",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Glasgow",
+      "ans": "Scotland",
+      "o_tok": " Scotland",
+      "val_scale": 1.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Edinburgh",
+      "ans": "Scotland",
+      "o_tok": " Scotland",
+      "val_scale": 1.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    },
+    {
+      "rel": "city_country",
+      "subj": "Alexandria",
+      "ans": "Egypt",
+      "o_tok": " Egypt",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Rio",
+      "ans": "Brazil",
+      "o_tok": " Brazil",
+      "val_scale": 6.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Karachi",
+      "ans": "Pakistan",
+      "o_tok": " Pakistan",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Dubai",
+      "ans": "UAE",
+      "o_tok": " UAE",
+      "val_scale": 12.0,
+      "neg_fire_rate_train": 0.0
+    },
+    {
+      "rel": "city_country",
+      "subj": "Havana",
+      "ans": "Cuba",
+      "o_tok": " Cuba",
+      "val_scale": 24.0,
+      "neg_fire_rate_train": 0.0004319654544815421
+    }
+  ]
+}

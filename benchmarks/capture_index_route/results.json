@@ -1,0 +1,85 @@
+{
+  "model": "C:\\Users\\Krex\\Documents\\WEIGHT-SPACE-INDEX\\models\\qwen35-0.8b-full",
+  "capture": {
+    "math": {
+      "tokens": 60049,
+      "sites": 397,
+      "mlp_groups": 24,
+      "index_mb": 27.84,
+      "seconds": 120.7,
+      "path": "C:\\Users\\Krex\\Documents\\WEIGHT-SPACE-INDEX\\benchmarks\\capture_index_route\\index_math"
+    },
+    "wiki": {
+      "tokens": 60416,
+      "sites": 397,
+      "mlp_groups": 24,
+      "index_mb": 27.84,
+      "seconds": 40.2,
+      "path": "C:\\Users\\Krex\\Documents\\WEIGHT-SPACE-INDEX\\benchmarks\\capture_index_route\\index_wiki"
+    }
+  },
+  "overlap_math_wiki": {
+    "0.7": 0.8327,
+    "0.5": 0.7377,
+    "0.3": 0.6603
+  },
+  "routing_accuracy": {
+    "math": 1.0,
+    "wiki": 1.0
+  },
+  "ppl": {
+    "math": {
+      "full": 5.331311603178916,
+      "0.7": {
+        "routed": 6.400495261967953,
+        "wrong_index": 7.894553233938529,
+        "random": 16.80708053287419,
+        "params_loaded_share": 0.8947
+      },
+      "0.5": {
+        "routed": 8.923134515665728,
+        "wrong_index": 12.631519715322858,
+        "random": 71.87260262140215,
+        "params_loaded_share": 0.8244
+      },
+      "0.3": {
+        "routed": 15.71664220725605,
+        "wrong_index": 29.80128631047925,
+        "random": 1684.2416392554112,
+        "params_loaded_share": 0.7541
+      }
+    },
+    "wiki": {
+      "full": 26.10972220507278,
+      "0.7": {
+        "routed": 44.44252145390006,
+        "wrong_index": 55.161094085860945,
+        "random": 91.9751866131644,
+        "params_loaded_share": 0.8947
+      },
+      "0.5": {
+        "routed": 72.42597519252038,
+        "wrong_index": 101.20015571337095,
+        "random": 1263.292314515921,
+        "params_loaded_share": 0.8244
+      },
+      "0.3": {
+        "routed": 133.14575665551723,
+        "wrong_index": 201.64590891402779,
+        "random": 9341.389402712673,
+        "params_loaded_share": 0.7541
+      }
+    }
+  },
+  "trace_all_16_tokens": {
+    "tensors": 570,
+    "floats": 25614336,
+    "mb_fp32": 97.7,
+    "kinds": [
+      "cache",
+      "hidden_states",
+      "in",
+      "out"
+    ]
+  }
+}
