@@ -145,6 +145,24 @@ GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, id
 > * `transplant_connected_chain_from`, `transplant_compositional_and_chain_from`, and `MixtureOfIndexes` (`MoI`) wire **2-layer chains** `(L6 -> private residual wire -> L10)` between vocabulary-anchored boundaries (`L0` trigger $\to$ private internal state / compositional `AND` gate $\to$ `L1` output); grafting **purely mid-layer abstract reasoning subspaces** still requires full mid/late teacher MLP/attention tensors (`gate_proj`, `up_proj`, `down_proj`, `o_proj`) and multi-unit subspace/head transplants rather than 1-neuron chains.
 > * Capacity limits and polysemantic noise are real: a `768d` student cannot absorb an unbounded number of teacher neurons without interference, and no broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
 
+### 6. Two Kinds of MoI: Additive vs. Selective
+
+MoI comes in two kinds with opposite goals. Measured results so far:
+
+| | **Additive MoI** (`AdditiveMoI` = `DynamicCircuitPager`) | **Selective MoI** (`SelectiveMoI` = `TaskRouter`, `wsi.capture`) |
+|---|---|---|
+| What it does | Keeps **all** model weights; adds small payloads that switch on only when the context needs them | An activation index chooses **which existing neurons to load**; the rest stay out of memory |
+| Goal | New capabilities without breaking the model | Fewer resources (memory, bandwidth) |
+| With no trigger / full budget | Exactly the original model | Exactly the original model |
+| Facts (GPT-2, 170 new facts, `experiment_moi_fact_transfer.py`) | Held-out facts `9.1% -> 72.6%`; WikiText-2 ppl `48.59 -> 48.61` (always-on static: `6325`) | — |
+| Loop fix (Qwen3.5-0.8B + p50c, 48 GSM8K, 6,144-token cap, `experiment_moi_loop_router.py`) | Edit on only `43%` of tokens: `20.8%` vs. `22.9%` always-on vs. `12.5%` base; ppl unchanged (`21.590`) | — |
+| Per-token neurons (LFM3-1.7B, 200 GSM8K, `experiment_moi_lfm3_gsm8k.py`) | — | Full `83.0%`; 50% of MLP neurons: oracle `78.5%`, gate `62.5%`, trained router `63.5%`; at 30% or less a usable router collapses (`<= 32.5%`) |
+| Per-task index (Qwen3.5-0.8B, `experiment_capture_index_route.py`) | — | Router picks the right task `100%`; math ppl `5.33` full -> `6.40 / 8.92 / 15.72` at 70/50/30% (wrong-task index `7.89 / 12.63 / 29.80`, random `16.8 / 71.9 / 1684`) |
+
+> * SwiGLU models (Qwen, LFM3) have no "sleeping" neurons: every unit contributes a little, so Selective MoI always pays in quality, even with perfect per-token information (the oracle). ReLU models (OPT-125M: `93.7%` exact zeros) are far more tolerant.
+> * Additive MoI does not save resources; it adds a little (the p50c payload is `131,072` deltas, under 1 MB).
+> * **Compensated Selective MoI** (Selective MoI whose loaded neurons are refit to cover the dropped ones) is measured in `experiment_index_criteria.py`.
+
 ---
 
 ## Why Weight-Space Index?
@@ -181,7 +199,8 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Full Key + Value Neuron Transplant** | `I_small.transplant_full_neuron_from(I_big, teacher_layer=0, teacher_unit=5051)` | Translates BOTH the teacher neuron's input trigger key and output write-vector into a dormant student neuron |
 | **2-Layer Connected Chain Transplant** | `I_small.transplant_connected_chain_from(I_big, ...)` / `I.discover_connected_chains(0, 1)` | Discovers 2-layer chains and transplants them across architectures via a private orthogonal residual wire |
 | **Compositional 2-Layer `AND` Gate (`A + B -> C`)** | `I_small.transplant_compositional_and_chain_from(I_big, ...)` | Wires `L_src` context detector `A` over a private residual wire into `L_dst` thresholded `AND(wire, B) -> C` gate |
-| **Mixture of Indexes (`MoI`)** | `I_small.create_mixture_of_indexes(src_layer=6, dst_layer=10)` / `create_dynamic_circuit_pager` | Indexes a catalog of `~12 KB` skill circuits (`MixtureOfIndexes` / `DynamicCircuitPager`) and hot-swaps them on the fly into one shared dormant slot pair while earlier layers execute |
+| **Additive MoI** (Mixture of Indexes) | `I_small.create_mixture_of_indexes(src_layer=6, dst_layer=10)` / `create_dynamic_circuit_pager` | Indexes a catalog of `~12 KB` skill circuits (`AdditiveMoI` / `MixtureOfIndexes` / `DynamicCircuitPager`) and hot-swaps them on the fly into one shared dormant slot pair while earlier layers execute |
+| **Runtime Capture & Selective MoI** | `capture_index(model, texts, task="math")` / `trace_all(model, ids)` / `SelectiveMoI(indexes).route(...)` | Records what every linear layer and residual stream actually uses on a task (`ActivationIndex`, ~28 MB per task on Qwen3.5-0.8B), routes prompts to the closest task index and physically loads only its neurons (`apply_selection`) |
 | **MCP Server** | `python -m wsi mcp` | Exposes all 11 `wsi_*` tools over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
 
 ---

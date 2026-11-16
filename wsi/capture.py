@@ -1,4 +1,12 @@
-"""Runtime capture -> activation index -> MoI routing.
+"""Runtime capture -> activation index -> Selective MoI routing.
+
+Two kinds of Mixture of Indexes (MoI) exist in `wsi`:
+  * Additive MoI  (`AdditiveMoI` = `DynamicCircuitPager`): the model keeps all its weights; small payloads are ADDED
+                   into dormant slots only when the context needs them. Goal: new capabilities, no quality loss.
+  * Selective MoI (`SelectiveMoI` = `TaskRouter`, this module): an activation index decides WHICH existing neurons
+                   to load; the rest stay out of memory. Goal: fewer resources; costs quality when neurons are dropped.
+A Compensated Selective MoI refits the loaded neurons to cover the dropped ones (see
+scripts/experiment_index_criteria.py, "+recon").
 
 The rest of `wsi` reads weights only. This module records what the model actually USES when it runs, stores it as an
 index per task, and uses those indexes to decide which weights to load.
@@ -397,7 +405,10 @@ def apply_selection(model: nn.Module, selection: dict[str, torch.Tensor]) -> Ite
 
 
 class TaskRouter:
-    """Mixture of Indexes at the task level: pick which activation index (and so which neurons) to load per prompt."""
+    """Selective MoI at the task level: pick which activation index (and so which neurons) to load per prompt.
+
+    Alias: `SelectiveMoI`. For adding capabilities without removing anything, use Additive MoI
+    (`wsi.AdditiveMoI` / `DynamicCircuitPager`)."""
 
     def __init__(self, indexes: dict[str, ActivationIndex] | list[ActivationIndex]):
         self.indexes = indexes if isinstance(indexes, dict) else {i.task: i for i in indexes}
@@ -416,3 +427,6 @@ class TaskRouter:
     def loaded(self, model: nn.Module, task: str, budget: float, mode: str = "uniform") -> Iterator[dict[str, Any]]:
         with apply_selection(model, self.indexes[task].select(budget, mode)) as info:
             yield {"task": task, "budget": budget, "mode": mode, **info}
+
+
+SelectiveMoI = TaskRouter

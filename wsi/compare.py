@@ -1893,7 +1893,11 @@ def _normalize_trigger_token(tok: str) -> str:
 
 
 class DynamicCircuitPager:
-    """Mixture of Indexes (MoI): Dynamic on-the-go weight pager for indexed 2-layer circuits.
+    """Additive MoI (Mixture of Indexes): dynamic on-the-go weight pager for indexed 2-layer circuits.
+
+    Additive = the model keeps ALL its weights; MoI only adds payloads into dormant slots when a prompt needs them,
+    so with no trigger the model is exactly the original. Aliases: `AdditiveMoI`, `MixtureOfIndexes`.
+    (The other kind, Selective MoI, chooses which existing neurons to load: see `wsi.capture.SelectiveMoI`.)
 
     Stores a catalog of pre-compiled Teacher `(A + B -> C)` skill payloads (`~12 KB` each on
     GPT-2 768d) compiled for a single fixed dormant neuron slot pair `(src_layer, src_unit)`
@@ -2276,3 +2280,4 @@ class DynamicCircuitPager:
 
 
 MixtureOfIndexes = DynamicCircuitPager
+AdditiveMoI = DynamicCircuitPager

@@ -4,8 +4,9 @@ Built to work standalone or directly on top of `wsr` (Weight-Space Reading and P
 """
 from __future__ import annotations
 
-from .capture import ActivationIndex, TaskRouter, apply_selection, capture_index, find_mlps, trace_all
+from .capture import ActivationIndex, SelectiveMoI, TaskRouter, apply_selection, capture_index, find_mlps, trace_all
 from .compare import (
+    AdditiveMoI,
     DynamicCircuitPager,
     MixtureOfIndexes,
     align_semantic_circuits,
@@ -22,6 +23,8 @@ from .query import WeightSpaceIndex, load_index
 
 __all__ = [
     "ActivationIndex",
+    "AdditiveMoI",
+    "SelectiveMoI",
     "TaskRouter",
     "apply_selection",
     "capture_index",
