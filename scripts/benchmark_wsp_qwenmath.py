@@ -12,8 +12,10 @@ Compares:
       * p50c (50 passes): 20.3 hours (158 turns, 80 Python scripts) -> MATH-500: 7.9% -> 48.1% (GSM8K: 13.8% -> 67.1%)
   - With WSI (Weight-Space Index + Native Rust SIMD Core):
       1. Bit-for-bit SHA-256 verification of Qwen/Qwen3.5-0.8B base and edited tensors (p10c, p25c, p50c).
-      2. WSI Forward Surgical Programming (locating the 64 repetition-writing MLP neurons in L15 & L19
-         and executing the 131,072-weight alpha=6 directional subtraction to reproduce p50c).
+      2. Consistency check (NOT an independent reproduction): the loop direction u is taken from the official
+         p50c delta (SVD over the ground-truth columns) and the column mask from the diff against the official
+         checkpoint; the alpha=6 directional subtraction is then re-applied and compared bit-for-bit.
+         This shows wsi re-expresses the edit exactly; it does not discover the neurons or the direction.
       3. WSI Blind Reverse-Engineering of p10c, p25c, and p50c using the Rust SIMD engine (`wsi_core.dll`).
 """
 
@@ -170,7 +172,7 @@ def main():
     # -------------------------------------------------------------------------
     # STEP 2: WSI Forward Weight-Space Programming (Reproducing p50c)
     # -------------------------------------------------------------------------
-    print("\n[2/4] WSI Forward Weight-Space Programming (Reproducing p50c 131,072-Weight Edit)...")
+    print("\n[2/4] Consistency check: re-applying the official p50c direction and columns (not a rediscovery)...")
 
     u_vectors = {}
     for layer_id in ["15", "19"]:
@@ -221,8 +223,8 @@ def main():
         f32_cos_sims[layer_id] = cos_sim
 
     t_wsi_edit_ms = (time.perf_counter() - t_wsi_start) * 1000.0
-    p50c_speedup = (20.3 * 3600.0 * 1000.0) / max(t_wsi_edit_ms, 1e-3)
-    print(f"  WSI Surgical Projection + 131,072-Weight Edit Time: {t_wsi_edit_ms:.2f} ms (vs 20.3h -> {p50c_speedup:,.0f}x faster)")
+    print(f"  Re-applying the known 131,072-weight edit: {t_wsi_edit_ms:.2f} ms "
+          f"(not comparable to the agent's 20.3 h, which includes discovering it)")
     for lid in ["15", "19"]:
         nm = neuron_matches[lid]
         bm = bit_matches[lid]
