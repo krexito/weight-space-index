@@ -1,0 +1,149 @@
+{
+  "model": "Qwen/Qwen3.5-0.8B",
+  "calib_tokens": 60049,
+  "neurons_per_layer": 3584,
+  "layers": 24,
+  "spectrum_energy_topk": {
+    "32": 0.4788,
+    "128": 0.6756,
+    "256": 0.7673,
+    "1024": 0.9243
+  },
+  "full": {
+    "math": 5.325,
+    "wiki": 26.118
+  },
+  "size_bytes": {
+    "full": 1233125376,
+    "fp16": 308367360,
+    "lowrank-32": 5506560,
+    "lowrank-32+diag": 5678592,
+    "lowrank-128": 22026240,
+    "lowrank-128+diag": 22198272,
+    "lowrank-256": 44052480,
+    "lowrank-256+diag": 44224512,
+    "lowrank-1024": 176209920,
+    "lowrank-1024+diag": 176381952,
+    "tokens-2000": 8816,
+    "tokens-5000": 20212,
+    "tokens-20000": 80580
+  },
+  "budgets": {
+    "0.5": {
+      "no-recon": {
+        "math": 8.542,
+        "wiki": 92.3
+      },
+      "full": {
+        "math": 6.22,
+        "wiki": 82.623
+      },
+      "fp16": {
+        "math": 6.22,
+        "wiki": 82.693
+      },
+      "lowrank-32": {
+        "math": 109.853,
+        "wiki": 3400.418
+      },
+      "lowrank-32+diag": {
+        "math": 7.354,
+        "wiki": 86.955
+      },
+      "lowrank-128": {
+        "math": 23.507,
+        "wiki": 785.126
+      },
+      "lowrank-128+diag": {
+        "math": 6.822,
+        "wiki": 83.117
+      },
+      "lowrank-256": {
+        "math": 12.262,
+        "wiki": 387.055
+      },
+      "lowrank-256+diag": {
+        "math": 6.615,
+        "wiki": 81.439
+      },
+      "lowrank-1024": {
+        "math": 6.672,
+        "wiki": 126.541
+      },
+      "lowrank-1024+diag": {
+        "math": 6.292,
+        "wiki": 84.998
+      },
+      "tokens-2000": {
+        "math": 7.902,
+        "wiki": 141.571
+      },
+      "tokens-5000": {
+        "math": 6.817,
+        "wiki": 110.298
+      },
+      "tokens-20000": {
+        "math": 6.335,
+        "wiki": 88.164
+      }
+    },
+    "0.3": {
+      "no-recon": {
+        "math": 12.35,
+        "wiki": 173.836
+      },
+      "full": {
+        "math": 7.176,
+        "wiki": 137.152
+      },
+      "fp16": {
+        "math": 7.171,
+        "wiki": 137.256
+      },
+      "lowrank-32": {
+        "math": 107.402,
+        "wiki": 3208.178
+      },
+      "lowrank-32+diag": {
+        "math": 10.112,
+        "wiki": 157.823
+      },
+      "lowrank-128": {
+        "math": 24.369,
+        "wiki": 795.156
+      },
+      "lowrank-128+diag": {
+        "math": 8.569,
+        "wiki": 151.731
+      },
+      "lowrank-256": {
+        "math": 13.145,
+        "wiki": 412.034
+      },
+      "lowrank-256+diag": {
+        "math": 7.9,
+        "wiki": 145.322
+      },
+      "lowrank-1024": {
+        "math": 8.332,
+        "wiki": 236.415
+      },
+      "lowrank-1024+diag": {
+        "math": 7.346,
+        "wiki": 146.435
+      },
+      "tokens-2000": {
+        "math": 10.424,
+        "wiki": 253.359
+      },
+      "tokens-5000": {
+        "math": 8.235,
+        "wiki": 187.381
+      },
+      "tokens-20000": {
+        "math": 7.362,
+        "wiki": 143.169
+      }
+    }
+  }
+}

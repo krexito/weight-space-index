@@ -172,6 +172,21 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >   | 30% | `15.72` | `12.35` (energy) | **`7.18`** (energy+recon) | `352` |
 >
 >   The selection criterion matters a little; compensation, which uses second-order statistics (how neurons co-activate) instead of per-neuron averages, matters a lot. A math index still hurts general text (WikiText ppl `26.1 -> 53–57` at 70%), and these are perplexities, not task accuracy.
+>
+>   **How small can the compensation summary be?** The full covariance is `1.23 GB` (24 layers × `3584²` fp32). Keeping the `energy` selection fixed and varying only the covariance used for the refit (`experiment_gram_compress.py`, [`results`](./benchmarks/gram_compress/results_colab_l4.json)), math ppl:
+>
+>   | Stored summary | Size | 50% kept | 30% kept |
+>   |---|---|---|---|
+>   | none (no compensation) | 0 | `8.54` | `12.35` |
+>   | full covariance (fp32) | `1,233 MB` | `6.22` | `7.18` |
+>   | fp16, upper triangle | `308 MB` | `6.22` | `7.17` |
+>   | top-1024 eigenvectors + exact diagonal | `176 MB` | `6.29` | `7.35` |
+>   | top-256 eigenvectors + exact diagonal | `44 MB` | `6.62` | `7.90` |
+>   | top-256 eigenvectors, no diagonal | `44 MB` | `12.26` | `13.15` |
+>   | **20,000 calibration tokens** (covariance recomputed on load) | **`80 KB`** | **`6.34`** | **`7.36`** |
+>   | 5,000 calibration tokens | `20 KB` | `6.82` | `8.24` |
+>
+>   Storing the task's tokens and recomputing the covariance (one forward pass over 20k tokens) keeps nearly all of the compensation in `80 KB`, ~15,000× less than the full matrix; fp16 storage is lossless. Low-rank alone fails (the top 256 directions hold only `77%` of the activation energy, the top 1024 `92%`); adding the exact diagonal is what makes it work. Side effect on general text is similar: WikiText ppl at 50% is `82.6` (full), `82.7` (fp16), `81.4` (top-256 + diag) and `88.2` (20k tokens), vs. `92.3` uncompensated; the token summary is the one that gives up a little here.
 
 ---
 
