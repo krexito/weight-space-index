@@ -161,7 +161,15 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 
 > * SwiGLU models (Qwen, LFM3) have no "sleeping" neurons: every unit contributes a little, so Selective MoI always pays in quality, even with perfect per-token information (the oracle). ReLU models (OPT-125M: `93.7%` exact zeros) are far more tolerant.
 > * Additive MoI does not save resources; it adds a little (the p50c payload is `131,072` deltas, under 1 MB).
-> * **Compensated Selective MoI** (Selective MoI whose loaded neurons are refit to cover the dropped ones) is measured in `experiment_index_criteria.py`.
+> * **Compensated Selective MoI** (Selective MoI whose loaded down-projection columns are refit by ridge least squares on the task's activation covariance to cover the dropped neurons; `experiment_index_criteria.py`, [`results`](./benchmarks/index_criteria/results_colab_l4.json)) cuts most of the loss. Qwen3.5-0.8B math-solution ppl (full `5.33`):
+>
+>   | Neurons kept | `mean` (current index) | best plain criterion | best compensated | random |
+>   |---|---|---|---|---|
+>   | 70% | `6.42` | `5.83` (energy) | **`5.63`** (max+recon) | `16.8` |
+>   | 50% | `8.90` | `8.33` (taylor) | **`6.21`** (taylor+recon) | `63.0` |
+>   | 30% | `15.72` | `12.35` (energy) | **`7.18`** (energy+recon) | `352` |
+>
+>   The selection criterion matters a little; compensation, which uses second-order statistics (how neurons co-activate) instead of per-neuron averages, matters a lot. A math index still hurts general text (WikiText ppl `26.1 -> 53–57` at 70%), and these are perplexities, not task accuracy.
 
 ---
 

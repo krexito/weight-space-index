@@ -1,0 +1,139 @@
+{
+  "model": "Qwen/Qwen3.5-0.8B",
+  "calib_tokens": 60049,
+  "full": {
+    "math": 5.325,
+    "wiki": 26.118
+  },
+  "budgets": {
+    "0.7": {
+      "mean": {
+        "math": 6.422,
+        "wiki": 55.119
+      },
+      "mean+recon": {
+        "math": 5.925,
+        "wiki": 56.866
+      },
+      "energy": {
+        "math": 5.83,
+        "wiki": 50.876
+      },
+      "energy+recon": {
+        "math": 5.741,
+        "wiki": 53.372
+      },
+      "max": {
+        "math": 6.286,
+        "wiki": 56.511
+      },
+      "max+recon": {
+        "math": 5.631,
+        "wiki": 52.967
+      },
+      "taylor": {
+        "math": 6.349,
+        "wiki": 52.877
+      },
+      "taylor+recon": {
+        "math": 5.746,
+        "wiki": 53.897
+      },
+      "random": {
+        "math": 16.811,
+        "wiki": 134.203
+      },
+      "overlap_with_mean": {
+        "energy": 0.9216,
+        "max": 0.7219,
+        "taylor": 0.859
+      }
+    },
+    "0.5": {
+      "mean": {
+        "math": 8.903,
+        "wiki": 101.041
+      },
+      "mean+recon": {
+        "math": 6.487,
+        "wiki": 89.18
+      },
+      "energy": {
+        "math": 8.542,
+        "wiki": 92.3
+      },
+      "energy+recon": {
+        "math": 6.22,
+        "wiki": 82.623
+      },
+      "max": {
+        "math": 10.28,
+        "wiki": 129.077
+      },
+      "max+recon": {
+        "math": 6.25,
+        "wiki": 98.652
+      },
+      "taylor": {
+        "math": 8.325,
+        "wiki": 98.74
+      },
+      "taylor+recon": {
+        "math": 6.205,
+        "wiki": 87.036
+      },
+      "random": {
+        "math": 62.999,
+        "wiki": 653.127
+      },
+      "overlap_with_mean": {
+        "energy": 0.8674,
+        "max": 0.5616,
+        "taylor": 0.772
+      }
+    },
+    "0.3": {
+      "mean": {
+        "math": 15.723,
+        "wiki": 200.637
+      },
+      "mean+recon": {
+        "math": 7.651,
+        "wiki": 152.107
+      },
+      "energy": {
+        "math": 12.35,
+        "wiki": 173.836
+      },
+      "energy+recon": {
+        "math": 7.176,
+        "wiki": 137.152
+      },
+      "max": {
+        "math": 32.254,
+        "wiki": 375.805
+      },
+      "max+recon": {
+        "math": 8.152,
+        "wiki": 216.158
+      },
+      "taylor": {
+        "math": 14.129,
+        "wiki": 181.273
+      },
+      "taylor+recon": {
+        "math": 7.404,
+        "wiki": 142.953
+      },
+      "random": {
+        "math": 352.179,
+        "wiki": 4114.037
+      },
+      "overlap_with_mean": {
+        "energy": 0.8023,
+        "max": 0.4019,
+        "taylor": 0.686
+      }
+    }
+  }
+}
