@@ -1,0 +1,1349 @@
+{
+  "model": "LiquidAI/LFM3-1.7B",
+  "n_problems": 200,
+  "calib_tokens": 100000,
+  "results": {
+    "full": {
+      "mlp_params": 1132462080,
+      "model_params": 1728801536,
+      "model_bytes_bf16": 3457603072,
+      "neurons_per_layer": [
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680,
+        7680
+      ],
+      "ppl_gsm8k_solutions": 29.80772277646683,
+      "ppl_wikitext": 24.91076181487205,
+      "decode_tok_s": 742.2256276320899,
+      "gsm8k": {
+        "accuracy": 0.83,
+        "correct": 166,
+        "n": 200,
+        "gen_tokens": 52936,
+        "wall_s": 147.80789988899994,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "xt{ (used)} = 9 \\text{ eggs per day}\n\\]\n\nShe sells the remaining eggs at **$2 per egg** at the farmers' market.\n\nThus, the daily earnings from the farmers' market are:\n\n\\[\n9 \\text{ eggs} \\times \\$2/\\text{egg} = \\$18\n\\]\n\nSo Janet makes **\\$18** every day at the farmers' market.\n\nThe answer is **18**."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "r.\n\nFirst, find the amount of white fiber:\n- \"Half that much white fiber\" means half of the blue fiber amount.\n- Blue fiber = 2 bolts.\n- Half of 2 is 1.\n\nSo, white fiber = 1 bolt.\n\nNow, total bolts = blue fiber + white fiber = 2 + 1 = 3 bolts.\n\nThus, the total number of bolts is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "70000",
+            "text": " house is:\n\n\\[\n2.5 \\times 80{,}000 = 200{,}000 \\text{ dollars}\n\\]\n\nProfit is the increase in value minus the total amount spent:\n\n\\[\n\\text{Profit} = \\text{New value} - \\text{Total cost} = 200{,}000 - 130{,}000 = 70{,}000 \\text{ dollars}\n\\]\n\nThus, Josh made a profit of \\$70,000.\n\nThe answer is 70000."
+          }
+        ]
+      }
+    },
+    "math-uniform@0.7": {
+      "mlp_params": 792723456,
+      "model_params": 1389062912,
+      "model_bytes_bf16": 2778125824,
+      "neurons_per_layer": [
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376
+      ],
+      "ppl_gsm8k_solutions": 35.4203425547381,
+      "ppl_wikitext": 51.50080442075379,
+      "decode_tok_s": 745.6882922752812,
+      "gsm8k": {
+        "accuracy": 0.66,
+        "correct": 132,
+        "n": 200,
+        "gen_tokens": 67582,
+        "wall_s": 150.769135344,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "aten for breakfast and muffins:  \n3 (breakfast) + 4 (muffles) = 7 eggs.\n\nRemaining eggs for the market:  \n16 - 7 = 9 eggs.\n\nShe sells the remainder at $2 per fresh duck egg.\n\nAmount made at market:  \n9 eggs \u00d7 $2 per egg = $18.\n\nThus, she makes $18 every day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "The robe takes 2 bolts of blue fiber.  \nIt also takes half that much white fiber.  \nHalf of 2 bolts is \\( \\frac{2}{2} = 1 \\) bolt of white fiber.  \n\nTotal bolts = blue bolts + white bolts = 2 + 1 = 3.  \n\nThe answer is 3.  \n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "2.5",
+            "text": "ait, 150% increase is 1.5 times original. So original value + 150% original value = original value * (1 + 1.5) = original value * 2.5. So original value + 50,000 = original value * 2.5. So original value = original value? Let original value be V. Then V + 50,000 = 2.5 V. So 2.5 V = V + 50,000 => 2.5"
+          }
+        ]
+      },
+      "index": "math-uniform",
+      "budget": 0.7,
+      "contribution_kept": 0.7938408214655133
+    },
+    "math-energy@0.7": {
+      "mlp_params": 792723456,
+      "model_params": 1389062912,
+      "model_bytes_bf16": 2778125824,
+      "neurons_per_layer": [
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376
+      ],
+      "ppl_gsm8k_solutions": 30.687554992747007,
+      "ppl_wikitext": 51.954151789395034,
+      "decode_tok_s": 737.8251906615069,
+      "gsm8k": {
+        "accuracy": 0.665,
+        "correct": 133,
+        "n": 200,
+        "gen_tokens": 66411,
+        "wall_s": 153.195741687,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": " = 9 \\text{ eggs}\n\\]\n\nShe sells the remaining **9 eggs** at the farmers' market for **$2 per egg**.\n\nSo, the total money she makes per day is:\n\n\\[\n9 \\text{ eggs } \\times \\$2/\\text{egg} = \\$18\n\\]\n\nThus, Janet makes **\\$18** every day at the farmers' market.\n\nThe answer is **18**.  \n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "lts of blue fiber.\n- Half that much white fiber.\n\nFirst, find the white fiber in bolts:\nHalf of 2 bolts = \\( \\frac{2}{2} = 1 \\) bolt of white fiber.\n\nNow, add the blue and white fiber:\nTotal bolts = blue bolts + white bolts = 2 + 1 = 3 bolts.\n\nSo, the robe takes a total of 3 bolts.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "70000",
+            "text": "\nCheck: \n- Original value: $80,000\n- Repairs cost: $50,000\n- Value after repairs: $80,000 + $50,000 = $130,000? Wait, that contradicts the \"increased by 150%\" part. Let's re-read: \"He buys a house for $80,000 and then puts in $50,000 in repairs. This increased the value of the house by 150%.\"\n\nInter"
+          }
+        ]
+      },
+      "index": "math-energy",
+      "budget": 0.7,
+      "contribution_kept": 0.797308731068112
+    },
+    "math-global@0.7": {
+      "mlp_params": 792723456,
+      "model_params": 1389062912,
+      "model_bytes_bf16": 2778125824,
+      "neurons_per_layer": [
+        5382,
+        6141,
+        5793,
+        5892,
+        5773,
+        5244,
+        5436,
+        5519,
+        5474,
+        5100,
+        4708,
+        5079,
+        5005,
+        4881,
+        4331,
+        5751,
+        5726,
+        6066,
+        5714,
+        5511,
+        6060,
+        6472,
+        4807,
+        3159
+      ],
+      "ppl_gsm8k_solutions": 38.62562632684123,
+      "ppl_wikitext": 49.90553392817229,
+      "decode_tok_s": 704.5130676078186,
+      "gsm8k": {
+        "accuracy": 0.64,
+        "correct": 128,
+        "n": 200,
+        "gen_tokens": 68758,
+        "wall_s": 156.51309856900002,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": " for the market is:\n\n16 (total laid) \u2212 7 (used) = 9 eggs.\n\nShe sells the remainder at the market for $2 per fresh duck egg.\n\nSo, the amount she makes from the remainder is:\n\n9 eggs \u00d7 $2/egg = $18.\n\nTherefore, she makes $18 every day at the farmers' market.\n\nThe answer is 18.</think>The answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "s 1 bolt.\n\nTotal bolts = blue bolts + white bolts = 2 + 1 = 3 bolts.\n\nThus, the robe takes a total of 3 bolts.\n\nThe answer is 3.</think>The robe takes 2 bolts of blue fiber and half that much white fiber.  \nWhite fiber = half of 2 = 1 bolt.  \nTotal = 2 (blue) + 1 (white) = 3 bolts.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "120000",
+            "text": "e + increase  \nNew value = \\$80,000 + \\$120,000 = \\$200,000\n\nNow, the profit from the purchase is the difference between the new value and the original cost:\n\nProfit = New value - original cost  \nProfit = \\$200,000 - \\$80,000 = \\$120,000\n\nThus, Josh made a profit of \\$120,000.\n\nThe answer is 120000."
+          }
+        ]
+      },
+      "index": "math-global",
+      "budget": 0.7,
+      "contribution_kept": 0.7816236162630931
+    },
+    "math-uniform+recon@0.7": {
+      "mlp_params": 792723456,
+      "model_params": 1389062912,
+      "model_bytes_bf16": 2778125824,
+      "neurons_per_layer": [
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376
+      ],
+      "ppl_gsm8k_solutions": 34.70384814969933,
+      "ppl_wikitext": 73.01890637453248,
+      "decode_tok_s": 749.1209849842984,
+      "gsm8k": {
+        "accuracy": 0.775,
+        "correct": 155,
+        "n": 200,
+        "gen_tokens": 50800,
+        "wall_s": 146.488551293,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": " remainder:\n\n\\[\n16 - 7 = 9 \\text{ eggs}\n\\]\n\nThese 9 eggs are sold at the farmers' market for **$2 per egg**.\n\nCalculate the daily earnings from selling the remainder:\n\n\\[\n9 \\text{ eggs} \\times \\$2/\\text{egg} = \\$18\n\\]\n\nThus, Janet makes **$18** every day at the farmers' market.\n\nThe answer is **18**"
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "nd the amount of white fiber in terms of bolts:  \nHalf of the blue fiber = \\( \\frac{1}{2} \\times 2 = 1 \\) bolt of white fiber.\n\nNow add the blue and white fiber bolts together:  \nTotal bolts = blue bolts + white bolts = \\( 2 + 1 = 3 \\).\n\nThus, the robe takes a total of **3 bolts**.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "70000",
+            "text": "  \nSo the increase in value is:\n\n\\[\n150\\% \\text{ of } 80,000 = 1.5 \\times 80,000 = 120,000\n\\]\n\nTherefore, the new value of the house is:\n\n\\[\n80,000 + 120,000 = 200,000\n\\]\n\nProfit = new value \u2013 total investment:\n\n\\[\n200,000 - 130,000 = 70,000\n\\]\n\nThus, Josh's profit is \\$70,000.\n\nThe answer is 70000."
+          }
+        ]
+      },
+      "index": "math-uniform+recon",
+      "budget": 0.7,
+      "contribution_kept": 0.7938408214655133
+    },
+    "math-energy+recon@0.7": {
+      "mlp_params": 792723456,
+      "model_params": 1389062912,
+      "model_bytes_bf16": 2778125824,
+      "neurons_per_layer": [
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376
+      ],
+      "ppl_gsm8k_solutions": 33.01297785322919,
+      "ppl_wikitext": 71.77156432328601,
+      "decode_tok_s": 746.7714784551175,
+      "gsm8k": {
+        "accuracy": 0.79,
+        "correct": 158,
+        "n": 200,
+        "gen_tokens": 51354,
+        "wall_s": 149.198127032,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": " day:  \n\\(16 \\text{ eggs} - 7 \\text{ eggs} = 9 \\text{ eggs}\\).\n\nShe sells the remaining eggs at **$2 per fresh duck egg** each day.\n\nEarnings from selling the remainder:  \n\\(9 \\text{ eggs} \\times \\$2/\\text{egg} = \\$18\\).\n\nThus, Janet makes **$18** every day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "We need to find the total number of bolts of blue and white fiber in the robe.\n\n- Blue fiber: 2 bolts.\n- White fiber: half that much white fiber.  \n  Half of 2 bolts is \\( \\frac{2}{2} = 1 \\) bolt.\n\nSo white fiber = 1 bolt.\n\nTotal bolts = blue bolts + white bolts = 2 + 1 = 3 bolts.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "75000",
+            "text": "0% of \\$50,000 = 1.5 \u00d7 50,000 = \\$75,000.  \n\nSo, the new value of the house after repairs is:  \nOriginal value + increase = 80,000 + 75,000 = \\$155,000.  \n\nProfit = new value - original purchase price  \nProfit = 155,000 - 80,000 = \\$75,000.  \n\nThus, Josh's profit is \\$75,000.  \n\nThe answer is 75000."
+          }
+        ]
+      },
+      "index": "math-energy+recon",
+      "budget": 0.7,
+      "contribution_kept": 0.797308731068112
+    },
+    "math-global+recon@0.7": {
+      "mlp_params": 792723456,
+      "model_params": 1389062912,
+      "model_bytes_bf16": 2778125824,
+      "neurons_per_layer": [
+        5382,
+        6141,
+        5793,
+        5892,
+        5773,
+        5244,
+        5436,
+        5519,
+        5474,
+        5100,
+        4708,
+        5079,
+        5005,
+        4881,
+        4331,
+        5751,
+        5726,
+        6066,
+        5714,
+        5511,
+        6060,
+        6472,
+        4807,
+        3159
+      ],
+      "ppl_gsm8k_solutions": 36.86084702552429,
+      "ppl_wikitext": 69.22263019371279,
+      "decode_tok_s": 731.6750069529946,
+      "gsm8k": {
+        "accuracy": 0.745,
+        "correct": 149,
+        "n": 200,
+        "gen_tokens": 50846,
+        "wall_s": 152.27694622600006,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": " 3 = 13\\) eggs left for the rest of the day.\n\nShe also bakes muffins for her friends, using 4 eggs each day. So:\n\n\\(13 - 4 = 9\\) eggs left for selling.\n\nShe sells the remainder at the market for $2 per egg. Therefore, the amount she makes each day is:\n\n\\(9 \\times 2 = 18\\) dollars.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "eed to find the total number of bolts of fiber required for the robe.\n\n- Blue fiber: 2 bolts.\n- White fiber: half that much white fiber.  \n  Half of 2 bolts is \\( \\frac{1}{2} \\times 2 = 1 \\) bolt.\n\nSo, white fiber = 1 bolt.\n\nTotal bolts = blue bolts + white bolts = 2 + 1 = 3 bolts.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "50",
+            "text": " new value - total cost = 92,000 - 130,000 = negative, i.e., loss. That can't be right. Perhaps the \"increased the value\" refers to the value increase due to repairs being part of the value? Or maybe the 150% increase is applied to the cost? Let's re-read: He buys a house for $80,000 and puts in $50"
+          }
+        ]
+      },
+      "index": "math-global+recon",
+      "budget": 0.7,
+      "contribution_kept": 0.7816236162630931
+    },
+    "random@0.7": {
+      "mlp_params": 792723456,
+      "model_params": 1389062912,
+      "model_bytes_bf16": 2778125824,
+      "neurons_per_layer": [
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376,
+        5376
+      ],
+      "ppl_gsm8k_solutions": 54.272123104373435,
+      "ppl_wikitext": 141.06495513047395,
+      "decode_tok_s": 745.451842905378,
+      "gsm8k": {
+        "accuracy": 0.03,
+        "correct": 6,
+        "n": 200,
+        "gen_tokens": 102400,
+        "wall_s": 150.70737455900007,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "7",
+            "text": "morning bick 4 days). So she consums 3 + 4 = 7 daily items (breakfast + morning bick 4 days). So she consums 3 + 4 = 7 daily items (breakfast + morning bick 4 days). So she consums 3 + 4 = 7 daily items (breakfast + morning bick 4 days). So she consums 3 + 4 = 7 daily items (breakfast + morning bick"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": " 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 * 2 = 2 *"
+          },
+          {
+            "gold": "70000",
+            "pred": "75",
+            "text": "e scenario net profit in above scenario net profit in above scenario net profit in above scenario net profit in above scenario net profit in above scenario net profit in above scenario net profit in above scenario net profit in above scenario net profit in above scenario net profit in above scenario"
+          }
+        ]
+      },
+      "index": "random",
+      "budget": 0.7
+    },
+    "math-uniform@0.5": {
+      "mlp_params": 566231040,
+      "model_params": 1162570496,
+      "model_bytes_bf16": 2325140992,
+      "neurons_per_layer": [
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840
+      ],
+      "ppl_gsm8k_solutions": 37.59343282646709,
+      "ppl_wikitext": 111.30110446176414,
+      "decode_tok_s": 741.943597476722,
+      "gsm8k": {
+        "accuracy": 0.365,
+        "correct": 73,
+        "n": 200,
+        "gen_tokens": 70096,
+        "wall_s": 150.23498850700025,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "arket for $2 per fresh duck egg. So, the number of eggs she sells at the market each day is 16 - 7 = 9.\n\nShe makes 9 eggs at the market each day, and each egg is sold for $2. So, the total amount she makes at the market each day is 9 * $2 = $18.\n\nThus, the answer is $\\boxed{18}$. \n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "The robe takes 2 bolts of blue fiber and half that much white fiber.  \nFirst, compute the white fiber amount: half of 2 bolts = 1 bolt.  \nThen, total bolts = blue bolts + white bolts = 2 + 1 = 3.  \nThus, the total number of bolts is 3.\n\nThe answer is 3.  \n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "65000",
+            "text": ".  \nNew value = original value \u00d7 1.5 = $130,000 \u00d7 1.5 = $195,000.  \n\nNow, profit (profit) = difference between new value and original value.  \nProfit = new value - original value = $195,000 - $130,000 = $65,000.  \n\nThus, Josh made a profit of $65,000.  \n\nThe answer is <number>.\n\nThe answer is 65000."
+          }
+        ]
+      },
+      "index": "math-uniform",
+      "budget": 0.5,
+      "contribution_kept": 0.6281307329142793
+    },
+    "math-energy@0.5": {
+      "mlp_params": 566231040,
+      "model_params": 1162570496,
+      "model_bytes_bf16": 2325140992,
+      "neurons_per_layer": [
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840
+      ],
+      "ppl_gsm8k_solutions": 28.089965209191,
+      "ppl_wikitext": 104.15367121418845,
+      "decode_tok_s": 748.2087301203078,
+      "gsm8k": {
+        "accuracy": 0.335,
+        "correct": 67,
+        "n": 200,
+        "gen_tokens": 78126,
+        "wall_s": 150.96534588099985,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "= 7 eggs per day.  \n\nRemaining eggs for the market:  \n16 (total) - 7 = 9 eggs per day.  \n\nShe sells the remaining eggs at $2 per fresh duck egg.  \n\nEarnings per day:  \n9 eggs \u00d7 $2 per egg = $18 per day.  \n\nThus, she makes $18 each day at the farmers' market.  \n\nThe answer is 18.  \n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "eded:  \nHalf of the blue fiber is \\( \\frac{1}{2} \\) of 2 bolts.  \nSo white fiber = \\( \\frac{1}{2} \\times 2 \\) = 1 bolt.  \n\nNow, total fibers for the robe = blue fiber + white fiber = 2 bolts + 1 bolt = 3 bolts.  \n\nThus, the total number of bolts required is 3.  \n\nThe answer is 3.  \n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "150",
+            "text": "e by 150%.\" So the $50,000 is an investment in repairs, which adds to the value of the house. So the total value after repairs is original value + repair cost = 80,000 + 50,000 = 130,000? Wait, but the increase is 150% of the value of the house before repairs? Or is the repair cost part of the value"
+          }
+        ]
+      },
+      "index": "math-energy",
+      "budget": 0.5,
+      "contribution_kept": 0.6354780492516936
+    },
+    "math-global@0.5": {
+      "mlp_params": 566231040,
+      "model_params": 1162570496,
+      "model_bytes_bf16": 2325140992,
+      "neurons_per_layer": [
+        3864,
+        4368,
+        4521,
+        4338,
+        4480,
+        3733,
+        3961,
+        3862,
+        3940,
+        3635,
+        3466,
+        3776,
+        3706,
+        3620,
+        3206,
+        4205,
+        4098,
+        4173,
+        3879,
+        3781,
+        3866,
+        4210,
+        3151,
+        2321
+      ],
+      "ppl_gsm8k_solutions": 42.763824153319995,
+      "ppl_wikitext": 102.8897461824366,
+      "decode_tok_s": 740.5747435691062,
+      "gsm8k": {
+        "accuracy": 0.28,
+        "correct": 56,
+        "n": 200,
+        "gen_tokens": 78378,
+        "wall_s": 151.5380983,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "She eats three for breakfast every morning and bakes muffins for her friends every day with four. So she lays 16 eggs total, eats 3 for breakfast, bakes 4 for her friends. So total eggs eaten = 3 + 4 = 7. Remainder eggs left = 16 - 7 = 9. At market, sells for $2 per egg. So she sells 9 eggs.  \n\nThus"
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "ch white fiber\" means white fiber is half of blue fiber.  \nSo white fiber = half of blue fiber.  \nBlue fiber = 2 bolts.  \nWhite fiber = half of 2 = 1 bolt.  \nTotal bolts = blue bolts + white bolts = 2 + 1 = 3.  \n\nThus, the total bolts needed is 2 + 1 = 3.  \n\nThe answer is <number>.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "65000",
+            "text": "000 = $130,000. Then value is increased by 150% of original value. So new value = original value * (1 + 150% = 1.5). New value = 130,000 * 1.5 = 195,000. Profit = 195,000 - 130,000 = 65,000.  \n\nThus, profit = $65,000.  \n\nBut let's double-check: \"increased the value of the house by 150%.\" Meaning the"
+          }
+        ]
+      },
+      "index": "math-global",
+      "budget": 0.5,
+      "contribution_kept": 0.6213181370019737
+    },
+    "math-uniform+recon@0.5": {
+      "mlp_params": 566231040,
+      "model_params": 1162570496,
+      "model_bytes_bf16": 2325140992,
+      "neurons_per_layer": [
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840
+      ],
+      "ppl_gsm8k_solutions": 39.68175890898089,
+      "ppl_wikitext": 157.27739495216588,
+      "decode_tok_s": 745.4152761188094,
+      "gsm8k": {
+        "accuracy": 0.545,
+        "correct": 109,
+        "n": 200,
+        "gen_tokens": 59625,
+        "wall_s": 151.28075622000006,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": " \\text{ (muffins) } = 16 - 3 - 4 = 9 \\text{ eggs}\n\\]\n\nNow, she sells the remainder at the market for $2 per fresh duck egg.\n\nNumber of eggs sold per day = 9\n\nPrice per egg = $2\n\nTotal money made per day = 9 eggs \u00d7 $2/egg = $18\n\nThus, she makes $18 every day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "r**.\n\nFirst, find the white fiber in terms of bolts:\n- Half of the blue fiber (2 bolts) is white fiber.\n- White fiber = \\( \\frac{2}{2} = 1 \\) bolt.\n\nNow, add the blue and white bolts:\n- Total bolts = blue bolts + white bolts = \\( 2 + 1 = 3 \\).\n\nThus, the total number of bolts is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "12000",
+            "text": "0\n\nSo, the new value of the house is:\n- New value = original value + increase = \\$80,000 + \\$12,000 = \\$92,000\n\nNow, calculate the profit from the repairs:\n- Profit from repairs = new value - original value = \\$92,000 - \\$80,000 = \\$12,000\n\nThus, the profit he made is \\$12,000.\n\nThe answer is 12000."
+          }
+        ]
+      },
+      "index": "math-uniform+recon",
+      "budget": 0.5,
+      "contribution_kept": 0.6281307329142793
+    },
+    "math-energy+recon@0.5": {
+      "mlp_params": 566231040,
+      "model_params": 1162570496,
+      "model_bytes_bf16": 2325140992,
+      "neurons_per_layer": [
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840
+      ],
+      "ppl_gsm8k_solutions": 36.44430917170146,
+      "ppl_wikitext": 152.10908777523588,
+      "decode_tok_s": 747.3761555027041,
+      "gsm8k": {
+        "accuracy": 0.655,
+        "correct": 131,
+        "n": 200,
+        "gen_tokens": 53328,
+        "wall_s": 150.51934884799994,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "{eggs per day}\n\\]\n\nThe remaining eggs are sold at the farmers' market:\n\n\\[\n16 \\ \\text{eggs} - 7 \\ \\text{eggs} = 9 \\ \\text{eggs per day}\n\\]\n\nShe sells each fresh egg for \\$2.\n\n\\[\n9 \\ \\text{eggs} \\times \\$2/\\text{egg} = \\$18\n\\]\n\nThus, she makes \\$18 every day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "quired for the robe.\n\n- Blue fiber: 2 bolts.\n- White fiber: half that much white fiber.  \n  Half of 2 is \\( \\frac{2}{2} = 1 \\) bolt of white fiber.\n\nNow add the two amounts:\n\n\\[\n\\text{Blue fiber} + \\text{White fiber} = 2 + 1 = 3 \\text{ bolts}.\n\\]\n\nSo the total number of bolts is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "50000",
+            "text": "for $80,000 and then puts in $50,000 in repairs. This increased the value of the house by 150%. So the value increase is 150% of $80,000 = $12,000. Therefore, the total value of the house after repairs is $80,000 + $12,000 = $92,000. The cost of the house is $80,000, and the repairs cost $50,000. So"
+          }
+        ]
+      },
+      "index": "math-energy+recon",
+      "budget": 0.5,
+      "contribution_kept": 0.6354780492516936
+    },
+    "math-global+recon@0.5": {
+      "mlp_params": 566231040,
+      "model_params": 1162570496,
+      "model_bytes_bf16": 2325140992,
+      "neurons_per_layer": [
+        3864,
+        4368,
+        4521,
+        4338,
+        4480,
+        3733,
+        3961,
+        3862,
+        3940,
+        3635,
+        3466,
+        3776,
+        3706,
+        3620,
+        3206,
+        4205,
+        4098,
+        4173,
+        3879,
+        3781,
+        3866,
+        4210,
+        3151,
+        2321
+      ],
+      "ppl_gsm8k_solutions": 42.65171925001578,
+      "ppl_wikitext": 144.32492765856006,
+      "decode_tok_s": 736.8602745063597,
+      "gsm8k": {
+        "accuracy": 0.555,
+        "correct": 111,
+        "n": 200,
+        "gen_tokens": 58821,
+        "wall_s": 151.4123065480003,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "eggs.\n\nRemaining eggs each day = total eggs minus eaten eggs:  \n\\(16 - 7 = 9\\) eggs.\n\nShe sells the remainder at the farmers' market for \\$2 per fresh duck egg.  \nSo, earnings per day = \\(9 \\text{ eggs} \\times \\$2/\\text{egg} = \\$18\\).\n\nThus, she makes \\$18 every day at the market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "f blue fiber**.\n- It takes **half that much white fiber**.\n\nHalf of the blue fiber is:\n\\[\n\\frac{2}{2} = 1 \\text{ bolt of white fiber}.\n\\]\n\nSo the total number of bolts is:\n\\[\n\\text{blue fiber} + \\text{white fiber} = 2 + 1 = 3 \\text{ bolts}.\n\\]\n\nThus, the total number of bolts is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "75000",
+            "text": "0,000 = \\$75,000.  \n\nSo the total value of the house becomes:  \nOriginal value + repair value = \\$80,000 + \\$75,000 = \\$155,000.  \n\nNow, calculate the profit:  \nProfit = total value - original value = \\$155,000 - \\$80,000 = \\$75,000.  \n\nThus, the profit Josh made is \\$75,000.  \n\nThe answer is 75000."
+          }
+        ]
+      },
+      "index": "math-global+recon",
+      "budget": 0.5,
+      "contribution_kept": 0.6213181370019737
+    },
+    "random@0.5": {
+      "mlp_params": 566231040,
+      "model_params": 1162570496,
+      "model_bytes_bf16": 2325140992,
+      "neurons_per_layer": [
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840,
+        3840
+      ],
+      "ppl_gsm8k_solutions": 414.5383542956818,
+      "ppl_wikitext": 1593.8016901343149,
+      "decode_tok_s": 746.8027356323001,
+      "gsm8k": {
+        "accuracy": 0.005,
+        "correct": 1,
+        "n": 200,
+        "gen_tokens": 98139,
+        "wall_s": 150.51375635500017,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": null,
+            "text": " I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I"
+          },
+          {
+            "gold": "3",
+            "pred": null,
+            "text": " I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I I"
+          },
+          {
+            "gold": "70000",
+            "pred": "2",
+            "text": " \"\n\n   \" \n\n   \" \n\n   \"   \"\n\n   \"   \" \n   \"\". \n   \" \"\n\n   \" \"   \"\n\n   \"   \"   \"\n\n   \"   \" \"\n\n   \"   \"   \"\n\n   \" \"   \"\n\n   \" \"   \"\n\n   \"   \"   \"\n\n   \"   \"\n\n   \" \"   \"\n\n   \" \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n   \"   \"\n\n  "
+          }
+        ]
+      },
+      "index": "random",
+      "budget": 0.5
+    },
+    "math-uniform@0.3": {
+      "mlp_params": 339738624,
+      "model_params": 936078080,
+      "model_bytes_bf16": 1872156160,
+      "neurons_per_layer": [
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304
+      ],
+      "ppl_gsm8k_solutions": 57.821857089452905,
+      "ppl_wikitext": 332.5063527952289,
+      "decode_tok_s": 748.0098776267432,
+      "gsm8k": {
+        "accuracy": 0.08,
+        "correct": 16,
+        "n": 200,
+        "gen_tokens": 98572,
+        "wall_s": 150.4252698600003,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "2",
+            "text": " at the market is $2 per fresh egg.\" So we need to convert eggs per day * eggs per day * dollars per egg. But we need to multiply the number of eggs she sells per day * eggs per day * dollars per egg? Actually, we need to convert eggs per day * eggs per day * dollars per egg. But we need to multiply"
+          },
+          {
+            "gold": "3",
+            "pred": "1",
+            "text": " white fiber. Let's denote variables B and W. The phrase: \"2 bolts of blue fiber and half that much white fiber.\" So we need to convert units: 2 units of blue fiber equal half of white fiber units. So convert conversion: multiply conversion factor.\n\nWe can convert: 1 unit of blue fiber equals 1 unit"
+          },
+          {
+            "gold": "70000",
+            "pred": "100",
+            "text": "{100}\\right) = C \\times \\left(1 + \\frac{150}{100}\\right)\n\\]\n\nSimplify left: \n\n\\[\nC + 50,000 \\times \\left(1 + \\frac{150}{100}\\right) = C \\times \\left(1 + \\frac{150}{100}\\right)\n\\]\n\nSimplify right: \n\n\\[\nC + 50,000 \\times \\left(1 + \\frac{150}{100}\\right) = C \\times \\left(1 + \\frac{150}{100}\\right)\n\\]\n\n"
+          }
+        ]
+      },
+      "index": "math-uniform",
+      "budget": 0.3,
+      "contribution_kept": 0.43995907161703063
+    },
+    "math-energy@0.3": {
+      "mlp_params": 339738624,
+      "model_params": 936078080,
+      "model_bytes_bf16": 1872156160,
+      "neurons_per_layer": [
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304
+      ],
+      "ppl_gsm8k_solutions": 37.22407040788213,
+      "ppl_wikitext": 306.44918208182116,
+      "decode_tok_s": 746.0455796222545,
+      "gsm8k": {
+        "accuracy": 0.075,
+        "correct": 15,
+        "n": 200,
+        "gen_tokens": 100670,
+        "wall_s": 150.24600777399974,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "7",
+            "text": " re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re re"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "an set up an equation for white fiber:\n\n\\[\n\\text{white fiber} = \\frac{1}{2} \\times \\text{blue fiber} \\times \\frac{1}{2} \\text{?}\n\\]\n\nBut also, \"half that much white fiber.\" So we have:\n\n\\[\n\\text{white fiber} = \\frac{1}{2} \\times \\text{blue fiber} \\times \\frac{1}{2} \\text{?}\n\\]\n\nAlternatively, we can"
+          },
+          {
+            "gold": "70000",
+            "pred": "115000",
+            "text": " is $195,000. Then, the profit is 195,000 - 130,000 = 65,000. But the question asks \"How much profit did he make?\" So, he made profit after the value is increased. The profit is the difference between the value and the original price. So, profit = value - original price = 195,000 - 80,000 = 115,000."
+          }
+        ]
+      },
+      "index": "math-energy",
+      "budget": 0.3,
+      "contribution_kept": 0.4512666531556174
+    },
+    "math-global@0.3": {
+      "mlp_params": 339738624,
+      "model_params": 936078080,
+      "model_bytes_bf16": 1872156160,
+      "neurons_per_layer": [
+        2254,
+        2010,
+        2691,
+        2398,
+        2825,
+        2356,
+        2525,
+        2286,
+        2437,
+        2252,
+        2310,
+        2421,
+        2467,
+        2396,
+        2274,
+        2571,
+        2430,
+        2315,
+        2259,
+        2240,
+        2023,
+        2014,
+        1842,
+        1700
+      ],
+      "ppl_gsm8k_solutions": 71.24870446502676,
+      "ppl_wikitext": 332.74088857518257,
+      "decode_tok_s": 743.9892471626611,
+      "gsm8k": {
+        "accuracy": 0.06,
+        "correct": 12,
+        "n": 200,
+        "gen_tokens": 93476,
+        "wall_s": 152.14735100400003,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "224",
+            "text": " eggs per day.  \nRemaining eggs left = 112 - 112 = 0 eggs per day.  \nAt the farmers' market daily for $2 per fresh duck egg.  \nSo, amount she makes each day at the farmers' market = 112 * 2 = 224 dollars.  \n\nThus, Janet makes $\\boxed{224}$ dollars per day.\n\nAnswer: <number>.\n\nThe answer is <number>."
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "ue fiber) and W = 1/2 * W (white fiber). Then B = 2 * W? Or B = 2 * W? Let's do: \"rob\" (rob) takes 2 bolts of blue fiber and half that much white fiber. So we need to solve: B = 2 * W? Actually, B = 2 * W? Let's denote variables: Let B = 2 * W (blue fiber) and W = 1/2 * W (white fiber). Then B = 2 *"
+          },
+          {
+            "gold": "70000",
+            "pred": "150",
+            "text": "  \n\nOriginal base value * (1 + 150% = 130,000 * 1.150 = 15,500,000.  \n\nNow, the value is 150% higher.  \n\nSo, the value is 130,000 * (1 + 150%? No, multiply 150% of original base value.  \n\nWait, we need to multiply 150% of original base value.  \n\nOriginal value = original base value * (1 + 150%).  \n\n"
+          }
+        ]
+      },
+      "index": "math-global",
+      "budget": 0.3,
+      "contribution_kept": 0.4330329556682506
+    },
+    "math-uniform+recon@0.3": {
+      "mlp_params": 339738624,
+      "model_params": 936078080,
+      "model_bytes_bf16": 1872156160,
+      "neurons_per_layer": [
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304
+      ],
+      "ppl_gsm8k_solutions": 47.878730919121544,
+      "ppl_wikitext": 347.12510277409683,
+      "decode_tok_s": 735.3942950799777,
+      "gsm8k": {
+        "accuracy": 0.285,
+        "correct": 57,
+        "n": 200,
+        "gen_tokens": 61474,
+        "wall_s": 151.4432460500002,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "19",
+            "text": "gs + 4 muffins = 20 eggs? Wait, maybe the phrase is \"She eats three for breakfast... and bakes muffins...\". So she eats 3 eggs each morning, and bakes muffins each day with four. So total eggs per day = 16 eggs + 3 eggs = 19 eggs? No, 16 eggs + 3 eggs = 19 eggs? But she bakes muffins for her friends"
+          },
+          {
+            "gold": "3",
+            "pred": "4",
+            "text": "of blue? That is half of 2? So white = 1? The problem: \"How many bolts in total does it take?\" So total = blue + white + white? Wait, we need to compute: blue = 2, white = 1? So total = 2 + 1 + 1? That is 2 + 1 + 1 = 4? Let's check: \"half that much white fiber.\" So white = half of blue? That is half"
+          },
+          {
+            "gold": "70000",
+            "pred": "120000",
+            "text": " \nFirst, find the original value:  \nOriginal value = $80,000  \n150% increase = 150% \u00d7 original value = 150% \u00d7 $80,000 = $120,000  \n\nSo the total value of the house is $80,000 + $120,000 = $200,000.  \n\nPro profit = total value - original value = $200,000 - $80,000 = $120,000.  \n\nThe answer is 120000."
+          }
+        ]
+      },
+      "index": "math-uniform+recon",
+      "budget": 0.3,
+      "contribution_kept": 0.43995907161703063
+    },
+    "math-energy+recon@0.3": {
+      "mlp_params": 339738624,
+      "model_params": 936078080,
+      "model_bytes_bf16": 1872156160,
+      "neurons_per_layer": [
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304
+      ],
+      "ppl_gsm8k_solutions": 41.833999276729706,
+      "ppl_wikitext": 300.98721222408153,
+      "decode_tok_s": 740.3587504503103,
+      "gsm8k": {
+        "accuracy": 0.37,
+        "correct": 74,
+        "n": 200,
+        "gen_tokens": 59206,
+        "wall_s": 152.03510049499982,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "gs left = 16 \u2013 3 \u2013 4 = 9? Wait, actually: 16 total eggs, 3 eaten for breakfast, 4 baked for muffins, so 16 \u2013 3 \u2013 4 = 9 eggs left.\n\nThus, she sells 9 fresh duck eggs at $2 per egg.\n\n- Earnings from selling fresh eggs = 9 \u00d7 $2 = $18.\n\nSo she makes $18 per day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "ber is 2 bolts, so the white fiber is half of the blue fiber:\n\\[\n\\frac{1}{2} \\times \\text{blue fiber} = \\frac{1}{2} \\times 2 = 1 \\ \\ \\text{white fiber}\n\\]\n\nThus, white fiber takes 1 bolt.\n\nTotal bolts:\n\\[\n\\text{blue} + \\text{white} = 2 + 1 = 3\n\\]\n\nSo the total number of bolts is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "50000",
+            "text": "initial value:\n\n\\[\n\\text{incre} = \\text{incre} \\times \\frac{150}{100} = 130,000 \\times \\frac{150}{100} = 130,000 \\times 1.5 = 195,000\n\\]\n\nNow, find the profit he made:\n\n\\[\n\\text{profit} = \\text{value} - \\text{initial} = 130,000 - 80,000 = 50,000\n\\]\n\nThus, the profit is $50,000.\n\nThe answer is 50000."
+          }
+        ]
+      },
+      "index": "math-energy+recon",
+      "budget": 0.3,
+      "contribution_kept": 0.4512666531556174
+    },
+    "math-global+recon@0.3": {
+      "mlp_params": 339738624,
+      "model_params": 936078080,
+      "model_bytes_bf16": 1872156160,
+      "neurons_per_layer": [
+        2254,
+        2010,
+        2691,
+        2398,
+        2825,
+        2356,
+        2525,
+        2286,
+        2437,
+        2252,
+        2310,
+        2421,
+        2467,
+        2396,
+        2274,
+        2571,
+        2430,
+        2315,
+        2259,
+        2240,
+        2023,
+        2014,
+        1842,
+        1700
+      ],
+      "ppl_gsm8k_solutions": 51.383978652724096,
+      "ppl_wikitext": 340.78245905805585,
+      "decode_tok_s": 737.7815602908307,
+      "gsm8k": {
+        "accuracy": 0.285,
+        "correct": 57,
+        "n": 200,
+        "gen_tokens": 68445,
+        "wall_s": 152.53709517800053,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "23",
+            "text": "23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = 23 \\text eggs } \\text{ = "
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "s re-read: \"2 bolts of blue fiber and half that much white fiber.\"\n\nInter: \"2 bolts of blue fiber and half that much white fiber.\"\n\nThus:\n- blue fiber = 2 bolts\n- white fiber = half of blue fiber = (1/2) * 2 = 1 bolt\n\nNow total bolts:\n- blue + white = 2 + 1 = 3\n\nSo total bolts = 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "120000",
+            "text": "150% \u00d7 $80,000 = $120,000.\n\nSo the total value of the house is:\nOriginal value + 150% of original value = $80,000 + $120,000 = $200,000.\n\nNow, find the profit he made:\nProfit = total value - original value = $200,000 - $80,000 = $120,000.\n\nThus, the profit he made is $120,000.\n\nThe answer is 120000."
+          }
+        ]
+      },
+      "index": "math-global+recon",
+      "budget": 0.3,
+      "contribution_kept": 0.4330329556682506
+    },
+    "random@0.3": {
+      "mlp_params": 339738624,
+      "model_params": 936078080,
+      "model_bytes_bf16": 1872156160,
+      "neurons_per_layer": [
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304,
+        2304
+      ],
+      "ppl_gsm8k_solutions": 8905.73274901482,
+      "ppl_wikitext": 21879.745391297798,
+      "decode_tok_s": 743.9804323665337,
+      "gsm8k": {
+        "accuracy": 0.01,
+        "correct": 2,
+        "n": 200,
+        "gen_tokens": 102315,
+        "wall_s": 151.81368494100025,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": null,
+            "text": " ' ' ' ' ' ' ' ' ' ' ' ' ' ' ' ' ' ' '(' public ' ' ' '(' ' ' ' ' '(' ' ' '(' ' ' ' '(' ' ' '(' ' ' ' ' '(' ' ' '(' ' ' ' '(' ' ' ' '(' ' ' '(' ' ' ' ' '(' '(' ' '(' ' ' '(' '(' ' ' '(' (' '\\ ' '('(' ' ' ' ' ' '(' (' '\n (' ' t ' ' ' ' (' (' ' ' ' ' '(' (' '\n sensor ' ' ' ' ' `' t ' '(' ' ' ' ' ' '('"
+          },
+          {
+            "gold": "3",
+            "pred": "201",
+            "text": " - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
+          },
+          {
+            "gold": "70000",
+            "pred": null,
+            "text": " - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -"
+          }
+        ]
+      },
+      "index": "random",
+      "budget": 0.3
+    },
+    "index_overlap_math_wiki": {
+      "0.7": 0.8121,
+      "0.5": 0.7207,
+      "0.3": 0.6527
+    }
+  },
+  "wall_s": 4018.143900483
+}

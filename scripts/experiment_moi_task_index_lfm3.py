@@ -13,6 +13,10 @@ Indexes compared at each budget:
   * math-uniform / math-global : calibrated on GSM8K TRAIN (question + gold solution, chat format).
   * wiki-uniform               : calibrated on WikiText-2 validation (a general-purpose index, same size).
   * random                     : random neurons (same size), the floor.
+Compensated variants ("+recon"): after slicing, the kept w2 columns are refit by ridge least squares so the MLP
+output matches the full one on math calibration data, W_S = W G[:,S] (G_SS + lam I)^-1, with the co-activation
+G = E[h h^T] estimated from only the first --gram-tokens (default 20k) math tokens (benchmarks/gram_compress).
+"math-energy" ranks neurons by sqrt(E h^2) * ||w2_i|| instead of the mean.
 Evaluation: GSM8K TEST accuracy (greedy, thinking off; same prompt as the per-token run, full model 83.0%),
 teacher-forced perplexity on GSM8K TEST gold solutions (in-domain) and on WikiText-2 test (general).
 
@@ -89,15 +93,20 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=32)
     ap.add_argument("--max-new-tokens", type=int, default=512)
     ap.add_argument("--budgets", default="0.7,0.5,0.3")
-    ap.add_argument("--indexes", default="math-uniform,math-global,wiki-uniform,random")
+    ap.add_argument("--indexes", default="math-uniform,math-energy,math-global,math-uniform+recon,math-energy+recon,math-global+recon,random")
     ap.add_argument("--calib-tokens", type=int, default=100_000)
+    ap.add_argument("--gram-tokens", type=int, default=20_000,
+                    help="math tokens used for the co-activation (Gram) matrix of the +recon indexes")
+    ap.add_argument("--ridge", type=float, default=1e-2, help="lambda as a fraction of mean diag(G_SS)")
     ap.add_argument("--ppl-tokens", type=int, default=8_000)
+    ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", default="results_task_index.json")
     args = ap.parse_args()
 
     torch.manual_seed(0)
     torch.set_grad_enabled(False)
-    dev = torch.device("cuda")
+    dev = torch.device(args.device)
+    sync = torch.cuda.synchronize if dev.type == "cuda" else (lambda: None)
     t_start = time.perf_counter()
     data_dir = Path(args.data_dir)
     tok = AutoTokenizer.from_pretrained(args.model_dir, trust_remote_code=True)
@@ -106,9 +115,12 @@ def main() -> None:
                                                  dtype=torch.bfloat16).to(dev).eval()
     layers = model.model.layers
     L = len(layers)
-    U = int(model.config.intermediate_size)
-    mlps = [lyr.feed_forward for lyr in layers]
-    orig = [(m.w1, m.w3, m.w2) for m in mlps]  # full Linear modules, restored after each config
+    # LFM3 names its SwiGLU w1 (gate) / w3 (up) / w2 (down); Llama-style models gate_proj / up_proj / down_proj
+    lfm = hasattr(layers[0], "feed_forward")
+    mlps = [lyr.feed_forward if lfm else lyr.mlp for lyr in layers]
+    NM = ("w1", "w3", "w2") if lfm else ("gate_proj", "up_proj", "down_proj")
+    orig = [tuple(getattr(m, n) for n in NM) for m in mlps]  # full Linear modules, restored after each config
+    U = int(orig[0][0].out_features)
     print(f"LFM3: {L} layers, {U} MLP neurons per layer")
 
     gsm_test = pd.read_parquet(need(data_dir, "gsm8k/test.parquet"))
@@ -116,31 +128,51 @@ def main() -> None:
     wt_val = "\n".join(pd.read_parquet(need(data_dir, "wikitext/validation.parquet"))["text"].tolist())
     wt_test = "\n".join(pd.read_parquet(need(data_dir, "wikitext/test.parquet"))["text"].tolist())
 
+    BOS = [tok.bos_token_id] if tok.bos_token_id is not None else []
+
     def chat_ids(q: str, a: str) -> list[int]:
         txt = tok.apply_chat_template([{"role": "user", "content": q + PROMPT_SUFFIX},
                                        {"role": "assistant", "content": a}], tokenize=False, enable_thinking=False)
         return tok(txt, add_special_tokens=False).input_ids
 
-    # ---------------------------------------------------------------- calibration: mean |h_i| per neuron
+    # ---------------------------------------------------------------- calibration: |h_i|, h_i^2 per neuron, Gram
     acc = torch.zeros(L, U, device=dev, dtype=torch.float64)
-    cnt = {"n": 0}
+    accsq = torch.zeros(L, U, device=dev, dtype=torch.float64)
+    gram: list[torch.Tensor] = []
+    st = {"gram_on": False}
 
     def cal_hook(li):
         def hook(mod, inp, out):
-            acc[li] += inp[0].reshape(-1, U).float().abs().sum(0).double()  # input of w2 = h
+            h = inp[0].reshape(-1, U).float()  # input of w2 = h
+            acc[li] += h.abs().sum(0).double()
+            accsq[li] += (h * h).sum(0).double()
+            if st["gram_on"]:
+                gram[li].addmm_(h.T, h)
         return hook
 
-    def calibrate(seqs: list[list[int]]) -> torch.Tensor:
+    def calibrate(seqs: list[list[int]], gram_tokens: int = 0) -> tuple[torch.Tensor, torch.Tensor, int]:
+        """Returns mean score E|h|*||w2_i||, energy score sqrt(E h^2)*||w2_i||, and the tokens in the Gram.
+        The Gram (co-activation of the neurons, for compensation) uses only the first `gram_tokens` tokens."""
         acc.zero_()
-        n = 0
-        hs = [m.w2.register_forward_hook(cal_hook(i)) for i, m in enumerate(mlps)]
+        accsq.zero_()
+        n, n_gram = 0, 0
+        if gram_tokens:
+            gram.clear()
+            gram.extend(torch.zeros(U, U, device=dev, dtype=torch.float32) for _ in range(L))
+        hs = [getattr(m, NM[2]).register_forward_hook(cal_hook(i)) for i, m in enumerate(mlps)]
         for s in seqs:
+            st["gram_on"] = bool(gram_tokens) and n_gram < gram_tokens
             model(input_ids=torch.tensor([s], device=dev))
             n += len(s)
+            n_gram += len(s) if st["gram_on"] else 0
+        st["gram_on"] = False
         for h in hs:
             h.remove()
-        w2n = torch.stack([m.w2.weight.float().norm(dim=0) for m in mlps]).double()  # [L, U]
-        return (acc / n) * w2n
+        if gram_tokens:
+            for g in gram:
+                g /= n_gram
+        w2n = torch.stack([getattr(m, NM[2]).weight.float().norm(dim=0) for m in mlps]).double()  # [L, U]
+        return (acc / n) * w2n, (accsq / n).sqrt() * w2n, n_gram
 
     math_seqs, n = [], 0
     for q, a in zip(gsm_train["question"], gsm_train["answer"]):
@@ -150,18 +182,34 @@ def main() -> None:
         if n >= args.calib_tokens:
             break
     wt_ids = tok(wt_val, add_special_tokens=False).input_ids[: args.calib_tokens]
-    wiki_seqs = [[tok.bos_token_id] + wt_ids[i : i + 512] for i in range(0, len(wt_ids) - 16, 512)]
+    wiki_seqs = [BOS + wt_ids[i : i + 512] for i in range(0, len(wt_ids) - 16, 512)]
     t0 = time.perf_counter()
-    score = {"math": calibrate(math_seqs), "wiki": calibrate(wiki_seqs)}
+    wiki_mean, _, _ = calibrate(wiki_seqs)
+    math_mean, math_energy, n_gram = calibrate(math_seqs, gram_tokens=args.gram_tokens)  # Gram stays = math
+    score = {"math": math_mean, "math_energy": math_energy, "wiki": wiki_mean}
     print(f"calibrated on {sum(map(len, math_seqs)):,} math + {sum(map(len, wiki_seqs)):,} wiki tokens "
-          f"in {time.perf_counter() - t0:.0f}s")
+          f"(Gram from the first {n_gram:,} math tokens) in {time.perf_counter() - t0:.0f}s", flush=True)
+
+    def recon_w2(li: int, ix: torch.Tensor) -> torch.Tensor:
+        """Compensation: refit the kept w2 columns so the MLP output matches the full one on the math calibration
+        data, W_S = W G[:,S] (G_SS + lam I)^-1  (ridge least squares, lam = ridge * mean diag G_SS)."""
+        W = orig[li][2].weight.double()  # [D, U]
+        G = gram[li]
+        Gss = G[ix][:, ix].double()
+        lam = args.ridge * Gss.diagonal().mean().clamp_min(1e-12)
+        rhs = W @ G[:, ix].double()
+        Ws = torch.linalg.solve(Gss + lam * torch.eye(len(ix), device=dev, dtype=torch.float64), rhs.T).T
+        return Ws.to(orig[li][2].weight.dtype)
 
     def build_index(kind: str, budget: float) -> list[torch.Tensor]:
+        kind = kind.removesuffix("+recon")
         k_tot = round(budget * U * L)
         if kind == "random":
             g = torch.Generator().manual_seed(0)
             return [torch.randperm(U, generator=g)[: round(budget * U)].sort().values for _ in range(L)]
         src, mode = kind.split("-")
+        if mode == "energy":
+            src, mode = "math_energy", "uniform"
         s = score[src]
         if mode == "uniform":
             k = round(budget * U)
@@ -177,11 +225,12 @@ def main() -> None:
             out.append(torch.tensor(sorted(ix)))
         return out
 
-    def apply_index(index: list[torch.Tensor] | None) -> None:
+    def apply_index(index: list[torch.Tensor] | None, recon: bool = False) -> None:
         for li, m in enumerate(mlps):
             w1, w3, w2 = orig[li]
             if index is None:
-                m.w1, m.w3, m.w2 = w1, w3, w2
+                for n, mod in zip(NM, (w1, w3, w2)):
+                    setattr(m, n, mod)
                 continue
             ix = index[li].to(dev)
             n1 = nn.Linear(w1.in_features, len(ix), bias=False, device=dev, dtype=w1.weight.dtype)
@@ -189,8 +238,9 @@ def main() -> None:
             n2 = nn.Linear(len(ix), w2.out_features, bias=False, device=dev, dtype=w2.weight.dtype)
             n1.weight.copy_(w1.weight[ix])
             n3.weight.copy_(w3.weight[ix])
-            n2.weight.copy_(w2.weight[:, ix])
-            m.w1, m.w3, m.w2 = n1, n3, n2
+            n2.weight.copy_(recon_w2(li, ix) if recon else w2.weight[:, ix])
+            for n, mod in zip(NM, (n1, n3, n2)):
+                setattr(m, n, mod)
 
     # ---------------------------------------------------------------- evaluation
     problems = gsm_test.iloc[: args.n_problems]
@@ -199,7 +249,7 @@ def main() -> None:
     golds = [a.split("####")[-1].strip().replace(",", "") for a in problems["answer"]]
     sol_seqs = [chat_ids(q, clean_solution(a)) for q, a in zip(problems["question"], problems["answer"])]
     wt_test_ids = tok(wt_test, add_special_tokens=False).input_ids[: args.ppl_tokens]
-    wt_seqs = [[tok.bos_token_id] + wt_test_ids[i : i + 512] for i in range(0, len(wt_test_ids) - 16, 512)]
+    wt_seqs = [BOS + wt_test_ids[i : i + 512] for i in range(0, len(wt_test_ids) - 16, 512)]
 
     def ppl(seqs: list[list[int]]) -> float:
         nll, nt = 0.0, 0
@@ -212,7 +262,7 @@ def main() -> None:
 
     def gsm8k() -> dict:
         correct, n_gen, samples = 0, 0, []
-        torch.cuda.synchronize()
+        sync()
         t0 = time.perf_counter()
         for i in range(0, len(prompts), args.batch):
             enc = tok(prompts[i : i + args.batch], return_tensors="pt", padding=True, add_special_tokens=False).to(dev)
@@ -225,7 +275,7 @@ def main() -> None:
                 n_gen += int((row != tok.pad_token_id).sum())
                 if len(samples) < 3:
                     samples.append({"gold": golds[i + j], "pred": pred, "text": text[-300:]})
-        torch.cuda.synchronize()
+        sync()
         dt = time.perf_counter() - t0
         return {"accuracy": correct / len(prompts), "correct": correct, "n": len(prompts), "gen_tokens": n_gen,
                 "wall_s": dt, "samples": samples}
@@ -234,21 +284,22 @@ def main() -> None:
         """Pure decode tokens/s on a fixed workload (min_new_tokens forces the same length for every config)."""
         enc = tok(prompts[:batch], return_tensors="pt", padding=True, add_special_tokens=False).to(dev)
         model.generate(**enc, max_new_tokens=8, min_new_tokens=8, do_sample=False, pad_token_id=tok.pad_token_id)
-        torch.cuda.synchronize()
+        sync()
         t0 = time.perf_counter()
         model.generate(**enc, max_new_tokens=n_steps, min_new_tokens=n_steps, do_sample=False,
                        pad_token_id=tok.pad_token_id)
-        torch.cuda.synchronize()
+        sync()
         return batch * n_steps / (time.perf_counter() - t0)
 
-    def evaluate(index) -> dict:
-        apply_index(index)
-        torch.cuda.empty_cache()
+    def evaluate(index, recon: bool = False) -> dict:
+        apply_index(index, recon)
+        if dev.type == "cuda":
+            torch.cuda.empty_cache()
         mlp_params = sum(p.numel() for m in mlps for p in m.parameters())
         all_params = sum(p.numel() for p in model.parameters())
         r = {"mlp_params": mlp_params, "model_params": all_params,
              "model_bytes_bf16": all_params * 2,
-             "neurons_per_layer": [int(m.w1.out_features) for m in mlps],
+             "neurons_per_layer": [int(getattr(m, NM[0]).out_features) for m in mlps],
              "ppl_gsm8k_solutions": ppl(sol_seqs), "ppl_wikitext": ppl(wt_seqs),
              "decode_tok_s": decode_speed(), "gsm8k": gsm8k()}
         apply_index(None)
@@ -257,6 +308,10 @@ def main() -> None:
     out_p = Path(args.out)
     out_p.parent.mkdir(parents=True, exist_ok=True)
     results: dict = {}
+    if out_p.exists():  # resume: keep configs already finished (e.g. saved to Google Drive before a disconnect)
+        results = {k: v for k, v in json.loads(out_p.read_text(encoding="utf-8")).get("results", {}).items()
+                   if k != "index_overlap_math_wiki"}
+        print(f"resuming: {len(results)} configs already in {out_p}: {sorted(results)}", flush=True)
 
     def save() -> None:
         out_p.write_text(json.dumps({"model": args.model_dir, "n_problems": len(prompts),
@@ -270,17 +325,20 @@ def main() -> None:
               f"  size={r['model_params'] / f['model_params']:.0%}  decode={r['decode_tok_s'] / f['decode_tok_s']:.2f}x"
               f"  ({r['gsm8k']['wall_s']:.0f}s)", flush=True)
 
-    results["full"] = evaluate(None)
-    save()
+    if "full" not in results:
+        results["full"] = evaluate(None)
+        save()
     show("full", results["full"])
     for b in [float(x) for x in args.budgets.split(",")]:
         for kind in [x.strip() for x in args.indexes.split(",") if x.strip()]:
+            if f"{kind}@{b}" in results:
+                continue
             idx = build_index(kind, b)
-            r = evaluate(idx)
+            r = evaluate(idx, recon=kind.endswith("+recon"))
             r.update(index=kind, budget=b)
-            if kind != "random":
-                src = kind.split("-")[0]
-                s = score[src]
+            if not kind.startswith("random"):
+                src, mode = kind.removesuffix("+recon").split("-")
+                s = score["math_energy" if mode == "energy" else src]
                 r["contribution_kept"] = float(sum(s[li, idx[li]].sum() for li in range(L)) / s.sum())
             name = f"{kind}@{b}"
             results[name] = r

@@ -159,6 +159,7 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 | Loop fix, short run (same, 48 GSM8K, 6,144-token cap, `experiment_moi_loop_router.py`) | Edit on only `43%` of tokens: `20.8%` vs. `22.9%` always-on vs. `12.5%` base; ppl unchanged (`21.590`) | — |
 | Per-token neurons (LFM3-1.7B, 200 GSM8K, `experiment_moi_lfm3_gsm8k.py`) | — | Full `83.0%`; 50% of MLP neurons: oracle `78.5%`, gate `62.5%`, trained router `63.5%`; at 30% or less a usable router collapses (`<= 32.5%`) |
 | Per-task index (Qwen3.5-0.8B, `experiment_capture_index_route.py`) | — | Router picks the right task `100%`; math ppl `5.33` full -> `6.40 / 8.92 / 15.72` at 70/50/30% (wrong-task index `7.89 / 12.63 / 29.80`, random `16.8 / 71.9 / 1684`) |
+| **Per-task index + compensation, real accuracy** (LFM3-1.7B, 200 GSM8K test, greedy, 512-token cap, `experiment_moi_task_index_lfm3.py`, [`results`](./benchmarks/moi_task_index_lfm3/results_colab_l4.json)) | — | Full `83.0%`; compensated math index (`energy+recon`) at 70/50/30% of MLP neurons: **`79.0% / 65.5% / 37.0%`** (same index uncompensated `66.5% / 33.5% / 7.5%`, random `3% / 0.5% / 1%`); model `2.78 / 2.33 / 1.87 GB` vs. `3.46 GB` |
 
 > * SwiGLU models (Qwen, LFM3) have no "sleeping" neurons: every unit contributes a little, so Selective MoI always pays in quality, even with perfect per-token information (the oracle). ReLU models (OPT-125M: `93.7%` exact zeros) are far more tolerant.
 > * Additive MoI does not save resources; it adds a little (the p50c payload is `131,072` deltas, under 1 MB). Its gain is the absence of side effects: on the loop fix it matches the always-on edit on the task while leaving text that never triggers it bit-identical to the original model.
@@ -187,6 +188,21 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >   | 5,000 calibration tokens | `20 KB` | `6.82` | `8.24` |
 >
 >   Storing the task's tokens and recomputing the covariance (one forward pass over 20k tokens) keeps nearly all of the compensation in `80 KB`, ~15,000× less than the full matrix; fp16 storage is lossless. Low-rank alone fails (the top 256 directions hold only `77%` of the activation energy, the top 1024 `92%`); adding the exact diagonal is what makes it work. Side effect on general text is similar: WikiText ppl at 50% is `82.6` (full), `82.7` (fp16), `81.4` (top-256 + diag) and `88.2` (20k tokens), vs. `92.3` uncompensated; the token summary is the one that gives up a little here.
+>
+>   **Does it hold on real task accuracy?** LFM3-1.7B, 200 GSM8K test problems, greedy decoding. The MLP matrices are physically sliced, so the sizes are real. Each index is chosen once from 100k tokens of math text, and compensation uses the covariance of 20k math tokens (`experiment_moi_task_index_lfm3.py`, [`results`](./benchmarks/moi_task_index_lfm3/results_colab_l4.json)). GSM8K accuracy (full model `83.0%`, `3.46 GB` bf16):
+>
+>   | MLP neurons kept | Model size | `uniform` | `energy` | `global` | `uniform+recon` | **`energy+recon`** | `global+recon` | random |
+>   |---|---|---|---|---|---|---|---|---|
+>   | 70% | `2.78 GB` (80%) | `66.0%` | `66.5%` | `64.0%` | `77.5%` | **`79.0%`** | `74.5%` | `3.0%` |
+>   | 50% | `2.33 GB` (67%) | `36.5%` | `33.5%` | `28.0%` | `54.5%` | **`65.5%`** | `55.5%` | `0.5%` |
+>   | 30% | `1.87 GB` (54%) | `8.0%` | `7.5%` | `6.0%` | `28.5%` | **`37.0%`** | `28.5%` | `1.0%` |
+>
+>   `uniform` keeps the same share of neurons in every layer, ranked by mean contribution to math text. `energy` ranks by mean squared contribution. `global` ranks across all layers at once, so layers get different budgets.
+>
+>   * Compensation adds `+12.5`, `+32` and `+29.5` points at 70/50/30%. At 70% the compensated model is `4` points below the full model, which is near the noise level for 200 problems (one problem = `0.5` pt). Per-token routing at 50% reached `63.5%` (trained router) and needed every weight resident. The per-task compensated index reaches `65.5%` while actually removing a third of the model.
+>   * `energy` selection plus compensation wins at every budget. Uneven per-layer budgets (`global`) never help.
+>   * Compensation specializes the model. WikiText ppl goes from `24.9` (full) to `51.95` with `energy` at 70% and to `71.8` with `energy+recon`. The math and wiki indexes share only `81% / 72% / 65%` of neurons at 70/50/30%, so each task needs its own index, which is the case for keeping several indexes.
+>   * There is no decode speedup: `~745 tok/s` at every size, because HF `generate` at batch 32 on a 1.7B model is not bandwidth-bound. The saving is memory.
 
 ---
 
