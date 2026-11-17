@@ -21,18 +21,32 @@ from .compare import (
 from .indexer import build_index
 from .moipatch import Edit, MoIPatch, PatchHandle
 from .query import WeightSpaceIndex, load_index
+from .tracer import (
+    CompactTrace,
+    capture_compact,
+    dequantize_block_int4,
+    diff_traces,
+    quantization_error,
+    quantize_block_int4,
+)
 
 __all__ = [
     "ActivationIndex",
     "AdditiveMoI",
+    "CompactTrace",
     "Edit",
     "MoIPatch",
     "PatchHandle",
     "SelectiveMoI",
     "TaskRouter",
     "apply_selection",
+    "capture_compact",
     "capture_index",
+    "dequantize_block_int4",
+    "diff_traces",
     "find_mlps",
+    "quantization_error",
+    "quantize_block_int4",
     "trace_all",
     "DynamicCircuitPager",
     "MixtureOfIndexes",
