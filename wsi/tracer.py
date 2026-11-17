@@ -280,7 +280,7 @@ def capture_compact(
     input_ids: torch.Tensor | list[int],
     *,
     top_k_mlp: int = 256,
-    resid_quant: str = "int4",
+    resid_quant: str = "int8",
     group_size: int = 16,
     max_tokens: int | None = None,
 ) -> CompactTrace:
@@ -424,19 +424,21 @@ def diff_traces(
         impact = delta * wn
         li = _layer_idx_from_name(g.down)
         for uid in impact.abs().topk(min(top_k, len(impact))).indices.tolist():
-            row: dict[str, Any] = {
+            mlp_hits.append({
                 "layer": li, "module": g.down, "unit": int(uid),
                 "act_a": round(float(da[uid]), 4), "act_b": round(float(db[uid]), 4),
                 "resid_shift_norm": round(float(impact[uid].abs()), 4),
                 "signed_shift": round(float(impact[uid]), 4),
-            }
-            if wsi is not None and li is not None:
+            })
+    mlp_hits.sort(key=lambda r: -r["resid_shift_norm"])
+    top_mlp = mlp_hits[:top_k]
+    if wsi is not None:
+        for row in top_mlp:
+            if row["layer"] is not None:
                 try:
-                    row["transduction_rule"] = wsi.explain_neuron(layer=li, unit=int(uid))["transduction_rule"]
+                    row["transduction_rule"] = wsi.explain_neuron(layer=row["layer"], unit=row["unit"])["transduction_rule"]
                 except Exception:
                     pass
-            mlp_hits.append(row)
-    mlp_hits.sort(key=lambda r: -r["resid_shift_norm"])
 
     # 3. Exact Attention / Linear-Attn Head output vector shift ||(x_b - x_a)_h @ W_O_h^T||
     hidden = peak_vec.numel() if peak_vec is not None else 0
@@ -466,15 +468,20 @@ def diff_traces(
                 if tb_att.dim() == 4 and hid < tb_att.shape[1]:
                     att_a = ta_att[0, hid, pos_a].float()
                     att_b = tb_att[0, hid, pos_b].float()
+                    row["attn_a_top_src_pos"] = int(att_a.argmax())
+                    row["attn_a_top_weight"] = round(float(att_a.max()), 4)
                     row["attn_b_top_src_pos"] = int(att_b.argmax())
                     row["attn_b_top_weight"] = round(float(att_b.max()), 4)
+                    shared = min(len(att_a), len(att_b))
                     if len(att_a) == len(att_b):
                         row["attn_max_shift_pos"] = int((att_b - att_a).abs().argmax())
                         row["attn_max_shift"] = round(float((att_b - att_a).abs().max()), 4)
+                    elif shared > 0:
+                        row["attn_prefix_l1_shift"] = round(float((att_b[:shared] - att_a[:shared]).abs().sum()), 4)
             head_hits.append(row)
     head_hits.sort(key=lambda r: -r["out_delta_norm"])
 
-    # 4. Cache state deltas (KV / Gated DeltaNet recurrent states)
+    # 4. Cache state deltas (KV at pos_a/pos_b even when T differs, + Gated DeltaNet recurrent/conv states)
     cache_shifts = []
     for k in sorted(set(tr_a) & set(tr_b)):
         if not k.startswith("cache."):
@@ -482,6 +489,9 @@ def diff_traces(
         ta, tb = tr_a[k].float(), tr_b[k].float()
         if ta.shape == tb.shape:
             cache_shifts.append({"key": k, "delta_norm": round(float((tb - ta).norm()), 4)})
+        elif ta.dim() == 4 and tb.dim() == 4 and ta.shape[:2] == tb.shape[:2] and ta.shape[3] == tb.shape[3]:
+            va, vb = ta[:, :, pos_a, :], tb[:, :, pos_b, :]
+            cache_shifts.append({"key": f"{k}[pos]", "delta_norm": round(float((vb - va).norm()), 4)})
     cache_shifts.sort(key=lambda r: -r["delta_norm"])
 
     # 5. Optional static readout of peak residual shift via WSI
@@ -500,7 +510,7 @@ def diff_traces(
         "pos_a": pos_a, "pos_b": pos_b,
         "peak_residual_layer": peak_layer, "peak_residual_delta_norm": round(peak_norm, 4),
         "layer_curve": layer_curve,
-        "top_mlp_contributors": mlp_hits[:top_k],
+        "top_mlp_contributors": top_mlp,
         "top_attention_heads": head_hits[:top_k],
         "top_cache_deltas": cache_shifts[:top_k],
         "peak_vector_readout": vec_readout,

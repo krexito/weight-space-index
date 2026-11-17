@@ -127,6 +127,8 @@ def test_compact_trace_roundtrip_and_loop_onset() -> None:
     # Non-repeating prefix followed by a periodic repeating loop at t >= 12
     ids = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 5, 6, 7, 8, 5, 6, 7, 8]])
     with tempfile.TemporaryDirectory() as td:
+        tr8 = capture_compact(model, ids, top_k_mlp=16, group_size=16)  # default: int8
+        assert tr8.resid_quant == "int8"
         tr = capture_compact(model, ids, top_k_mlp=16, resid_quant="int4", group_size=16)
         tr.save(td)
         loaded = CompactTrace.load(td)
