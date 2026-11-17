@@ -32,6 +32,15 @@ from pathlib import Path
 HUB_FILES = {
     "gsm8k/test.parquet": ("openai/gsm8k", "main/test-00000-of-00001.parquet"),
     "gsm8k/train.parquet": ("openai/gsm8k", "main/train-00000-of-00001.parquet"),
+    "mbpp/train.parquet": ("google-research-datasets/mbpp", "full/train-00000-of-00001.parquet"),
+    "mbpp/validation.parquet": ("google-research-datasets/mbpp", "full/validation-00000-of-00001.parquet"),
+    "mbpp/test.parquet": ("google-research-datasets/mbpp", "full/test-00000-of-00001.parquet"),
+    "mbpp/prompt.parquet": ("google-research-datasets/mbpp", "full/prompt-00000-of-00001.parquet"),
+    "mmlu/auxiliary_train.parquet": ("cais/mmlu", "all/auxiliary_train-00000-of-00001.parquet"),
+    "wikitext/train.parquet": ("Salesforce/wikitext", "wikitext-2-raw-v1/train-00000-of-00001.parquet"),
+    "humaneval/test.parquet": ("openai/openai_humaneval", "openai_humaneval/test-00000-of-00001.parquet"),
+    "mmlu/test.parquet": ("cais/mmlu", "all/test-00000-of-00001.parquet"),
+    "mmlu/validation.parquet": ("cais/mmlu", "all/validation-00000-of-00001.parquet"),
 }
 PROMPT_SUFFIX = "\n\nSolve step by step. End with: The answer is <number>."
 
@@ -71,6 +80,51 @@ def same_number(a: str | None, b: str) -> bool:
         return a is not None and abs(float(a) - float(b)) < 1e-6
     except ValueError:
         return False
+
+
+def calib_sequences(source: str, tok, data_dir: Path, n_tokens: int) -> list[list[int]]:
+    """Token sequences for calibrating a task index ('zone'), until n_tokens are reached.
+    gsm8k: GSM8K-train question + worked solution (chat format). mbpp: MBPP-train task + reference Python solution
+    (chat format; train first, then the validation / test / prompt splits when more tokens are asked for: the code zone
+    is evaluated on HumanEval, a different dataset). wikitext: plain WikiText-2 train paragraphs (general text, no chat
+    template). mmlu_aux: MMLU auxiliary_train (ARC, OpenBookQA, RACE... in MMLU's multiple-choice format, none of it
+    from the MMLU test), shuffled, asked and answered in chat format exactly like the MMLU evaluation."""
+    import pandas as pd
+    import numpy as np
+
+    def chat(u, a_):
+        return tok(tok.apply_chat_template([{"role": "user", "content": u}, {"role": "assistant", "content": a_}],
+                                           tokenize=False, enable_thinking=False), add_special_tokens=False).input_ids
+
+    if source == "gsm8k":
+        d = pd.read_parquet(need(data_dir, "gsm8k/train.parquet"))
+        gen = (chat(q, clean_solution(ans)) for q, ans in zip(d["question"], d["answer"]))
+    elif source == "mbpp":
+        d = pd.concat([pd.read_parquet(need(data_dir, f"mbpp/{s}.parquet")) for s in ("train", "validation", "test", "prompt")],
+                      ignore_index=True)
+        gen = (chat(f"{t}\nYour code should pass this test: {tl[0]}",
+                    "```python\n" + c.replace("\r\n", "\n").replace("\t", "    ").strip() + "\n```")
+               for t, c, tl in zip(d["text"], d["code"], d["test_list"]))
+    elif source == "wikitext":
+        d = pd.read_parquet(need(data_dir, "wikitext/train.parquet"))
+        paras = [t.strip() for t in d["text"] if len(t.strip()) > 200 and not t.strip().startswith("=")]
+        gen = (tok(p_, add_special_tokens=False).input_ids[:1024] for p_ in paras)
+    elif source == "mmlu_aux":
+        d = pd.read_parquet(need(data_dir, "mmlu/auxiliary_train.parquet"))
+        d = d[d["question"].str.len() < 1000]  # mostly short science / commonsense questions, some reading passages
+        d = d.iloc[np.random.default_rng(0).permutation(len(d))]
+        gen = (chat(q.strip() + "\n" + "\n".join(f"{L}. {c}" for L, c in zip("ABCD", ch)) + "\nAnswer with only the letter.",
+                    "ABCD"[int(ans)])
+               for q, ch, ans in zip(d["question"], d["choices"], d["answer"]))
+    else:
+        raise SystemExit(f"unknown calibration source {source}")
+    out, n = [], 0
+    for ids in gen:
+        out.append(ids)
+        n += len(ids)
+        if n >= n_tokens:
+            break
+    return out
 
 
 def local_dir(model: str) -> Path:
@@ -119,14 +173,7 @@ def cmd_export(a) -> None:
     U = mods[downs[0]].weight.shape[1]
     print(f"{L} MLPs x {U} neurons", flush=True)
 
-    calib, n = [], 0
-    for q, ans in zip(*(lambda d: (d["question"], d["answer"]))(pd.read_parquet(need(Path(a.data_dir), "gsm8k/train.parquet")))):
-        txt = tok.apply_chat_template([{"role": "user", "content": q}, {"role": "assistant", "content": clean_solution(ans)}],
-                                      tokenize=False, enable_thinking=False)
-        calib.append(tok(txt, add_special_tokens=False).input_ids)
-        n += len(calib[-1])
-        if n >= a.calib_tokens:
-            break
+    calib = calib_sequences(a.calib_source, tok, Path(a.data_dir), a.calib_tokens)
 
     # The Gram matrices of every layer may not fit next to the model (Qwen3.5-4B: 32 x 9216^2 fp32 = 10.9 GB), so the
     # layers are calibrated in groups that fit in free GPU memory; each finished group's Grams go to CPU RAM.
@@ -198,7 +245,7 @@ def cmd_export(a) -> None:
         return cands[0]
 
     mtp_layers = sorted({int(m.group(1)) for k in keys for m in [re.match(r"mtp\.layers\.(\d+)\.mlp\.down_proj", k)] if m})
-    summary = {"model": a.model, "calib_tokens": ntok, "calib_dtype": str(cdt), "layers": L, "neurons_per_layer": U, "ridge": a.ridge,
+    summary = {"model": a.model, "calib_source": a.calib_source, "calib_tokens": ntok, "calib_dtype": str(cdt), "layers": L, "neurons_per_layer": U, "ridge": a.ridge,
                "budgets": {}}
     if a.neurons:  # exact kept-neuron counts, e.g. multiples of 128 so the GPU matmul tiles are full
         targets = [(f"k{int(x)}", int(x)) for x in a.neurons.split(",")]
@@ -206,7 +253,7 @@ def cmd_export(a) -> None:
         targets = [(f"{float(x):g}", round(float(x) * U)) for x in a.budgets.split(",")]
     for name, k in targets:
         t_rec, t_slice = time.perf_counter(), 0.0
-        new = {}
+        new, kept = {}, {}
         for li, d in downs.items():
             W = downW[li].to(dev).double()                                # [H, U]
             sq, G = sqd[li].to(dev) / ntok, Gcpu[li].to(dev).double() / ntok
@@ -217,6 +264,7 @@ def cmd_export(a) -> None:
             sync()
             t_s = time.perf_counter()
             ixc = ix.cpu()
+            kept[li] = ixc.numpy()
             with safe_open(str(keys[ckey(li, "gate_proj")]), "pt") as s:
                 gate = s.get_tensor(ckey(li, "gate_proj"))
             with safe_open(str(keys[ckey(li, "up_proj")]), "pt") as s:
@@ -249,6 +297,9 @@ def cmd_export(a) -> None:
             if "intermediate_size" in c:
                 c["intermediate_size"] = k
         (dst / "config.json").write_text(json.dumps(cfg, indent=2))
+        import numpy as np
+
+        np.savez(dst / "kept_neurons.npz", **{f"layer{li}": v for li, v in kept.items()})  # which neurons this index keeps
         for f in files:
             with safe_open(str(f), "pt") as s:
                 meta = s.metadata() or {}
@@ -378,6 +429,8 @@ def main() -> None:
     e.add_argument("--budgets", default="0.7,0.5,0.3")
     e.add_argument("--neurons", help="exact kept neurons per layer, comma-separated (overrides --budgets)")
     e.add_argument("--calib-tokens", type=int, default=20_000)
+    e.add_argument("--calib-source", default="gsm8k", choices=["gsm8k", "mbpp", "wikitext", "mmlu_aux"],
+                   help="text the index is calibrated on (one 'zone' per task)")
     e.add_argument("--ridge", type=float, default=1e-2)
     e.add_argument("--device", default="cuda")
     e.add_argument("--calib-dtype", default="auto", choices=["auto", "bf16", "fp32"])

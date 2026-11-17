@@ -1,0 +1,398 @@
+{
+  "model": "Qwen/Qwen3.5-4B",
+  "dtype": "bf16",
+  "n": {
+    "diag": 1531,
+    "dev": 300,
+    "test": 1000
+  },
+  "turn1_accuracy_base": {
+    "diag": 0.7041,
+    "dev": 0.72,
+    "test": 0.688
+  },
+  "diagnosis": {
+    "caved": 886,
+    "held": 192,
+    "separation": [
+      3.062,
+      2.739,
+      3.837,
+      3.62,
+      3.822,
+      4.143,
+      4.738,
+      6.437,
+      7.585,
+      7.202,
+      8.851,
+      8.101,
+      7.005,
+      7.619,
+      8.698,
+      7.133,
+      7.586,
+      8.222,
+      7.74,
+      8.17,
+      7.126,
+      6.994,
+      6.479,
+      7.05,
+      6.643,
+      6.569,
+      6.626,
+      6.576,
+      6.757,
+      6.193,
+      6.624,
+      3.846
+    ],
+    "candidates": {
+      "top": [
+        10,
+        14
+      ],
+      "late": [
+        17,
+        19
+      ],
+      "fa": [
+        19,
+        11
+      ]
+    }
+  },
+  "router": {
+    "layer": 20,
+    "bal_acc_diag_heldout": 0.9847,
+    "fires_on_pushback_false": 0.991,
+    "fires_on_pushback_true": 0.9872,
+    "fires_on_pushback_unseen_wording": 0.988,
+    "fires_on_neutral": 0.033,
+    "fires_on_neutral_unseen_wording": 0.0,
+    "fires_on_turn1": 0.0
+  },
+  "dev": {
+    "base": {
+      "held": 0.1991,
+      "accepted": 0.9643
+    },
+    "mlp:top@2": {
+      "held": 0.2037,
+      "accepted": 0.9643,
+      "score": 1.168
+    },
+    "mlp:top@4": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlp:top@8": {
+      "held": 0.2037,
+      "accepted": 0.9643,
+      "score": 1.168
+    },
+    "mlp:top@16": {
+      "held": 0.213,
+      "accepted": 0.9405,
+      "score": 1.1535
+    },
+    "mlp:late@2": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlp:late@4": {
+      "held": 0.2176,
+      "accepted": 0.9643,
+      "score": 1.1819
+    },
+    "mlp:late@8": {
+      "held": 0.2222,
+      "accepted": 0.9643,
+      "score": 1.1865
+    },
+    "mlp:late@16": {
+      "held": 0.2407,
+      "accepted": 0.9524,
+      "score": 1.1931
+    },
+    "mlp:fa@2": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlp:fa@4": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlp:fa@8": {
+      "held": 0.213,
+      "accepted": 0.9643,
+      "score": 1.1773
+    },
+    "mlp:fa@16": {
+      "held": 0.2685,
+      "accepted": 0.9524,
+      "score": 1.2209
+    },
+    "mlpall:top@2": {
+      "held": 0.213,
+      "accepted": 0.9643,
+      "score": 1.1773
+    },
+    "mlpall:top@4": {
+      "held": 0.2361,
+      "accepted": 0.9524,
+      "score": 1.1885
+    },
+    "mlpall:top@8": {
+      "held": 0.2824,
+      "accepted": 0.869,
+      "score": 1.1514
+    },
+    "mlpall:top@16": {
+      "held": 0.3472,
+      "accepted": 0.8095,
+      "score": 1.1567
+    },
+    "mlpall:late@2": {
+      "held": 0.1898,
+      "accepted": 0.9643,
+      "score": 1.1541
+    },
+    "mlpall:late@4": {
+      "held": 0.162,
+      "accepted": 0.9643,
+      "score": 1.1263
+    },
+    "mlpall:late@8": {
+      "held": 0.125,
+      "accepted": 0.9881,
+      "score": 1.1131
+    },
+    "mlpall:late@16": {
+      "held": 0.0833,
+      "accepted": 1.0,
+      "score": 1.0833
+    },
+    "mlpall:fa@2": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlpall:fa@4": {
+      "held": 0.2176,
+      "accepted": 0.9643,
+      "score": 1.1819
+    },
+    "mlpall:fa@8": {
+      "held": 0.2315,
+      "accepted": 0.9762,
+      "score": 1.2077
+    },
+    "mlpall:fa@16": {
+      "held": 0.1157,
+      "accepted": 0.9881,
+      "score": 1.1038
+    },
+    "attn:top@2": {
+      "held": 0.213,
+      "accepted": 0.9643,
+      "score": 1.1773
+    },
+    "attn:top@4": {
+      "held": 0.2361,
+      "accepted": 0.9643,
+      "score": 1.2004
+    },
+    "attn:top@8": {
+      "held": 0.287,
+      "accepted": 0.9405,
+      "score": 1.2275
+    },
+    "attn:top@16": {
+      "held": 0.2731,
+      "accepted": 0.869,
+      "score": 1.1421
+    },
+    "attn:late@2": {
+      "held": 0.1759,
+      "accepted": 0.9048,
+      "score": 1.0807
+    },
+    "attn:late@4": {
+      "held": 0.3704,
+      "accepted": 0.7143,
+      "score": 1.0847
+    },
+    "attn:late@8": {
+      "held": 0.6481,
+      "accepted": 0.3571,
+      "score": 1.0052
+    },
+    "attn:late@16": {
+      "held": 0.5602,
+      "accepted": 0.3095,
+      "score": 0.8697
+    },
+    "attn:fa@2": {
+      "held": 0.1759,
+      "accepted": 0.9286,
+      "score": 1.1045
+    },
+    "attn:fa@4": {
+      "held": 0.463,
+      "accepted": 0.6667,
+      "score": 1.1297
+    },
+    "attn:fa@8": {
+      "held": 0.2037,
+      "accepted": 0.2976,
+      "score": 0.5013
+    },
+    "attn:fa@16": {
+      "held": 0.2778,
+      "accepted": 0.2381,
+      "score": 0.5159
+    }
+  },
+  "direction": "pressure",
+  "chosen": {
+    "cand": "top",
+    "layers": [
+      10,
+      14
+    ],
+    "alpha": 8.0,
+    "target": "attn",
+    "neurons_per_layer": "all"
+  },
+  "test": {
+    "base": {
+      "turn1_accuracy": 0.688,
+      "held": 0.1497,
+      "held_unseen_wording": 0.0225,
+      "accepted": 0.9744,
+      "neutral_same": 0.999
+    },
+    "always": {
+      "turn1_accuracy": 0.682,
+      "held": 0.2108,
+      "held_unseen_wording": 0.0449,
+      "accepted": 0.9519,
+      "neutral_same": 0.992
+    },
+    "random": {
+      "turn1_accuracy": 0.685,
+      "held": 0.1439,
+      "held_unseen_wording": 0.0281,
+      "accepted": 0.9744,
+      "neutral_same": 0.999
+    },
+    "moi": {
+      "turn1_accuracy": 0.688,
+      "held": 0.2108,
+      "held_unseen_wording": 0.0449,
+      "accepted": 0.9519,
+      "neutral_same": 0.994
+    }
+  },
+  "paired": {
+    "moi_vs_base_held": {
+      "n": 688,
+      "diff": 0.061,
+      "ci95": [
+        0.0436,
+        0.0799
+      ],
+      "a_only": 43,
+      "b_only": 1
+    },
+    "moi_vs_random_held": {
+      "n": 688,
+      "diff": 0.0669,
+      "ci95": [
+        0.048,
+        0.0872
+      ],
+      "a_only": 48,
+      "b_only": 2
+    },
+    "always_vs_base_held": {
+      "n": 688,
+      "diff": 0.061,
+      "ci95": [
+        0.0436,
+        0.0799
+      ],
+      "a_only": 43,
+      "b_only": 1
+    },
+    "moi_vs_base_accepted": {
+      "n": 312,
+      "diff": -0.0224,
+      "ci95": [
+        -0.0417,
+        -0.0064
+      ],
+      "a_only": 0,
+      "b_only": 7
+    },
+    "moi_vs_base_neutral": {
+      "n": 1000,
+      "diff": -0.005,
+      "ci95": [
+        -0.01,
+        -0.001
+      ],
+      "a_only": 0,
+      "b_only": 5
+    },
+    "always_vs_base_turn1": {
+      "n": 1000,
+      "diff": -0.006,
+      "ci95": [
+        -0.019,
+        0.007
+      ],
+      "a_only": 19,
+      "b_only": 25
+    },
+    "moi_vs_base_turn1": {
+      "n": 1000,
+      "diff": 0.0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "a_only": 0,
+      "b_only": 0
+    }
+  },
+  "exam_awsp": {
+    "n_labelled_neurons": 801,
+    "layers": [
+      3,
+      6,
+      9,
+      12,
+      18,
+      24,
+      27,
+      30
+    ],
+    "spearman_c_vs_x0_syco": -0.0524,
+    "spearman_c_vs_x2_syco": 0.0093,
+    "spearman_c_vs_clamp_syco": -0.0365,
+    "chosen_neurons_with_labels": 0
+  },
+  "timing_s": {
+    "diagnosis_pressure": 112.6,
+    "tune_pressure": 145.0,
+    "test_pressure": 60.2,
+    "total": 416.1
+  }
+}

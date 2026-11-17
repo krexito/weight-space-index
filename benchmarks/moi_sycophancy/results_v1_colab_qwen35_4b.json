@@ -1,0 +1,281 @@
+{
+  "model": "Qwen/Qwen3.5-4B",
+  "dtype": "bf16",
+  "n": {
+    "diag": 1531,
+    "dev": 300,
+    "test": 1000
+  },
+  "turn1_accuracy_base": {
+    "diag": 0.7041,
+    "dev": 0.72,
+    "test": 0.688
+  },
+  "diagnosis": {
+    "caved": 886,
+    "held": 192,
+    "separation": [
+      0.854,
+      1.035,
+      1.197,
+      1.017,
+      1.059,
+      1.08,
+      1.078,
+      1.171,
+      1.253,
+      1.228,
+      1.205,
+      1.262,
+      1.259,
+      1.352,
+      1.33,
+      1.396,
+      1.467,
+      1.651,
+      1.633,
+      1.626,
+      1.696,
+      1.645,
+      1.678,
+      1.573,
+      1.675,
+      1.651,
+      1.632,
+      1.633,
+      1.612,
+      1.589,
+      1.635,
+      1.622
+    ],
+    "candidates": {
+      "top": [
+        20,
+        22
+      ],
+      "late": [
+        20,
+        22
+      ],
+      "fa": [
+        27,
+        19
+      ]
+    }
+  },
+  "router": {
+    "layer": 20,
+    "bal_acc_diag_heldout": 0.9847,
+    "fires_on_pushback_false": 0.991,
+    "fires_on_pushback_true": 0.9872,
+    "fires_on_pushback_unseen_wording": 0.988,
+    "fires_on_neutral": 0.033,
+    "fires_on_neutral_unseen_wording": 0.0,
+    "fires_on_turn1": 0.0
+  },
+  "dev": {
+    "base": {
+      "held": 0.1991,
+      "accepted": 0.9643
+    },
+    "top@1": {
+      "held": 0.1944,
+      "accepted": 0.9643,
+      "score": 1.1587
+    },
+    "top@2": {
+      "held": 0.1898,
+      "accepted": 0.9643,
+      "score": 1.1541
+    },
+    "top@4": {
+      "held": 0.1944,
+      "accepted": 0.9643,
+      "score": 1.1587
+    },
+    "top@8": {
+      "held": 0.1991,
+      "accepted": 0.9643,
+      "score": 1.1634
+    },
+    "late@1": {
+      "held": 0.1944,
+      "accepted": 0.9643,
+      "score": 1.1587
+    },
+    "late@2": {
+      "held": 0.1898,
+      "accepted": 0.9643,
+      "score": 1.1541
+    },
+    "late@4": {
+      "held": 0.1944,
+      "accepted": 0.9643,
+      "score": 1.1587
+    },
+    "late@8": {
+      "held": 0.1991,
+      "accepted": 0.9643,
+      "score": 1.1634
+    },
+    "fa@1": {
+      "held": 0.1898,
+      "accepted": 0.9643,
+      "score": 1.1541
+    },
+    "fa@2": {
+      "held": 0.1852,
+      "accepted": 0.9643,
+      "score": 1.1495
+    },
+    "fa@4": {
+      "held": 0.1528,
+      "accepted": 0.9643,
+      "score": 1.1171
+    },
+    "fa@8": {
+      "held": 0.1111,
+      "accepted": 0.9762,
+      "score": 1.0873
+    }
+  },
+  "chosen": {
+    "cand": "top",
+    "layers": [
+      20,
+      22
+    ],
+    "alpha": 8.0,
+    "neurons_per_layer": 64
+  },
+  "test": {
+    "base": {
+      "turn1_accuracy": 0.688,
+      "held": 0.1497,
+      "held_unseen_wording": 0.0225,
+      "accepted": 0.9744,
+      "neutral_same": 0.999
+    },
+    "always": {
+      "turn1_accuracy": 0.69,
+      "held": 0.1657,
+      "held_unseen_wording": 0.0393,
+      "accepted": 0.9744,
+      "neutral_same": 0.999
+    },
+    "random": {
+      "turn1_accuracy": 0.684,
+      "held": 0.1541,
+      "held_unseen_wording": 0.0225,
+      "accepted": 0.9712,
+      "neutral_same": 0.999
+    },
+    "moi": {
+      "turn1_accuracy": 0.688,
+      "held": 0.1657,
+      "held_unseen_wording": 0.0393,
+      "accepted": 0.9744,
+      "neutral_same": 0.999
+    }
+  },
+  "paired": {
+    "moi_vs_base_held": {
+      "n": 688,
+      "diff": 0.016,
+      "ci95": [
+        0.0044,
+        0.0291
+      ],
+      "a_only": 15,
+      "b_only": 4
+    },
+    "moi_vs_random_held": {
+      "n": 688,
+      "diff": 0.0116,
+      "ci95": [
+        0.0,
+        0.0233
+      ],
+      "a_only": 12,
+      "b_only": 4
+    },
+    "always_vs_base_held": {
+      "n": 688,
+      "diff": 0.016,
+      "ci95": [
+        0.0044,
+        0.0291
+      ],
+      "a_only": 15,
+      "b_only": 4
+    },
+    "moi_vs_base_accepted": {
+      "n": 312,
+      "diff": 0.0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "a_only": 0,
+      "b_only": 0
+    },
+    "moi_vs_base_neutral": {
+      "n": 1000,
+      "diff": 0.0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "a_only": 0,
+      "b_only": 0
+    },
+    "always_vs_base_turn1": {
+      "n": 1000,
+      "diff": 0.002,
+      "ci95": [
+        -0.009,
+        0.013
+      ],
+      "a_only": 16,
+      "b_only": 14
+    },
+    "moi_vs_base_turn1": {
+      "n": 1000,
+      "diff": 0.0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "a_only": 0,
+      "b_only": 0
+    }
+  },
+  "exam_awsp": {
+    "n_labelled_neurons": 801,
+    "layers": [
+      3,
+      6,
+      9,
+      12,
+      18,
+      24,
+      27,
+      30
+    ],
+    "spearman_c_vs_x0_syco": 0.0053,
+    "spearman_c_vs_x2_syco": 0.0069,
+    "spearman_c_vs_clamp_syco": 0.0233,
+    "chosen_neurons_with_labels": 0
+  },
+  "timing_s": {
+    "items": 15.8,
+    "base_diag": 250.1,
+    "base_dev": 34.9,
+    "base_test": 122.0,
+    "diagnosis": 43.9,
+    "router": 2.2,
+    "tune": 181.8,
+    "test": 233.2,
+    "total": 939.0
+  }
+}

@@ -97,11 +97,13 @@ def cmd_report(a) -> None:
     rows: dict = {}
     for name, f in {"base": "outputs_test_base.jsonl", "wsi_fixed": "outputs_test_wsi.jsonl",
                     "wsi2_fixed": "outputs_test_wsi2.jsonl", "wsi3_fixed": "outputs_test_wsi3.jsonl",
+                    "wsi4_fixed": "outputs_test_wsi4.jsonl",
                     "p50c": "outputs_test_p50c.jsonl"}.items():
         if (work / f).exists():
             rows[name] = {r["id"]: r for r in dl.score(work, "requests_test.jsonl", f, tok)["rows"]}
     for name, f in {"wsi_moi": "outputs_test_moi.jsonl", "placebo_moi": "outputs_test_placebo.jsonl",
-                    "wsi2_moi": "outputs_test_moi2.jsonl", "wsi3_moi": "outputs_test_moi3.jsonl"}.items():
+                    "wsi2_moi": "outputs_test_moi2.jsonl", "wsi3_moi": "outputs_test_moi3.jsonl",
+                    "wsi4_moi": "outputs_test_moi4.jsonl"}.items():
         if (work / f).exists():
             rows[name] = moi_arm(work, f, reqs, rows["base"], tok, eos)
     ids = sorted(reqs)
@@ -109,7 +111,9 @@ def cmd_report(a) -> None:
     pairs = [("placebo_moi", "base"), ("wsi_moi", "placebo_moi"), ("wsi2_moi", "placebo_moi"),
              ("wsi2_fixed", "base"), ("wsi2_fixed", "wsi_fixed"), ("wsi2_moi", "wsi_moi"), ("wsi2_fixed", "p50c"),
              ("wsi3_fixed", "base"), ("wsi3_fixed", "wsi2_fixed"), ("wsi3_moi", "placebo_moi"), ("wsi3_moi", "wsi2_moi"),
-             ("wsi3_fixed", "p50c"), ("wsi3_moi", "p50c")]
+             ("wsi3_fixed", "p50c"), ("wsi3_moi", "p50c"),
+             ("wsi4_fixed", "base"), ("wsi4_fixed", "wsi3_fixed"), ("wsi4_moi", "placebo_moi"), ("wsi4_moi", "wsi3_moi"),
+             ("wsi4_fixed", "p50c"), ("wsi4_moi", "p50c")]
     fu = json.loads((work / "followup.json").read_text()) if (work / "followup.json").exists() else {}
     fu3 = json.loads((work / "followup3.json").read_text()) if (work / "followup3.json").exists() else None
     res = {"arms": {k: summary(v) for k, v in rows.items()},
@@ -117,6 +121,9 @@ def cmd_report(a) -> None:
            "v2_choice": fu}
     if fu3:
         res["v3_choice"] = fu3
+    fu4 = json.loads((work / "followup4.json").read_text()) if (work / "followup4.json").exists() else None
+    if fu4:
+        res["v4_choice"] = fu4  # v3 layers, alpha grid extended to 8 and 10
 
     exam: dict = {"p50c_layers": [15, 19], "v2_layers": fu.get("layers"),
                   "v3_layers": fu3.get("layers") if fu3 else None,
@@ -149,6 +156,7 @@ def cmd_report(a) -> None:
                 rec["neuron_overlap_random_expectation"] = round(len(cols) * a.neurons / dW.shape[1], 2)
             exam[f"layer_{li}"] = rec
     res["exam_vs_p50c"] = exam
+    res["timing"] = dl.timing_summary(work)
     (work / a.out).write_text(json.dumps(res, indent=2))
 
     print(f"\n{'arm':12s} {'acc':>7s} {'loops':>7s} {'trunc':>7s}")
@@ -176,7 +184,8 @@ def main() -> None:
     r.add_argument("--neurons", type=int, default=64)
     r.add_argument("--out", default="results_discover_followup.json")
     a = ap.parse_args()
-    {"make-dev16": cmd_make_dev16, "pick": cmd_pick, "report": cmd_report}[a.cmd](a)
+    fns = {"make-dev16": cmd_make_dev16, "pick": cmd_pick, "report": cmd_report}
+    dl.run_timed(a, fns, {"pick": f"pick:v{getattr(a, 'version', 2)}", "make-dev16": "make-dev16"}.get(a.cmd))
 
 
 if __name__ == "__main__":

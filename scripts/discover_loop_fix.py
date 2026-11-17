@@ -37,6 +37,48 @@ LOOP_FRAC, LOOP_WINDOW = lr.ROUTER_FRAC, lr.ROUTER_WINDOW  # a token is "looping
 CLEAN_WINDOW = 256  # a token is "normal" when the last 256 response tokens have no repeated 16-gram
 
 
+# ------------------------------------------------------------------ timing (saved to work/timing.json, backed up with the results)
+def _gpu_name() -> str:
+    try:
+        import torch
+
+        return torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
+def record_time(work: Path, key: str, seconds: float) -> None:
+    p = work / "timing.json"
+    t = json.loads(p.read_text()) if p.exists() else {}
+    t[key] = {"s": round(seconds, 1), "gpu": _gpu_name()}
+    p.write_text(json.dumps(t, indent=1))
+    print(f"[time] {key}: {seconds / 60:.1f} min", flush=True)
+
+
+def run_timed(a, fns: dict, key: str | None) -> None:
+    """Run one subcommand; unless key is None, store its wall time (model loading included) in timing.json."""
+    t0 = time.perf_counter()
+    fns[a.cmd](a)
+    if key:
+        record_time(Path(a.work), key, time.perf_counter() - t0)
+
+
+DISCOVERY_PREFIXES = ("gen:outputs_elicit", "diagnose", "build:", "gen:outputs_dev", "pick", "sft-data", "train",
+                      "export")
+
+
+def timing_summary(work: Path) -> dict:
+    """Raw per-step times plus the cost of FINDING the fix: model reasoning on train problems, diagnosis, building
+    each candidate fix and tuning it on dev problems (test-set evaluation and the p50c exam are not counted)."""
+    p = work / "timing.json"
+    if not p.exists():
+        return {}
+    t = json.loads(p.read_text())
+    disc = {k: v["s"] for k, v in t.items() if k.startswith(DISCOVERY_PREFIXES)}
+    return {"steps": t, "discovery_steps": sorted(disc), "discovery_s": round(sum(disc.values()), 1),
+            "discovery_min": round(sum(disc.values()) / 60, 1)}
+
+
 # ------------------------------------------------------------------ helpers
 def cfg_load(work: Path) -> dict:
     return json.loads((work / "config.json").read_text())
@@ -498,6 +540,7 @@ def cmd_report(a) -> None:
                 rec["neuron_overlap"] = f"{len(set(diag['neurons'][str(li)]) & set(cols.tolist()))}/{len(cols)}"
             exam[f"layer_{li}"] = rec
     res["exam_vs_p50c"] = exam
+    res["timing"] = timing_summary(work)
     (work / "results_discover.json").write_text(json.dumps(res, indent=2))
 
     print(f"\n{'arm':10s} {'acc':>7s} {'loops':>7s} {'trunc':>7s}")
@@ -552,8 +595,11 @@ def main() -> None:
     r.add_argument("--work", required=True)
     r.add_argument("--p50c-dir")
     a = ap.parse_args()
-    {"prepare": cmd_prepare, "gen": cmd_gen, "diagnose": cmd_diagnose, "build": cmd_build, "plan-moi": cmd_plan_moi,
-     "pick-alpha": cmd_pick_alpha, "report": cmd_report}[a.cmd](a)
+    fns = {"prepare": cmd_prepare, "gen": cmd_gen, "diagnose": cmd_diagnose, "build": cmd_build,
+           "plan-moi": cmd_plan_moi, "pick-alpha": cmd_pick_alpha, "report": cmd_report}
+    key = {"gen": lambda: f"gen:{Path(a.out).stem}:{Path(a.model).name}", "build": lambda: f"build:{a.cand}@{a.alpha:g}",
+           "diagnose": lambda: "diagnose", "pick-alpha": lambda: "pick-alpha", "prepare": lambda: "prepare"}.get(a.cmd)
+    run_timed(a, fns, key() if key else None)
 
 
 if __name__ == "__main__":
