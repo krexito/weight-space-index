@@ -54,19 +54,36 @@ def mc_text(q, choices):
     return q.strip() + "\n" + "\n".join(f"{L}. {c}" for L, c in zip(LET, choices))
 
 
-def load_tasks(data_dir: Path, n_gsm: int, n_mmlu: int, seed: int) -> dict:
+def load_tasks(data_dir: Path, n_gsm: int, n_mmlu: int, seed: int, split: str = "test") -> dict:
     """task -> list of items with 'content' (what the router sees) and 'user' (the full message sent to the model)."""
     import pandas as pd
 
     out = {}
-    g = pd.read_parquet(sp.need(data_dir, "gsm8k/test.parquet")).iloc[:n_gsm]
-    out["gsm8k"] = [{"content": q, "user": q + sp.PROMPT_SUFFIX, "gold": a.split("####")[-1].strip().replace(",", "")}
-                    for q, a in zip(g["question"], g["answer"])]
-    h = pd.read_parquet(sp.need(data_dir, "humaneval/test.parquet"))
-    out["humaneval"] = [{"content": p, "user": CODE_INSTR + p, "prompt": p, "test": t, "entry": e, "task_id": i}
-                        for i, p, t, e in zip(h["task_id"], h["prompt"], h["test"], h["entry_point"])]
-    m = pd.read_parquet(sp.need(data_dir, "mmlu/test.parquet"))
-    idx = np.random.default_rng(seed).permutation(len(m))[:n_mmlu]
+    if split == "val":
+        # Disjoint validation split: tail of gsm8k/train (never used in 20k-80k calib), mbpp/validation, mmlu/validation.
+        g = pd.read_parquet(sp.need(data_dir, "gsm8k/train.parquet")).iloc[-n_gsm:]
+        out["gsm8k"] = [{"content": q, "user": q + sp.PROMPT_SUFFIX, "gold": a.split("####")[-1].strip().replace(",", "")}
+                        for q, a in zip(g["question"], g["answer"])]
+        mb = pd.read_parquet(sp.need(data_dir, "mbpp/validation.parquet"))
+        out["humaneval"] = []
+        for idx_mb, (tx, cd, tl) in enumerate(zip(mb["text"], mb["code"], mb["test_list"])):
+            m_sig = re.search(r"^(def\s+(\w+)\s*\([^\n]*\)\s*:)", cd.replace("\r", ""), re.M)
+            sig, entry = (m_sig.group(1), m_sig.group(2)) if m_sig else ("def solution():", "solution")
+            prompt = f'{sig}\n    """{tx}"""\n'
+            test_code = "def check(candidate):\n" + "\n".join(f"    {t.strip()}" for t in tl)
+            out["humaneval"].append({"content": prompt, "user": CODE_INSTR + prompt, "prompt": prompt,
+                                     "test": test_code, "entry": entry, "task_id": f"mbpp_val/{idx_mb}", "is_mbpp": True})
+        m = pd.read_parquet(sp.need(data_dir, "mmlu/validation.parquet"))
+        idx = np.random.default_rng(seed).permutation(len(m))[:min(n_mmlu, len(m))]
+    else:
+        g = pd.read_parquet(sp.need(data_dir, "gsm8k/test.parquet")).iloc[:n_gsm]
+        out["gsm8k"] = [{"content": q, "user": q + sp.PROMPT_SUFFIX, "gold": a.split("####")[-1].strip().replace(",", "")}
+                        for q, a in zip(g["question"], g["answer"])]
+        h = pd.read_parquet(sp.need(data_dir, "humaneval/test.parquet"))
+        out["humaneval"] = [{"content": p, "user": CODE_INSTR + p, "prompt": p, "test": t, "entry": e, "task_id": i}
+                            for i, p, t, e in zip(h["task_id"], h["prompt"], h["test"], h["entry_point"])]
+        m = pd.read_parquet(sp.need(data_dir, "mmlu/test.parquet"))
+        idx = np.random.default_rng(seed).permutation(len(m))[:n_mmlu]
     out["mmlu"] = [{"content": mc_text(m["question"].iloc[i], list(m["choices"].iloc[i])),
                     "user": mc_text(m["question"].iloc[i], list(m["choices"].iloc[i])) + MC_INSTR,
                     "gold": int(m["answer"].iloc[i]), "subject": m["subject"].iloc[i]} for i in idx]
@@ -125,7 +142,7 @@ def cmd_eval(a) -> None:
 
     md = sp.local_dir(a.model_dir)
     tok = AutoTokenizer.from_pretrained(md)
-    tasks = load_tasks(Path(a.data_dir), a.n_gsm, a.n_mmlu, a.seed)
+    tasks = load_tasks(Path(a.data_dir), a.n_gsm, a.n_mmlu, a.seed, split=getattr(a, "split", "test"))
     dtype = a.dtype
     if dtype == "auto" and torch.cuda.get_device_capability()[0] < 8:
         dtype = "half"
@@ -158,8 +175,8 @@ def cmd_eval(a) -> None:
         texts[task][i] = o.outputs[0].text
         ntok += len(o.outputs[0].token_ids)
     t0 = time.perf_counter()
-    res = {"tag": a.tag, "model_dir": str(md), "gpu": torch.cuda.get_device_name(0),
-           "checkpoint_bytes": sum(f.stat().st_size for f in md.glob("*.safetensors")), "tasks": {}}
+    res = {"tag": a.tag, "split": getattr(a, "split", "test"), "model_dir": str(md), "gpu": torch.cuda.get_device_name(0),
+           "checkpoint_bytes": sum(f.stat().st_size for f in md.glob("*.safetensors") if f.name != "delta_lowrank.safetensors"), "tasks": {}}
     for task in TASKS:
         if task == "humaneval":
             with ThreadPoolExecutor(8) as ex:
@@ -181,6 +198,8 @@ def embed_table(model_dir: Path):
     from safetensors import safe_open
 
     for f in sorted(model_dir.glob("*.safetensors")):
+        if f.name == "delta_lowrank.safetensors":
+            continue
         with safe_open(str(f), "pt") as s:
             for k in s.keys():
                 if k.endswith("embed_tokens.weight") and not k.startswith("mtp."):
@@ -248,6 +267,8 @@ def cmd_route(a) -> None:
         res["tasks"][task] = {"route": pred, "accuracy": round(float(np.mean([p == TASK_ZONE[task] for p in pred])), 4),
                               "counts": {z: pred.count(z) for z in zones},
                               "centroid_accuracy": round(float(np.mean([p == TASK_ZONE[task] for p in cen])), 4)}
+        if task == "mmlu":
+            res["tasks"][task]["subjects"] = [it["subject"] for it in tasks[task]]
         print(f"router on {task}: {res['tasks'][task]['accuracy']:.1%} -> {res['tasks'][task]['counts']} "
               f"(nearest centroid {res['tasks'][task]['centroid_accuracy']:.1%})", flush=True)
     res["route_ms_per_prompt"] = round((time.perf_counter() - t1) / max(nprompts, 1) * 1000, 3)
@@ -261,6 +282,8 @@ def mlp_keys(model_dir: Path) -> dict:
 
     keys = {}
     for f in sorted(model_dir.glob("*.safetensors")):
+        if f.name == "delta_lowrank.safetensors":
+            continue
         with safe_open(str(f), "pt") as s:
             for k in s.keys():
                 if re.search(r"layers\.\d+\.mlp\.(gate|up|down)_proj\.weight$", k) and not k.startswith("mtp."):
@@ -276,6 +299,79 @@ def drop_page_cache() -> bool:
         return True
     except Exception:  # noqa: BLE001
         return False
+
+
+def measure_pairwise_delta_swap(zdirs: dict) -> dict:
+    """Measure exact MLP bytes that differ when switching from zone A -> zone B.
+
+    For shared kept neurons (I_A & I_B), gate_proj and up_proj rows are bit-identical slices of the base model (0 B).
+    For down_proj columns on shared neurons, only columns that actually changed (torch.equal == False) are transferred.
+    If delta_lowrank.safetensors exists in target zone B, also report lowrank_delta_swap_bytes (non-shared rows + A,B).
+    """
+    import torch
+    from safetensors import safe_open
+
+    meta = {}
+    for z, d in zdirs.items():
+        d = Path(d)
+        if not (d / "kept_neurons.npz").exists():
+            continue
+        kept = dict(np.load(d / "kept_neurons.npz"))
+        dkeys = {}
+        for k, f in mlp_keys(d).items():
+            m = re.search(r"layers\.(\d+)\.mlp\.down_proj\.weight$", k)
+            if m:
+                dkeys[int(m.group(1))] = (k, f)
+        lr_file = d / "delta_lowrank.safetensors"
+        meta[z] = {"dir": d, "kept": kept, "dkeys": dkeys,
+                   "lowrank_bytes": lr_file.stat().st_size if lr_file.exists() else 0}
+
+    names = list(meta)
+    pairs = {}
+    for i in range(len(names)):
+        for j in range(len(names)):
+            if i == j:
+                continue
+            za, zb = names[i], names[j]
+            ma, mb = meta[za], meta[zb]
+            swap_gate_up, swap_down_diff, swap_down_new, total_b = 0, 0, 0, 0
+            for lk, ix_b in mb["kept"].items():
+                li = int(lk.replace("layer", ""))
+                ix_a = ma["kept"][lk]
+                kb, fb = mb["dkeys"][li]
+                ka, fa = ma["dkeys"][li]
+                with safe_open(str(fb), "pt") as sb, safe_open(str(fa), "pt") as sa:
+                    wb = sb.get_tensor(kb)
+                    wa = sa.get_tensor(ka)
+                H, kb_len = wb.shape
+                es = wb.element_size()
+                total_b += 3 * H * kb_len * es
+                # Map neuron id -> col position in A and B
+                pos_a = {int(n): p for p, n in enumerate(ix_a)}
+                new_mask = np.array([int(n) not in pos_a for n in ix_b], dtype=bool)
+                n_new = int(new_mask.sum())
+                swap_gate_up += 2 * H * n_new * es
+                swap_down_new += H * n_new * es
+                shared_b = np.where(~new_mask)[0]
+                if len(shared_b) > 0:
+                    shared_a = np.array([pos_a[int(ix_b[p])] for p in shared_b], dtype=np.int64)
+                    diff_cols = int((wb[:, shared_b] != wa[:, shared_a]).any(dim=0).sum().item())
+                    swap_down_diff += H * diff_cols * es
+            exact = swap_gate_up + swap_down_new + swap_down_diff
+            row = {
+                "target_mlp_bytes": total_b,
+                "exact_swap_bytes": exact,
+                "swap_frac_of_mlp": round(exact / max(total_b, 1), 4),
+                "gate_up_bytes": swap_gate_up,
+                "down_new_bytes": swap_down_new,
+                "down_shared_diff_bytes": swap_down_diff,
+            }
+            if mb["lowrank_bytes"]:
+                lr_exact = swap_gate_up + swap_down_new + mb["lowrank_bytes"]
+                row["lowrank_swap_bytes"] = lr_exact
+                row["lowrank_frac_of_mlp"] = round(lr_exact / max(total_b, 1), 4)
+            pairs[f"{za}->{zb}"] = row
+    return pairs
 
 
 def cmd_swap(a) -> None:
@@ -357,6 +453,13 @@ def cmd_swap(a) -> None:
         z0 = res["zones"][names[0]]["mlp_bytes"]
         mean_ov = float(np.mean(list(ov.values()))) if ov else 1.0
         res["delta_swap_bytes_estimate"] = int(z0 * (2 / 3) * (1 - mean_ov) + z0 / 3)
+    exact_pairs = measure_pairwise_delta_swap(zdirs)
+    if exact_pairs:
+        res["exact_pairwise_swap"] = exact_pairs
+        res["exact_delta_swap_bytes_mean"] = int(np.mean([v["exact_swap_bytes"] for v in exact_pairs.values()]))
+        if any("lowrank_swap_bytes" in v for v in exact_pairs.values()):
+            vals = [v.get("lowrank_swap_bytes", v["exact_swap_bytes"]) for v in exact_pairs.values()]
+            res["lowrank_delta_swap_bytes_mean"] = int(np.mean(vals))
     Path(a.res_dir).mkdir(parents=True, exist_ok=True)
     (Path(a.res_dir) / "swap.json").write_text(json.dumps(res, indent=1))
 
@@ -364,7 +467,9 @@ def cmd_swap(a) -> None:
 # ------------------------------------------------------------------ report
 def cmd_report(a) -> None:
     rd = Path(a.res_dir)
-    ev = {p.stem[len("eval_"):]: json.loads(p.read_text()) for p in sorted(rd.glob("eval_*.json"))}
+    all_ev = {p.stem[len("eval_"):]: json.loads(p.read_text()) for p in sorted(rd.glob("eval_*.json"))}
+    ev = {k: v for k, v in all_ev.items() if v.get("split", "test") == "test"}
+    val_ev = {k: v for k, v in all_ev.items() if v.get("split") == "val"}
     route = json.loads((rd / "route.json").read_text()) if (rd / "route.json").exists() else None
     swap = json.loads((rd / "swap.json").read_text()) if (rd / "swap.json").exists() else None
     exports = {}
@@ -418,10 +523,66 @@ def cmd_report(a) -> None:
             res["system_best_variants"] = {"zones": best, "tasks": sb, "selected_on_test": True,
                                            "mean_routed": round(float(np.mean([sb[t]["routed"] for t in TASKS])), 4),
                                            "mean_full": res.get("system_mean", {}).get("full")}
+    # every checkpoint as a single model for all tasks (no router), and the routed system per model size:
+    # the fair question is whether routing to task zones beats ONE index of the same size.
+    res["mean_over_tasks"] = {tag: round(float(np.mean([acc[tag][t] for t in TASKS])), 4) for tag in acc}
+    if route and "full" in ev and variants:
+        by_size = {}
+        for tag, v in variants.items():
+            by_size.setdefault(v["checkpoint_bytes"], {}).setdefault(v["zone"], []).append(tag)
+        sysz = {}
+        for size, zs in sorted(by_size.items()):
+            if len(zs) < len(ZONES):
+                continue
+            pick = {z: max(tags, key=lambda t: variants[t]["own_task_acc"]) for z, tags in zs.items()}
+            per = {t: round(float(np.mean([ev[pick[z]]["tasks"][t]["correct"][i]
+                                           for i, z in enumerate(route["tasks"][t]["route"])])), 4) for t in TASKS}
+            single = {tag: res["mean_over_tasks"][tag] for tag in acc if tag not in variants and tag != "full"
+                      and res["checkpoint_bytes"][tag] == size}
+            single.update({tag: res["mean_over_tasks"][tag] for z, tags in zs.items() for tag in tags})
+            sysz[str(size)] = {"gb": round(size / 1e9, 2), "zones": pick, "routed": per,
+                               "routed_mean": round(float(np.mean(list(per.values()))), 4),
+                               "single_index_means": dict(sorted(single.items(), key=lambda kv: -kv[1]))}
+        res["system_by_size"] = sysz
     if route:
         res["router"] = {k: v for k, v in route.items() if k != "tasks"}
         res["router"]["accuracy"] = {t: route["tasks"][t]["accuracy"] for t in TASKS}
         res["router"]["counts"] = {t: route["tasks"][t]["counts"] for t in TASKS}
+        # Diagnose MMLU items routed to math (are they STEM/math, and does math underperform general on them?)
+        mmlu_r = route["tasks"].get("mmlu", {})
+        routed_to_math = [i for i, z in enumerate(mmlu_r.get("route", [])) if z == "math"]
+        if routed_to_math and "math" in ev:
+            gen_tag = max((t for t, v in variants.items() if v["zone"] == "general"),
+                          key=lambda t: variants[t]["own_task_acc"], default="general" if "general" in ev else None)
+            subjs = mmlu_r.get("subjects", [])
+            subj_counts = {}
+            for i in routed_to_math:
+                if i < len(subjs):
+                    subj_counts[subjs[i]] = subj_counts.get(subjs[i], 0) + 1
+            math_acc = float(np.mean([ev["math"]["tasks"]["mmlu"]["correct"][i] for i in routed_to_math]))
+            audit = {
+                "n_items": len(routed_to_math),
+                "math_acc_on_leaked": round(math_acc, 4),
+                "subjects": dict(sorted(subj_counts.items(), key=lambda kv: -kv[1])),
+            }
+            if gen_tag and gen_tag in ev:
+                gen_acc = float(np.mean([ev[gen_tag]["tasks"]["mmlu"]["correct"][i] for i in routed_to_math]))
+                audit["best_general_tag"] = gen_tag
+                audit["general_acc_on_leaked"] = round(gen_acc, 4)
+            res["mmlu_to_math_audit"] = audit
+    if val_ev:
+        res["val_accuracy"] = {tag: {t: e["tasks"][t]["accuracy"] for t in TASKS} for tag, e in val_ev.items()}
+    if getattr(a, "chosen_zones", None) and "full" in ev and route:
+        chosen = dict(x.split("=", 1) for x in a.chosen_zones.split(","))
+        if all(z in chosen and chosen[z] in ev for z in ZONES):
+            sc = {}
+            for t in TASKS:
+                picks = route["tasks"][t]["route"]
+                sc[t] = {"own_zone": acc[chosen[TASK_ZONE[t]]][t],
+                         "routed": round(float(np.mean([ev[chosen[z]]["tasks"][t]["correct"][i] for i, z in enumerate(picks)])), 4)}
+            res["system_chosen"] = {"zones": chosen, "tasks": sc, "selected_on_test": False,
+                                    "mean_routed": round(float(np.mean([sc[t]["routed"] for t in TASKS])), 4),
+                                    "mean_full": res.get("system_mean", {}).get("full")}
     if swap:
         res["swap"] = swap
     if exports:
@@ -450,11 +611,21 @@ def cmd_report(a) -> None:
                   f"{v['checkpoint_bytes'] / 2**30:.2f} GiB")
         if "system_best_variants" in res:
             print("best variant per zone (picked on the test):", res["system_best_variants"])
+    for size, r in res.get("system_by_size", {}).items():
+        print(f"\nsize {r['gb']} GB: routed {r['zones']} -> mean {r['routed_mean']:.1%} {r['routed']}")
+        print("  one index for all tasks (mean over tasks):", r["single_index_means"])
     if swap:
         for z, r in swap["zones"].items():
             print(f"swap {z}: {r['mlp_bytes'] / 2**30:.2f} GiB | disk cold {r['disk_cold_s']}s | warm {r['disk_warm_s']}s | "
                   f"RAM->GPU {r['ram_to_gpu_s']}s ({r['ram_to_gpu_GBps']} GB/s) | 1 Gbps ~{r['network_estimate_s']['1Gbps']}s")
         print("kept-neuron overlap:", swap.get("kept_neuron_overlap"))
+        for pair, pr in swap.get("exact_pairwise_swap", {}).items():
+            extra = f" | lowrank {pr['lowrank_swap_bytes'] / 2**30:.2f} GiB ({pr['lowrank_frac_of_mlp']:.1%})" if "lowrank_swap_bytes" in pr else ""
+            print(f"  exact delta {pair}: {pr['exact_swap_bytes'] / 2**30:.2f} GiB ({pr['swap_frac_of_mlp']:.1%} of target MLP){extra}")
+    if "system_chosen" in res:
+        print("chosen system (selected_on_test=False):", res["system_chosen"])
+    if "mmlu_to_math_audit" in res:
+        print("MMLU routed to math audit:", res["mmlu_to_math_audit"])
     print("saved", a.out)
 
 
@@ -471,6 +642,7 @@ def main() -> None:
         if name == "eval":
             p.add_argument("--model-dir", required=True)
             p.add_argument("--tag", required=True)
+            p.add_argument("--split", default="test", choices=["test", "val"])
             p.add_argument("--dtype", default="auto")
             p.add_argument("--max-model-len", type=int, default=4096)
             p.add_argument("--gpu-mem", type=float, default=0.85)
@@ -486,6 +658,7 @@ def main() -> None:
     r = sub.add_parser("report")
     r.add_argument("--res-dir", required=True)
     r.add_argument("--out", required=True)
+    r.add_argument("--chosen-zones", help="unbiased pre-selected map math=TAG,code=TAG,general=TAG")
     a = ap.parse_args()
     {"eval": cmd_eval, "route": cmd_route, "swap": cmd_swap, "report": cmd_report}[a.cmd](a)
 
