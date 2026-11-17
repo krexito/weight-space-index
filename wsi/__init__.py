@@ -19,11 +19,15 @@ from .compare import (
     transplant_connected_chain,
 )
 from .indexer import build_index
+from .moipatch import Edit, MoIPatch, PatchHandle
 from .query import WeightSpaceIndex, load_index
 
 __all__ = [
     "ActivationIndex",
     "AdditiveMoI",
+    "Edit",
+    "MoIPatch",
+    "PatchHandle",
     "SelectiveMoI",
     "TaskRouter",
     "apply_selection",

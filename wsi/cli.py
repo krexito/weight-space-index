@@ -117,7 +117,16 @@ def main(argv: list[str] | None = None) -> int:
     # wsi mcp
     sub.add_parser("mcp", help="Start the Weight-Space Index MCP Server over stdio")
 
+    # wsi moipatch
+    p_mp = sub.add_parser("moipatch", help="Inspect or verify a portable .moipatch file")
+    p_mp.add_argument("moipatch_args", nargs=argparse.REMAINDER, help="Arguments passed to python -m wsi.moipatch")
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "moipatch":
+        from .moipatch import _main
+        _main(args.moipatch_args)
+        return 0
 
     if args.cmd == "build":
         data = build_index(
