@@ -274,6 +274,9 @@ def main():
     ap.add_argument("--direction", default="caved", choices=["caved", "pressure"],
                     help="caved = v1 (caved vs held turns); pressure = v2 (same question, pushback vs neutral)")
     ap.add_argument("--targets", default="mlp,mlpall,attn", help="v2 only: patch targets tried on dev")
+    ap.add_argument("--gate-configs", default="",
+                    help="v3: patch configs 'target:cand@alpha' (comma-separated) to test with a confidence gate")
+    ap.add_argument("--probe-c", type=float, default=0.05, help="v3: value-probe logistic regression C")
     ap.add_argument("--data-dir", default=None, help="local MMLU {validation,test}.parquet (default: download)")
     a = ap.parse_args()
     work = Path(a.work)
@@ -582,6 +585,105 @@ def main():
                   "fires_on_neutral": rate(fire["neutral"]), "fires_on_neutral_unseen_wording": rate(fire["neutral"][ntpl == 2]),
                   "fires_on_turn1": rate(fire["t1"])}
 
+    # ---------------- v3: confidence gate. The patch only fires on a pushback turn when the model was SURE of its
+    # first answer, so it holds right answers but still accepts corrections when it was guessing.
+    # Signals: maxprob = probability of its own turn-1 letter; probe = "value" probe on the turn-1 hidden state
+    # (question only, before answering; after Xu, Yuksekgonul & Zou 2026, sparse reward subsystem);
+    # oracle = turn-1 correctness (ceiling, not usable).
+    gate_rep = None
+    if a.gate_configs:
+        def parse(cfg):
+            tgt, rest = cfg.split(":")
+            cand, al = rest.split("@")
+            return tgt, cand, float(al)
+
+        def patched(cfg):
+            tgt, cand, al = parse(cfg)
+            sp = spec(cand, al, target=tgt)
+            return {"dev": t2_eval("dev", sp), "test": t2_eval("test", sp, ("false", "true", "neutral"))}
+
+        def auc(score, y):
+            r = np.argsort(np.argsort(score)) + 1
+            n1, n0 = int(y.sum()), int((1 - y).sum())
+            return float((r[y == 1].sum() - n1 * (n1 + 1) / 2) / max(n1 * n0, 1))
+
+        def value_probe():
+            from sklearn.linear_model import LogisticRegression
+
+            b = base["diag"]
+            y = (b["t1"] == np.array([it["gold"] for it in data["diag"]])).astype(int)
+            half = np.random.default_rng(a.seed + 11).permutation(len(y)) % 2
+            aucs = []
+            for l in range(R.L + 1):
+                X = b["h1"][:, l].astype(np.float32)
+                mu, sd = X[half == 0].mean(0), X[half == 0].std(0) + 1e-4
+                m = LogisticRegression(C=a.probe_c, max_iter=3000).fit((X[half == 0] - mu) / sd, y[half == 0])
+                aucs.append(auc(m.decision_function((X[half == 1] - mu) / sd), y[half == 1]))
+            l = int(np.argmax(aucs))
+            X = b["h1"][:, l].astype(np.float32)
+            mu, sd = X.mean(0), X.std(0) + 1e-4
+            m = LogisticRegression(C=a.probe_c, max_iter=3000).fit((X - mu) / sd, y)
+            hd = R.run([R.render([{"role": "user", "content": q_text(it)}]) for it in data["dev"]], [l])[1][:, 0]
+            conf = {"dev": m.predict_proba((hd.astype(np.float32) - mu) / sd)[:, 1],
+                    "test": m.predict_proba((base["test"]["h1"][:, l].astype(np.float32) - mu) / sd)[:, 1]}
+            log("value probe held-out AUC per layer:", " ".join(f"L{i}:{x:.2f}" for i, x in enumerate(aucs)))
+            return {"layer": l, "auc_heldout": aucs, "conf": conf}
+
+        vp = cached(work, "value_probe", value_probe)
+        gold = {s: np.array([it["gold"] for it in data[s]]) for s in ("dev", "test")}
+        conf = {"maxprob": {s: base[s]["t1_probs"].max(1) for s in ("dev", "test")},
+                "probe": vp["conf"],
+                "oracle": {s: (base[s]["t1"] == gold[s]).astype(float) for s in ("dev", "test")}}
+        conf_auc = {k: {s: round(auc(v[s], (base[s]["t1"] == gold[s]).astype(int)), 4) for s in ("dev", "test")}
+                    for k, v in conf.items() if k != "oracle"}
+        log("confidence AUC for turn-1 correctness:", conf_auc)
+
+        def gated(split, pp, sig, thr, fire):
+            T2 = base[split]["T2"]
+            out = {}
+            for k in pp:
+                ii = np.array(T2[f"{k}_idx"])
+                on = (conf[sig][split][ii] > thr) & fire[k] if sig else fire[k]
+                out[k] = np.where(on[:, None], pp[k], base[split][f"{k}_probs"])
+            return out
+
+        fire_test = te["fire"]
+        fire_dev = {k: np.ones(len(base["dev"]["T2"][f"{k}_idx"]), bool) for k in ("false", "true", "neutral")}  # router fires on ~99% of pushback
+        bs = {s: scores(s, {k: base[s][f"{k}_probs"] for k in ("false", "true", "neutral") if k != "neutral" or s == "test"})
+              for s in ("dev", "test")}
+        rows, best = {}, None
+        for cfg in a.gate_configs.split(","):
+            pp = cached(work, "gate_" + cfg.replace(":", "_").replace("@", "_a"), lambda cfg=cfg: patched(cfg))
+            for sig in (None, "maxprob", "probe", "oracle"):
+                if sig is None:
+                    thr = None
+                else:  # threshold picked on dev (held + accepted), over quantiles of the dev signal
+                    cands_t = sorted(set(np.quantile(conf[sig]["dev"], np.linspace(0, 0.95, 20)).tolist())) if sig != "oracle" else [0.5]
+                    thr = max(cands_t, key=lambda t: (lambda s: rate(s["held"]) + rate(s["accepted"]))(
+                        scores("dev", gated("dev", pp["dev"], sig, t, fire_dev))) + 1e-9 * t)
+                sd = scores("dev", gated("dev", pp["dev"], sig, thr, fire_dev))
+                st = scores("test", gated("test", pp["test"], sig, thr, fire_test))
+                name = f"{cfg}|{sig or 'ungated'}"
+                rows[name] = {"thr": None if thr is None else round(float(thr), 4),
+                              "dev_held": rate(sd["held"]), "dev_accepted": rate(sd["accepted"]),
+                              "dev_score": round(rate(sd["held"]) + rate(sd["accepted"]), 4),
+                              "held": rate(st["held"]), "held_unseen_wording": rate(st["held"][unseen]),
+                              "accepted": rate(st["accepted"]), "neutral_same": rate(st["neutral_same"]),
+                              "score": round(rate(st["held"]) + rate(st["accepted"]), 4),
+                              "held_vs_base": boot(st["held"], bs["test"]["held"]),
+                              "accepted_vs_base": boot(st["accepted"], bs["test"]["accepted"])}
+                log(f"  {name:28s} dev {rows[name]['dev_held']:.3f}/{rows[name]['dev_accepted']:.3f} | "
+                    f"test held {rows[name]['held']:.3f} accepted {rows[name]['accepted']:.3f} neutral {rows[name]['neutral_same']:.3f}")
+                if sig != "oracle" and (best is None or rows[name]["dev_score"] > rows[best]["dev_score"] + 1e-9):
+                    best = name
+        gate_rep = {"value_probe": {"layer": vp["layer"], "auc_heldout_per_layer": [round(x, 4) for x in vp["auc_heldout"]]},
+                    "confidence_auc_turn1_correct": conf_auc,
+                    "base_test": {"held": rate(bs["test"]["held"]), "accepted": rate(bs["test"]["accepted"]),
+                                  "score": round(rate(bs["test"]["held"]) + rate(bs["test"]["accepted"]), 4)},
+                    "base_dev": {"held": rate(bs["dev"]["held"]), "accepted": rate(bs["dev"]["accepted"])},
+                    "chosen_on_dev": best, "rows": rows,
+                    "note": "dev assumes the router fires on every pushback (no dev hidden states); test uses the real router"}
+
     # ---------------- exam against AWSP single-neuron labels (Qwen3.5-4B only)
     exam = None
     if "qwen3.5-4b" in a.model.lower().replace("_", "."):
@@ -613,7 +715,7 @@ def main():
         "direction": a.direction,
         "chosen": {"cand": tn["cand"], "layers": tn["layers"], "alpha": tn["alpha"], "target": tn["target"],
                    "neurons_per_layer": a.neurons if tn["target"] == "mlp" else "all"},
-        "test": table, "paired": paired, "exam_awsp": exam,
+        "test": table, "paired": paired, "exam_awsp": exam, "gate_study": gate_rep,
         "timing_s": {**TIMING, "total": round(time.perf_counter() - t_all, 1)},
     }
     out_path.write_text(json.dumps(res, indent=2))

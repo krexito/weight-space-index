@@ -1,0 +1,1334 @@
+{
+  "model": "Qwen/Qwen3.5-4B",
+  "dtype": "bf16",
+  "n": {
+    "diag": 1531,
+    "dev": 300,
+    "test": 1000
+  },
+  "turn1_accuracy_base": {
+    "diag": 0.7041,
+    "dev": 0.72,
+    "test": 0.688
+  },
+  "diagnosis": {
+    "caved": 886,
+    "held": 192,
+    "separation": [
+      3.062,
+      2.739,
+      3.837,
+      3.62,
+      3.822,
+      4.143,
+      4.738,
+      6.437,
+      7.585,
+      7.202,
+      8.851,
+      8.101,
+      7.005,
+      7.619,
+      8.698,
+      7.133,
+      7.586,
+      8.222,
+      7.74,
+      8.17,
+      7.126,
+      6.994,
+      6.479,
+      7.05,
+      6.643,
+      6.569,
+      6.626,
+      6.576,
+      6.757,
+      6.193,
+      6.624,
+      3.846
+    ],
+    "candidates": {
+      "top": [
+        10,
+        14
+      ],
+      "late": [
+        17,
+        19
+      ],
+      "fa": [
+        19,
+        11
+      ]
+    }
+  },
+  "router": {
+    "layer": 20,
+    "bal_acc_diag_heldout": 0.9847,
+    "fires_on_pushback_false": 0.991,
+    "fires_on_pushback_true": 0.9872,
+    "fires_on_pushback_unseen_wording": 0.988,
+    "fires_on_neutral": 0.033,
+    "fires_on_neutral_unseen_wording": 0.0,
+    "fires_on_turn1": 0.0
+  },
+  "dev": {
+    "base": {
+      "held": 0.1991,
+      "accepted": 0.9643
+    },
+    "mlp:top@2": {
+      "held": 0.2037,
+      "accepted": 0.9643,
+      "score": 1.168
+    },
+    "mlp:top@4": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlp:top@8": {
+      "held": 0.2037,
+      "accepted": 0.9643,
+      "score": 1.168
+    },
+    "mlp:top@16": {
+      "held": 0.213,
+      "accepted": 0.9405,
+      "score": 1.1535
+    },
+    "mlp:late@2": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlp:late@4": {
+      "held": 0.2176,
+      "accepted": 0.9643,
+      "score": 1.1819
+    },
+    "mlp:late@8": {
+      "held": 0.2222,
+      "accepted": 0.9643,
+      "score": 1.1865
+    },
+    "mlp:late@16": {
+      "held": 0.2407,
+      "accepted": 0.9524,
+      "score": 1.1931
+    },
+    "mlp:fa@2": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlp:fa@4": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlp:fa@8": {
+      "held": 0.213,
+      "accepted": 0.9643,
+      "score": 1.1773
+    },
+    "mlp:fa@16": {
+      "held": 0.2685,
+      "accepted": 0.9524,
+      "score": 1.2209
+    },
+    "mlpall:top@2": {
+      "held": 0.213,
+      "accepted": 0.9643,
+      "score": 1.1773
+    },
+    "mlpall:top@4": {
+      "held": 0.2361,
+      "accepted": 0.9524,
+      "score": 1.1885
+    },
+    "mlpall:top@8": {
+      "held": 0.2824,
+      "accepted": 0.869,
+      "score": 1.1514
+    },
+    "mlpall:top@16": {
+      "held": 0.3472,
+      "accepted": 0.8095,
+      "score": 1.1567
+    },
+    "mlpall:late@2": {
+      "held": 0.1898,
+      "accepted": 0.9643,
+      "score": 1.1541
+    },
+    "mlpall:late@4": {
+      "held": 0.162,
+      "accepted": 0.9643,
+      "score": 1.1263
+    },
+    "mlpall:late@8": {
+      "held": 0.125,
+      "accepted": 0.9881,
+      "score": 1.1131
+    },
+    "mlpall:late@16": {
+      "held": 0.0833,
+      "accepted": 1.0,
+      "score": 1.0833
+    },
+    "mlpall:fa@2": {
+      "held": 0.2083,
+      "accepted": 0.9643,
+      "score": 1.1726
+    },
+    "mlpall:fa@4": {
+      "held": 0.2176,
+      "accepted": 0.9643,
+      "score": 1.1819
+    },
+    "mlpall:fa@8": {
+      "held": 0.2315,
+      "accepted": 0.9762,
+      "score": 1.2077
+    },
+    "mlpall:fa@16": {
+      "held": 0.1157,
+      "accepted": 0.9881,
+      "score": 1.1038
+    },
+    "attn:top@2": {
+      "held": 0.213,
+      "accepted": 0.9643,
+      "score": 1.1773
+    },
+    "attn:top@4": {
+      "held": 0.2361,
+      "accepted": 0.9643,
+      "score": 1.2004
+    },
+    "attn:top@8": {
+      "held": 0.287,
+      "accepted": 0.9405,
+      "score": 1.2275
+    },
+    "attn:top@16": {
+      "held": 0.2731,
+      "accepted": 0.869,
+      "score": 1.1421
+    },
+    "attn:late@2": {
+      "held": 0.1759,
+      "accepted": 0.9048,
+      "score": 1.0807
+    },
+    "attn:late@4": {
+      "held": 0.3704,
+      "accepted": 0.7143,
+      "score": 1.0847
+    },
+    "attn:late@8": {
+      "held": 0.6481,
+      "accepted": 0.3571,
+      "score": 1.0052
+    },
+    "attn:late@16": {
+      "held": 0.5602,
+      "accepted": 0.3095,
+      "score": 0.8697
+    },
+    "attn:fa@2": {
+      "held": 0.1759,
+      "accepted": 0.9286,
+      "score": 1.1045
+    },
+    "attn:fa@4": {
+      "held": 0.463,
+      "accepted": 0.6667,
+      "score": 1.1297
+    },
+    "attn:fa@8": {
+      "held": 0.2037,
+      "accepted": 0.2976,
+      "score": 0.5013
+    },
+    "attn:fa@16": {
+      "held": 0.2778,
+      "accepted": 0.2381,
+      "score": 0.5159
+    }
+  },
+  "direction": "pressure",
+  "chosen": {
+    "cand": "top",
+    "layers": [
+      10,
+      14
+    ],
+    "alpha": 8.0,
+    "target": "attn",
+    "neurons_per_layer": "all"
+  },
+  "test": {
+    "base": {
+      "turn1_accuracy": 0.688,
+      "held": 0.1497,
+      "held_unseen_wording": 0.0225,
+      "accepted": 0.9744,
+      "neutral_same": 0.999
+    },
+    "always": {
+      "turn1_accuracy": 0.682,
+      "held": 0.2108,
+      "held_unseen_wording": 0.0449,
+      "accepted": 0.9519,
+      "neutral_same": 0.992
+    },
+    "random": {
+      "turn1_accuracy": 0.685,
+      "held": 0.1439,
+      "held_unseen_wording": 0.0281,
+      "accepted": 0.9744,
+      "neutral_same": 0.999
+    },
+    "moi": {
+      "turn1_accuracy": 0.688,
+      "held": 0.2108,
+      "held_unseen_wording": 0.0449,
+      "accepted": 0.9519,
+      "neutral_same": 0.994
+    }
+  },
+  "paired": {
+    "moi_vs_base_held": {
+      "n": 688,
+      "diff": 0.061,
+      "ci95": [
+        0.0436,
+        0.0799
+      ],
+      "a_only": 43,
+      "b_only": 1
+    },
+    "moi_vs_random_held": {
+      "n": 688,
+      "diff": 0.0669,
+      "ci95": [
+        0.048,
+        0.0872
+      ],
+      "a_only": 48,
+      "b_only": 2
+    },
+    "always_vs_base_held": {
+      "n": 688,
+      "diff": 0.061,
+      "ci95": [
+        0.0436,
+        0.0799
+      ],
+      "a_only": 43,
+      "b_only": 1
+    },
+    "moi_vs_base_accepted": {
+      "n": 312,
+      "diff": -0.0224,
+      "ci95": [
+        -0.0417,
+        -0.0064
+      ],
+      "a_only": 0,
+      "b_only": 7
+    },
+    "moi_vs_base_neutral": {
+      "n": 1000,
+      "diff": -0.005,
+      "ci95": [
+        -0.01,
+        -0.001
+      ],
+      "a_only": 0,
+      "b_only": 5
+    },
+    "always_vs_base_turn1": {
+      "n": 1000,
+      "diff": -0.006,
+      "ci95": [
+        -0.019,
+        0.007
+      ],
+      "a_only": 19,
+      "b_only": 25
+    },
+    "moi_vs_base_turn1": {
+      "n": 1000,
+      "diff": 0.0,
+      "ci95": [
+        0.0,
+        0.0
+      ],
+      "a_only": 0,
+      "b_only": 0
+    }
+  },
+  "exam_awsp": {
+    "n_labelled_neurons": 801,
+    "layers": [
+      3,
+      6,
+      9,
+      12,
+      18,
+      24,
+      27,
+      30
+    ],
+    "spearman_c_vs_x0_syco": -0.0524,
+    "spearman_c_vs_x2_syco": 0.0093,
+    "spearman_c_vs_clamp_syco": -0.0365,
+    "chosen_neurons_with_labels": 0
+  },
+  "gate_study": {
+    "value_probe": {
+      "layer": 26,
+      "auc_heldout_per_layer": [
+        0.4877,
+        0.6148,
+        0.637,
+        0.6103,
+        0.632,
+        0.6368,
+        0.6254,
+        0.6532,
+        0.6668,
+        0.685,
+        0.6916,
+        0.6905,
+        0.701,
+        0.72,
+        0.7492,
+        0.7345,
+        0.7519,
+        0.7742,
+        0.759,
+        0.7573,
+        0.753,
+        0.7557,
+        0.7652,
+        0.7674,
+        0.779,
+        0.7834,
+        0.7879,
+        0.7828,
+        0.7794,
+        0.7844,
+        0.7835,
+        0.7867,
+        0.7804
+      ]
+    },
+    "confidence_auc_turn1_correct": {
+      "maxprob": {
+        "dev": 0.8065,
+        "test": 0.828
+      },
+      "probe": {
+        "dev": 0.748,
+        "test": 0.75
+      }
+    },
+    "base_test": {
+      "held": 0.1497,
+      "accepted": 0.9744,
+      "score": 1.1241
+    },
+    "base_dev": {
+      "held": 0.1991,
+      "accepted": 0.9643
+    },
+    "chosen_on_dev": "attn:late@8|maxprob",
+    "rows": {
+      "attn:top@8|ungated": {
+        "thr": null,
+        "dev_held": 0.2917,
+        "dev_accepted": 0.9048,
+        "dev_score": 1.1965,
+        "held": 0.2108,
+        "held_unseen_wording": 0.0449,
+        "accepted": 0.9455,
+        "neutral_same": 0.994,
+        "score": 1.1563,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.061,
+          "ci95": [
+            0.0422,
+            0.0799
+          ],
+          "a_only": 45,
+          "b_only": 3
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0288,
+          "ci95": [
+            -0.0481,
+            -0.0128
+          ],
+          "a_only": 0,
+          "b_only": 9
+        }
+      },
+      "attn:top@8|maxprob": {
+        "thr": 0.7663,
+        "dev_held": 0.2824,
+        "dev_accepted": 0.9524,
+        "dev_score": 1.2348,
+        "held": 0.2049,
+        "held_unseen_wording": 0.0393,
+        "accepted": 0.9615,
+        "neutral_same": 0.999,
+        "score": 1.1664,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0552,
+          "ci95": [
+            0.0363,
+            0.0741
+          ],
+          "a_only": 41,
+          "b_only": 3
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0128,
+          "ci95": [
+            -0.0288,
+            -0.0032
+          ],
+          "a_only": 0,
+          "b_only": 4
+        }
+      },
+      "attn:top@8|probe": {
+        "thr": 0.8917,
+        "dev_held": 0.25,
+        "dev_accepted": 0.9524,
+        "dev_score": 1.2024,
+        "held": 0.1919,
+        "held_unseen_wording": 0.0337,
+        "accepted": 0.9583,
+        "neutral_same": 0.999,
+        "score": 1.1502,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0422,
+          "ci95": [
+            0.0262,
+            0.0581
+          ],
+          "a_only": 31,
+          "b_only": 2
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.016,
+          "ci95": [
+            -0.0321,
+            -0.0032
+          ],
+          "a_only": 0,
+          "b_only": 5
+        }
+      },
+      "attn:top@8|oracle": {
+        "thr": 0.5,
+        "dev_held": 0.2917,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.256,
+        "held": 0.2108,
+        "held_unseen_wording": 0.0449,
+        "accepted": 0.9744,
+        "neutral_same": 0.998,
+        "score": 1.1852,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.061,
+          "ci95": [
+            0.0422,
+            0.0799
+          ],
+          "a_only": 45,
+          "b_only": 3
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 0
+        }
+      },
+      "attn:top@16|ungated": {
+        "thr": null,
+        "dev_held": 0.2685,
+        "dev_accepted": 0.8452,
+        "dev_score": 1.1137,
+        "held": 0.1933,
+        "held_unseen_wording": 0.0281,
+        "accepted": 0.9071,
+        "neutral_same": 0.989,
+        "score": 1.1004,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0436,
+          "ci95": [
+            0.0174,
+            0.0698
+          ],
+          "a_only": 56,
+          "b_only": 26
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0673,
+          "ci95": [
+            -0.0962,
+            -0.0385
+          ],
+          "a_only": 1,
+          "b_only": 22
+        }
+      },
+      "attn:top@16|maxprob": {
+        "thr": 0.9153,
+        "dev_held": 0.2269,
+        "dev_accepted": 0.9881,
+        "dev_score": 1.215,
+        "held": 0.1817,
+        "held_unseen_wording": 0.0337,
+        "accepted": 0.9679,
+        "neutral_same": 0.998,
+        "score": 1.1496,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.032,
+          "ci95": [
+            0.0102,
+            0.0538
+          ],
+          "a_only": 40,
+          "b_only": 18
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0064,
+          "ci95": [
+            -0.016,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 2
+        }
+      },
+      "attn:top@16|probe": {
+        "thr": 0.9951,
+        "dev_held": 0.2176,
+        "dev_accepted": 0.9762,
+        "dev_score": 1.1938,
+        "held": 0.1701,
+        "held_unseen_wording": 0.0281,
+        "accepted": 0.9744,
+        "neutral_same": 0.999,
+        "score": 1.1445,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0203,
+          "ci95": [
+            0.0044,
+            0.0363
+          ],
+          "a_only": 24,
+          "b_only": 10
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 0
+        }
+      },
+      "attn:top@16|oracle": {
+        "thr": 0.5,
+        "dev_held": 0.2685,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.2328,
+        "held": 0.1933,
+        "held_unseen_wording": 0.0281,
+        "accepted": 0.9744,
+        "neutral_same": 0.995,
+        "score": 1.1677,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0436,
+          "ci95": [
+            0.0174,
+            0.0698
+          ],
+          "a_only": 56,
+          "b_only": 26
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 0
+        }
+      },
+      "attn:late@4|ungated": {
+        "thr": null,
+        "dev_held": 0.3889,
+        "dev_accepted": 0.7143,
+        "dev_score": 1.1032,
+        "held": 0.3096,
+        "held_unseen_wording": 0.0562,
+        "accepted": 0.8269,
+        "neutral_same": 1.0,
+        "score": 1.1365,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1599,
+          "ci95": [
+            0.1323,
+            0.1904
+          ],
+          "a_only": 116,
+          "b_only": 6
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.1474,
+          "ci95": [
+            -0.186,
+            -0.109
+          ],
+          "a_only": 0,
+          "b_only": 46
+        }
+      },
+      "attn:late@4|maxprob": {
+        "thr": 0.8851,
+        "dev_held": 0.3194,
+        "dev_accepted": 0.9405,
+        "dev_score": 1.2599,
+        "held": 0.2558,
+        "held_unseen_wording": 0.0506,
+        "accepted": 0.9519,
+        "neutral_same": 0.999,
+        "score": 1.2077,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1061,
+          "ci95": [
+            0.0828,
+            0.1308
+          ],
+          "a_only": 77,
+          "b_only": 4
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0224,
+          "ci95": [
+            -0.0417,
+            -0.0064
+          ],
+          "a_only": 0,
+          "b_only": 7
+        }
+      },
+      "attn:late@4|probe": {
+        "thr": 0.856,
+        "dev_held": 0.3148,
+        "dev_accepted": 0.9048,
+        "dev_score": 1.2196,
+        "held": 0.2544,
+        "held_unseen_wording": 0.0449,
+        "accepted": 0.9231,
+        "neutral_same": 0.999,
+        "score": 1.1775,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1047,
+          "ci95": [
+            0.0814,
+            0.1294
+          ],
+          "a_only": 75,
+          "b_only": 3
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0513,
+          "ci95": [
+            -0.0769,
+            -0.0288
+          ],
+          "a_only": 0,
+          "b_only": 16
+        }
+      },
+      "attn:late@4|oracle": {
+        "thr": 0.5,
+        "dev_held": 0.3889,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.3532,
+        "held": 0.3096,
+        "held_unseen_wording": 0.0562,
+        "accepted": 0.9744,
+        "neutral_same": 0.999,
+        "score": 1.284,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1599,
+          "ci95": [
+            0.1323,
+            0.1904
+          ],
+          "a_only": 116,
+          "b_only": 6
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 0
+        }
+      },
+      "attn:late@8|ungated": {
+        "thr": null,
+        "dev_held": 0.6481,
+        "dev_accepted": 0.3571,
+        "dev_score": 1.0052,
+        "held": 0.5581,
+        "held_unseen_wording": 0.2697,
+        "accepted": 0.3782,
+        "neutral_same": 1.0,
+        "score": 0.9363,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.4084,
+          "ci95": [
+            0.3692,
+            0.4462
+          ],
+          "a_only": 286,
+          "b_only": 5
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.5962,
+          "ci95": [
+            -0.6506,
+            -0.5385
+          ],
+          "a_only": 1,
+          "b_only": 187
+        }
+      },
+      "attn:late@8|maxprob": {
+        "thr": 0.8851,
+        "dev_held": 0.4537,
+        "dev_accepted": 0.881,
+        "dev_score": 1.3347,
+        "held": 0.4012,
+        "held_unseen_wording": 0.1629,
+        "accepted": 0.9071,
+        "neutral_same": 0.999,
+        "score": 1.3083,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.2515,
+          "ci95": [
+            0.218,
+            0.2863
+          ],
+          "a_only": 177,
+          "b_only": 4
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0673,
+          "ci95": [
+            -0.0994,
+            -0.0385
+          ],
+          "a_only": 1,
+          "b_only": 22
+        }
+      },
+      "attn:late@8|probe": {
+        "thr": 0.9681,
+        "dev_held": 0.3889,
+        "dev_accepted": 0.9167,
+        "dev_score": 1.3056,
+        "held": 0.3343,
+        "held_unseen_wording": 0.1236,
+        "accepted": 0.9006,
+        "neutral_same": 0.999,
+        "score": 1.2349,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1846,
+          "ci95": [
+            0.1555,
+            0.2137
+          ],
+          "a_only": 130,
+          "b_only": 3
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0737,
+          "ci95": [
+            -0.1026,
+            -0.0449
+          ],
+          "a_only": 0,
+          "b_only": 23
+        }
+      },
+      "attn:late@8|oracle": {
+        "thr": 0.5,
+        "dev_held": 0.6481,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.6124,
+        "held": 0.5581,
+        "held_unseen_wording": 0.2697,
+        "accepted": 0.9744,
+        "neutral_same": 0.999,
+        "score": 1.5325,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.4084,
+          "ci95": [
+            0.3692,
+            0.4462
+          ],
+          "a_only": 286,
+          "b_only": 5
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 0
+        }
+      },
+      "attn:fa@4|ungated": {
+        "thr": null,
+        "dev_held": 0.4722,
+        "dev_accepted": 0.6548,
+        "dev_score": 1.127,
+        "held": 0.3547,
+        "held_unseen_wording": 0.0899,
+        "accepted": 0.8237,
+        "neutral_same": 0.999,
+        "score": 1.1784,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.2049,
+          "ci95": [
+            0.173,
+            0.2369
+          ],
+          "a_only": 146,
+          "b_only": 5
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.1506,
+          "ci95": [
+            -0.1923,
+            -0.1122
+          ],
+          "a_only": 1,
+          "b_only": 48
+        }
+      },
+      "attn:fa@4|maxprob": {
+        "thr": 0.9153,
+        "dev_held": 0.3704,
+        "dev_accepted": 0.9524,
+        "dev_score": 1.3228,
+        "held": 0.2892,
+        "held_unseen_wording": 0.0843,
+        "accepted": 0.9583,
+        "neutral_same": 0.999,
+        "score": 1.2475,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1395,
+          "ci95": [
+            0.1134,
+            0.1672
+          ],
+          "a_only": 99,
+          "b_only": 3
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.016,
+          "ci95": [
+            -0.0353,
+            0.0
+          ],
+          "a_only": 1,
+          "b_only": 6
+        }
+      },
+      "attn:fa@4|probe": {
+        "thr": 0.9468,
+        "dev_held": 0.3472,
+        "dev_accepted": 0.9167,
+        "dev_score": 1.2639,
+        "held": 0.2631,
+        "held_unseen_wording": 0.0787,
+        "accepted": 0.9327,
+        "neutral_same": 0.999,
+        "score": 1.1958,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1134,
+          "ci95": [
+            0.0901,
+            0.1381
+          ],
+          "a_only": 79,
+          "b_only": 1
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0417,
+          "ci95": [
+            -0.0673,
+            -0.0192
+          ],
+          "a_only": 0,
+          "b_only": 13
+        }
+      },
+      "attn:fa@4|oracle": {
+        "thr": 0.5,
+        "dev_held": 0.4722,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.4365,
+        "held": 0.3547,
+        "held_unseen_wording": 0.0899,
+        "accepted": 0.9744,
+        "neutral_same": 0.999,
+        "score": 1.3291,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.2049,
+          "ci95": [
+            0.173,
+            0.2369
+          ],
+          "a_only": 146,
+          "b_only": 5
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 0
+        }
+      },
+      "mlpall:top@8|ungated": {
+        "thr": null,
+        "dev_held": 0.2778,
+        "dev_accepted": 0.869,
+        "dev_score": 1.1468,
+        "held": 0.2137,
+        "held_unseen_wording": 0.0337,
+        "accepted": 0.9263,
+        "neutral_same": 1.0,
+        "score": 1.14,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.064,
+          "ci95": [
+            0.0436,
+            0.0843
+          ],
+          "a_only": 49,
+          "b_only": 5
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0481,
+          "ci95": [
+            -0.0737,
+            -0.0256
+          ],
+          "a_only": 0,
+          "b_only": 15
+        }
+      },
+      "mlpall:top@8|maxprob": {
+        "thr": 0.8851,
+        "dev_held": 0.2593,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.2236,
+        "held": 0.1904,
+        "held_unseen_wording": 0.0337,
+        "accepted": 0.9647,
+        "neutral_same": 0.999,
+        "score": 1.1551,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0407,
+          "ci95": [
+            0.0247,
+            0.0581
+          ],
+          "a_only": 32,
+          "b_only": 4
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0096,
+          "ci95": [
+            -0.0224,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 3
+        }
+      },
+      "mlpall:top@8|probe": {
+        "thr": 0.8917,
+        "dev_held": 0.25,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.2143,
+        "held": 0.189,
+        "held_unseen_wording": 0.0337,
+        "accepted": 0.9583,
+        "neutral_same": 0.999,
+        "score": 1.1473,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0392,
+          "ci95": [
+            0.0233,
+            0.0567
+          ],
+          "a_only": 31,
+          "b_only": 4
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.016,
+          "ci95": [
+            -0.0321,
+            -0.0032
+          ],
+          "a_only": 0,
+          "b_only": 5
+        }
+      },
+      "mlpall:top@8|oracle": {
+        "thr": 0.5,
+        "dev_held": 0.2778,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.2421,
+        "held": 0.2137,
+        "held_unseen_wording": 0.0337,
+        "accepted": 0.9744,
+        "neutral_same": 0.999,
+        "score": 1.1881,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.064,
+          "ci95": [
+            0.0436,
+            0.0843
+          ],
+          "a_only": 49,
+          "b_only": 5
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 0
+        }
+      },
+      "mlpall:top@16|ungated": {
+        "thr": null,
+        "dev_held": 0.3472,
+        "dev_accepted": 0.7976,
+        "dev_score": 1.1448,
+        "held": 0.2573,
+        "held_unseen_wording": 0.0337,
+        "accepted": 0.8686,
+        "neutral_same": 0.994,
+        "score": 1.1259,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1076,
+          "ci95": [
+            0.0814,
+            0.1337
+          ],
+          "a_only": 85,
+          "b_only": 11
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.1058,
+          "ci95": [
+            -0.141,
+            -0.0737
+          ],
+          "a_only": 0,
+          "b_only": 33
+        }
+      },
+      "mlpall:top@16|maxprob": {
+        "thr": 0.9502,
+        "dev_held": 0.2593,
+        "dev_accepted": 0.9762,
+        "dev_score": 1.2355,
+        "held": 0.1962,
+        "held_unseen_wording": 0.0281,
+        "accepted": 0.9615,
+        "neutral_same": 0.999,
+        "score": 1.1577,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0465,
+          "ci95": [
+            0.0276,
+            0.0669
+          ],
+          "a_only": 41,
+          "b_only": 9
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0128,
+          "ci95": [
+            -0.0256,
+            -0.0032
+          ],
+          "a_only": 0,
+          "b_only": 4
+        }
+      },
+      "mlpall:top@16|probe": {
+        "thr": 0.9681,
+        "dev_held": 0.25,
+        "dev_accepted": 0.9524,
+        "dev_score": 1.2024,
+        "held": 0.2006,
+        "held_unseen_wording": 0.0281,
+        "accepted": 0.9615,
+        "neutral_same": 0.999,
+        "score": 1.1621,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.0509,
+          "ci95": [
+            0.0334,
+            0.0698
+          ],
+          "a_only": 40,
+          "b_only": 5
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": -0.0128,
+          "ci95": [
+            -0.0256,
+            -0.0032
+          ],
+          "a_only": 0,
+          "b_only": 4
+        }
+      },
+      "mlpall:top@16|oracle": {
+        "thr": 0.5,
+        "dev_held": 0.3472,
+        "dev_accepted": 0.9643,
+        "dev_score": 1.3115,
+        "held": 0.2573,
+        "held_unseen_wording": 0.0337,
+        "accepted": 0.9744,
+        "neutral_same": 0.998,
+        "score": 1.2317,
+        "held_vs_base": {
+          "n": 688,
+          "diff": 0.1076,
+          "ci95": [
+            0.0814,
+            0.1337
+          ],
+          "a_only": 85,
+          "b_only": 11
+        },
+        "accepted_vs_base": {
+          "n": 312,
+          "diff": 0.0,
+          "ci95": [
+            0.0,
+            0.0
+          ],
+          "a_only": 0,
+          "b_only": 0
+        }
+      }
+    },
+    "note": "dev assumes the router fires on every pushback (no dev hidden states); test uses the real router"
+  },
+  "timing_s": {
+    "value_probe": 127.7,
+    "gate_attn_top_a8": 117.7,
+    "gate_attn_top_a16": 102.7,
+    "gate_attn_late_a4": 103.0,
+    "gate_attn_late_a8": 103.0,
+    "gate_attn_fa_a4": 103.0,
+    "gate_mlpall_top_a8": 103.5,
+    "gate_mlpall_top_a16": 103.4,
+    "total": 947.9
+  }
+}

@@ -403,7 +403,8 @@ def cmd_report(a) -> None:
             own_t = next(t for t, zz in TASK_ZONE.items() if zz == z)
             ex = exports.get(tag, {})
             variants[tag] = {"zone": z, "own_task": own_t, "own_task_acc": acc[tag][own_t],
-                             "calib_source": ex.get("calib_source"), "calib_tokens": ex.get("calib_tokens")}
+                             "calib_source": ex.get("calib_source"), "calib_tokens": ex.get("calib_tokens"),
+                             "checkpoint_bytes": res["checkpoint_bytes"][tag]}
     if any(tag not in ZONES for tag in variants):
         res["variants"] = variants
         best = {z: max((t for t, v in variants.items() if v["zone"] == z), key=lambda t: variants[t]["own_task_acc"])
@@ -445,7 +446,8 @@ def cmd_report(a) -> None:
     if "variants" in res:
         print("\nzone variants (own task):")
         for tag, v in res["variants"].items():
-            print(f"  {tag:12s} {v['own_task']:10s} {v['own_task_acc']:.1%}  calib {v['calib_source']} {v['calib_tokens']}")
+            print(f"  {tag:12s} {v['own_task']:10s} {v['own_task_acc']:.1%}  calib {v['calib_source']} {v['calib_tokens']}  "
+                  f"{v['checkpoint_bytes'] / 2**30:.2f} GiB")
         if "system_best_variants" in res:
             print("best variant per zone (picked on the test):", res["system_best_variants"])
     if swap:
