@@ -75,7 +75,7 @@ def token_labels(body: list[int]) -> np.ndarray:
 
 def down_key(keys, layer: int) -> str:
     pat = re.compile(rf"(^|\.)layers\.{layer}\.mlp\.down_proj\.weight$")
-    hits = [k for k in keys if pat.search(k)]
+    hits = [k for k in keys if pat.search(k) and not k.startswith("mtp.")]  # Qwen3.5 also has mtp.layers.0
     if len(hits) != 1:
         raise SystemExit(f"down_proj of layer {layer} not found uniquely: {hits}")
     return hits[0]
@@ -129,19 +129,60 @@ def cmd_gen(a) -> None:
         lr.write_jsonl(out_p, [])
         return
     max_len = max(len(r["prompt_ids"]) + r["max_tokens"] for r in reqs) + 16
-    llm = LLM(model=a.model, tokenizer=cfg["base_dir"], dtype="bfloat16", max_model_len=max_len,
-              gpu_memory_utilization=a.gpu_mem, enable_prefix_caching=True, seed=cfg["seed"])
-    sps = [SamplingParams(**lr.SAMPLING, max_tokens=r["max_tokens"], seed=r["seed"], stop_token_ids=cfg["eos"],
-                          logit_bias={int(k): float(v) for k, v in r.get("logit_bias", {}).items()} or None)
-           for r in reqs]
+    base_kw = dict(model=a.model, tokenizer=cfg["base_dir"], dtype="bfloat16", max_model_len=max_len,
+                   gpu_memory_utilization=a.gpu_mem, enable_prefix_caching=True, seed=cfg["seed"])
+    # speed-ups, each dropped if this vLLM rejects it:
+    #   text only  -> skips the vision encoder's profiling / warm-up (Qwen3.5 is multimodal; we never send images)
+    #   loop kill  -> stops a response where the kill rule fires instead of generating the dead loop to the cap
+    extras = {"limit_mm_per_prompt": {"image": 0, "video": 0}}
+    use_kill = a.early_stop and lr.LoopKillLogitsProcessor is not None
+    if use_kill:
+        extras["logits_processors"] = [lr.LoopKillLogitsProcessor]
+    llm = None
+    for drop in ([], ["limit_mm_per_prompt"], ["logits_processors"], ["limit_mm_per_prompt", "logits_processors"]):
+        kw = {**base_kw, **{k: v for k, v in extras.items() if k not in drop}}
+        try:
+            llm = LLM(**kw)
+            use_kill = use_kill and "logits_processors" in kw
+            print(f"[gen] vLLM options: text_only={'limit_mm_per_prompt' in kw} early_loop_stop={use_kill}", flush=True)
+            break
+        except Exception as e:  # noqa: BLE001
+            print(f"[gen] vLLM refused {sorted(set(extras) - set(drop))}: {type(e).__name__}: {str(e)[:200]}", flush=True)
+            import gc
+
+            gc.collect()
+    if llm is None:
+        raise SystemExit("vLLM could not start")
+    kill_eos = cfg["eos"][-1]
+
+    def params(r, kill: bool):
+        return SamplingParams(**lr.SAMPLING, max_tokens=r["max_tokens"], seed=r["seed"], stop_token_ids=cfg["eos"],
+                              logit_bias={int(k): float(v) for k, v in r.get("logit_bias", {}).items()} or None,
+                              extra_args={"loop_kill_eos": kill_eos} if kill else None)
+
+    prompts = [TokensPrompt(prompt_token_ids=r["prompt_ids"]) for r in reqs]
     t0 = time.time()
-    outs = llm.generate([TokensPrompt(prompt_token_ids=r["prompt_ids"]) for r in reqs], sps, use_tqdm=True)
+    try:
+        outs = llm.generate(prompts, [params(r, use_kill) for r in reqs], use_tqdm=True)
+    except Exception as e:  # noqa: BLE001
+        if not use_kill:
+            raise
+        print(f"[gen] early loop stop failed ({type(e).__name__}: {str(e)[:200]}); generating without it", flush=True)
+        use_kill = False
+        outs = llm.generate(prompts, [params(r, False) for r in reqs], use_tqdm=True)
     dt = time.time() - t0
     rows = [{"id": r["id"], "token_ids": list(o.outputs[0].token_ids), "finish_reason": o.outputs[0].finish_reason}
             for r, o in zip(reqs, outs)]
     lr.write_jsonl(out_p, rows)
     ntok = sum(len(x["token_ids"]) for x in rows)
-    print(f"[gen {a.out}] {len(rows)} seqs, {ntok:,} tokens, {dt / 60:.1f} min ({ntok / dt:,.0f} tok/s)")
+    stopped = 0
+    if use_kill:  # sanity: responses ended by the forced EOS = the kill rule holds right before the final token
+        for x in rows:
+            ids = x["token_ids"]
+            if ids and ids[-1] == kill_eos and lr.LoopKillState(kill_eos).killed(ids[:-1]):
+                stopped += 1
+    print(f"[gen {a.out}] {len(rows)} seqs, {ntok:,} tokens, {dt / 60:.1f} min ({ntok / dt:,.0f} tok/s)"
+          + (f"; {stopped} loops stopped early" if use_kill else ""))
 
 
 def score(work: Path, req_file: str, out_file: str, tok=None) -> dict:
@@ -270,12 +311,19 @@ def cmd_diagnose(a) -> None:
     # two generic layer candidates (no knowledge of p50c): most separated overall, most separated in the later half;
     # the dev set decides between them in `pick-alpha`
     cands = {"top": order[: a.top_layers], "late": [x for x in order if x >= L // 2][: a.top_layers]}
+    # architecture prior (not p50c): in hybrid models, the most separated layers among the full-attention ones
+    tc = getattr(model.config, "text_config", None) or model.config
+    ltypes = getattr(tc, "layer_types", None)
+    if ltypes and len(ltypes) == L:
+        fa = [x for x in order if "full" in str(ltypes[x])][: a.top_layers]
+        if fa:
+            cands["fa"] = fa
     chosen = cands["top"]
     print("held-out separation d' per layer:", " ".join(f"L{li}:{s:.2f}" for li, s in enumerate(sep)))
     print("layer candidates:", cands)
 
     neurons, u_out = {}, {}
-    for li in sorted(set(cands["top"]) | set(cands["late"])):
+    for li in sorted(set().union(*cands.values())):
         dh = acc[(li, 1)]["h"] / acc[(li, 1)]["n"] - acc[(li, 0)]["h"] / acc[(li, 0)]["n"]
         W = downs[li].weight.double()  # [D, U]
         c = dh * (u[li].double() @ W)
@@ -478,6 +526,8 @@ def main() -> None:
     g.add_argument("--requests", required=True)
     g.add_argument("--out", required=True)
     g.add_argument("--gpu-mem", type=float, default=0.88)
+    g.add_argument("--early-stop", action=argparse.BooleanOptionalAction, default=True,
+                   help="stop a response where the loop kill rule fires (same graded result, far fewer tokens)")
     d = sub.add_parser("diagnose")
     d.add_argument("--work", required=True)
     d.add_argument("--top-layers", type=int, default=2)
@@ -487,7 +537,7 @@ def main() -> None:
     b = sub.add_parser("build")
     b.add_argument("--work", required=True)
     b.add_argument("--alpha", type=float, required=True)
-    b.add_argument("--cand", default="top", choices=["top", "late"])
+    b.add_argument("--cand", default="top", choices=["top", "late", "fa"])
     b.add_argument("--out-dir")
     m = sub.add_parser("plan-moi")
     m.add_argument("--work", required=True)

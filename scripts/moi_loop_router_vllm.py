@@ -88,6 +88,59 @@ def first_window_hit(d: list[int], window: int, frac: float) -> int | None:
     return None
 
 
+class LoopKillState:
+    """Per-request early stop: forces EOS as soon as the kill rule (>= KILL_FRAC repeated K_DUP-grams over the last
+    KILL_WINDOW response tokens) holds. Grading cuts a response at exactly that point anyway (grade -> analyse ->
+    first_window_hit), so stopping there gives the same graded result without generating the doomed loop to the cap.
+    Incremental: O(1) per new token."""
+
+    def __init__(self, eos_id: int, window: int = KILL_WINDOW, frac: float = KILL_FRAC, k: int = K_DUP):
+        self.eos, self.window, self.need, self.k = eos_id, window, frac * window, k
+        self.seen: set = set()
+        self.flags: list[int] = []
+        self.s = 0
+
+    def killed(self, output_ids) -> bool:
+        while len(self.flags) < len(output_ids):
+            t = len(self.flags)
+            f = 0
+            if t >= self.k - 1:
+                w = tuple(output_ids[t - self.k + 1 : t + 1])
+                f = int(w in self.seen)
+                self.seen.add(w)
+            self.flags.append(f)
+            self.s += f
+            if t >= self.window:
+                self.s -= self.flags[t - self.window]
+        return len(self.flags) >= self.window and self.s >= self.need
+
+    def __call__(self, output_ids, logits):
+        if self.killed(output_ids):
+            logits = logits.clone()
+            logits.fill_(float("-inf"))
+            logits[self.eos] = 0.0
+        return logits
+
+
+try:  # vLLM V1 per-request logits processors (absent locally / in old vLLM: early stop is then skipped)
+    from vllm.v1.sample.logits_processor import AdapterLogitsProcessor as _AdapterLP
+except Exception:  # noqa: BLE001
+    _AdapterLP = None
+
+if _AdapterLP is not None:
+    class LoopKillLogitsProcessor(_AdapterLP):
+        """Enabled per request with SamplingParams(extra_args={"loop_kill_eos": <eos id>})."""
+
+        def is_argmax_invariant(self) -> bool:
+            return False
+
+        def new_req_logits_processor(self, params):
+            ea = getattr(params, "extra_args", None) or {}
+            return LoopKillState(int(ea["loop_kill_eos"])) if "loop_kill_eos" in ea else None
+else:
+    LoopKillLogitsProcessor = None
+
+
 def strip_eos(ids: list[int], eos: set[int]) -> list[int]:
     for i, t in enumerate(ids):
         if t in eos:

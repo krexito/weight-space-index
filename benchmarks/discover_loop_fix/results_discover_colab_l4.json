@@ -1,0 +1,138 @@
+{
+  "alpha": 2.0,
+  "layer_candidate": "late",
+  "dev": {
+    "base": {
+      "n": 64,
+      "accuracy": 0.125,
+      "loop_killed": 0.6875,
+      "truncated": 0.1875
+    },
+    "grid": {
+      "late@2": {
+        "n": 64,
+        "accuracy": 0.171875,
+        "loop_killed": 0.65625,
+        "truncated": 0.15625
+      },
+      "late@4": {
+        "n": 64,
+        "accuracy": 0.15625,
+        "loop_killed": 0.34375,
+        "truncated": 0.5
+      },
+      "late@8": {
+        "n": 64,
+        "accuracy": 0.15625,
+        "loop_killed": 0.1875,
+        "truncated": 0.65625
+      },
+      "top@2": {
+        "n": 64,
+        "accuracy": 0.171875,
+        "loop_killed": 0.65625,
+        "truncated": 0.15625
+      },
+      "top@4": {
+        "n": 64,
+        "accuracy": 0.125,
+        "loop_killed": 0.59375,
+        "truncated": 0.28125
+      },
+      "top@8": {
+        "n": 64,
+        "accuracy": 0.125,
+        "loop_killed": 0.65625,
+        "truncated": 0.21875
+      }
+    }
+  },
+  "arms": {
+    "base": {
+      "n": 200,
+      "accuracy": 0.09,
+      "loop_killed": 0.905,
+      "truncated": 0.0
+    },
+    "wsi_fixed": {
+      "n": 200,
+      "accuracy": 0.14,
+      "loop_killed": 0.855,
+      "truncated": 0.005
+    },
+    "p50c": {
+      "n": 200,
+      "accuracy": 0.595,
+      "loop_killed": 0.15,
+      "truncated": 0.115
+    },
+    "wsi_moi": {
+      "n": 200,
+      "accuracy": 0.4,
+      "loop_killed": 0.54,
+      "truncated": 0.015,
+      "edit_token_share": 0.5919452600197852,
+      "router_fired": 0.965
+    }
+  },
+  "paired": {
+    "wsi_fixed_vs_base": {
+      "diff": 0.05,
+      "ci95": [
+        0.0,
+        0.1
+      ],
+      "a_only": 19,
+      "b_only": 9
+    },
+    "wsi_moi_vs_base": {
+      "diff": 0.31,
+      "ci95": [
+        0.245,
+        0.375
+      ],
+      "a_only": 62,
+      "b_only": 0
+    },
+    "wsi_moi_vs_wsi_fixed": {
+      "diff": 0.26,
+      "ci95": [
+        0.195,
+        0.33
+      ],
+      "a_only": 56,
+      "b_only": 4
+    },
+    "wsi_fixed_vs_p50c": {
+      "diff": -0.455,
+      "ci95": [
+        -0.53,
+        -0.38
+      ],
+      "a_only": 4,
+      "b_only": 95
+    }
+  },
+  "exam_vs_p50c": {
+    "wsi_chosen_layers": [
+      14,
+      13
+    ],
+    "p50c_layers": [
+      15,
+      19
+    ],
+    "rank_of_15_and_19_in_wsi_separation": {
+      "15": 11,
+      "19": 18
+    },
+    "layer_15": {
+      "abs_cos_wsi_direction_vs_p50c": 0.3654,
+      "random_baseline": 0.0312
+    },
+    "layer_19": {
+      "abs_cos_wsi_direction_vs_p50c": 0.4446,
+      "random_baseline": 0.0312
+    }
+  }
+}
