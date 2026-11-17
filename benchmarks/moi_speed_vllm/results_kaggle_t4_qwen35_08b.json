@@ -1,0 +1,288 @@
+{
+  "export": {
+    "model": "Qwen/Qwen3.5-0.8B",
+    "calib_tokens": 20145,
+    "layers": 24,
+    "neurons_per_layer": 3584,
+    "ridge": 0.01,
+    "budgets": {
+      "k2560": {
+        "kept_neurons": 2560,
+        "dir": "/tmp/wsi/ckpt/energy_recon_k2560",
+        "time_s": {
+          "select_and_compensate": 6.66,
+          "slice_and_write_checkpoint": 1.51
+        },
+        "bytes": 1589656184
+      },
+      "k2048": {
+        "kept_neurons": 2048,
+        "dir": "/tmp/wsi/ckpt/energy_recon_k2048",
+        "time_s": {
+          "select_and_compensate": 3.9,
+          "slice_and_write_checkpoint": 1.2
+        },
+        "bytes": 1511012944
+      },
+      "k1792": {
+        "kept_neurons": 1792,
+        "dir": "/tmp/wsi/ckpt/energy_recon_k1792",
+        "time_s": {
+          "select_and_compensate": 3.09,
+          "slice_and_write_checkpoint": 3.4
+        },
+        "bytes": 1471691336
+      },
+      "k1024": {
+        "kept_neurons": 1024,
+        "dir": "/tmp/wsi/ckpt/energy_recon_k1024",
+        "time_s": {
+          "select_and_compensate": 1.69,
+          "slice_and_write_checkpoint": 4.02
+        },
+        "bytes": 1353726448
+      }
+    },
+    "timing": {
+      "load_model_s": 9.63,
+      "calibration_s": 113.07
+    },
+    "device": "Tesla T4",
+    "full_bytes": 1746942600,
+    "full_dir": "/root/.cache/huggingface/hub/models--Qwen--Qwen3.5-0.8B/snapshots/2fc06364715b967f1860aea9cf38778875588b17"
+  },
+  "arms": {
+    "full": {
+      "tag": "full",
+      "model_dir": "/root/.cache/huggingface/hub/models--Qwen--Qwen3.5-0.8B/snapshots/2fc06364715b967f1860aea9cf38778875588b17",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 3584,
+      "checkpoint_bytes": 1746942600,
+      "decode_tok_s_batch1": 114.74,
+      "decode_tok_s_batch1_runs": [
+        115.21,
+        115.28,
+        114.74,
+        114.53,
+        113.15
+      ],
+      "throughput_tok_s_batch64": 2012.9,
+      "gsm8k": {
+        "accuracy": 0.555,
+        "correct": 111,
+        "n": 200,
+        "gen_tokens": 86676,
+        "wall_s": 45.0,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "- 4 \\text{ (baked)} = 9 \\text{ eggs remaining}$$\n\n**Step 4: Calculate the revenue from selling the remaining eggs.**\nShe sells the remainder at $2 per fresh duck egg.\n$$9 \\text{ eggs} \\times \\$2/\\text{egg} = \\$18$$\n\n**Conclusion:**\nJanet makes $18 every day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "    *   So, the robe requires 1 bolt of white fiber.\n\n3.  **Calculate the total number of bolts:**\n    *   Add the number of blue bolts and the number of white bolts together.\n    *   Calculation: $2 \\text{ (blue)} + 1 \\text{ (white)} = 3$.\n\nThe total number of bolts required is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "120000",
+            "text": "50$$\n\nSubstitute the initial cost:\n$$Value = \\$80,000 \\times 2.50$$\n$$Value = \\$200,000$$\n\n**Step 3: Calculate the profit.**\nProfit is the difference between the final value and the initial cost.\n$$Profit = Value - Cost$$\n$$Profit = \\$200,000 - \\$80,000$$\n$$Profit = \\$120,000$$\n\nThe answer is 120000"
+          }
+        ]
+      }
+    },
+    "k1024": {
+      "tag": "k1024",
+      "model_dir": "/tmp/wsi/ckpt/energy_recon_k1024",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 1024,
+      "checkpoint_bytes": 1353726448,
+      "decode_tok_s_batch1": 137.7,
+      "decode_tok_s_batch1_runs": [
+        139.99,
+        139.48,
+        137.7,
+        136.55,
+        132.92
+      ],
+      "throughput_tok_s_batch64": 2177.2,
+      "gsm8k": {
+        "accuracy": 0.045,
+        "correct": 9,
+        "n": 200,
+        "gen_tokens": 188954,
+        "wall_s": 94.8,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "39",
+            "text": " per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39. 16 eggs per day (ducks)\n39."
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": " Let the number of blue bolts be $2$. Let the number of white bolts be $\\frac{1}{2} \\times 2$. Let the number of blue bolts be $2$. Let the number of white bolts be $\\frac{1}{2} \\times 2$. Let the number of blue bolts be $2$. Let the number of white bolts be $\\frac{1}{2} \\times 2$. Let the number of"
+          },
+          {
+            "gold": "70000",
+            "pred": null,
+            "text": "\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**\n**"
+          }
+        ]
+      }
+    },
+    "k1792": {
+      "tag": "k1792",
+      "model_dir": "/tmp/wsi/ckpt/energy_recon_k1792",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 1792,
+      "checkpoint_bytes": 1471691336,
+      "decode_tok_s_batch1": 126.68,
+      "decode_tok_s_batch1_runs": [
+        128.96,
+        128.35,
+        126.68,
+        124.56,
+        123.64
+      ],
+      "throughput_tok_s_batch64": 2117.8,
+      "gsm8k": {
+        "accuracy": 0.145,
+        "correct": 29,
+        "n": 200,
+        "gen_tokens": 139075,
+        "wall_s": 70.3,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "2",
+            "text": "text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\text \\"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B}"
+          },
+          {
+            "gold": "70000",
+            "pred": "90000",
+            "text": "lly, we calculate the profit by subtracting the initial cost from the final value:\n$$ \\text{Profit} = \\text{Final Value} \\text{Minus} \\text{Initial Cost} $$\n$$ \\text{Profit} = \\text{170,000} \\text{Minus} \\text{80,000} $$\n$$ \\text{Profit} = \\text{90,000} $$\n\nThe profit made is $90,000.\n\n<number>90000"
+          }
+        ]
+      }
+    },
+    "k2048": {
+      "tag": "k2048",
+      "model_dir": "/tmp/wsi/ckpt/energy_recon_k2048",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 2048,
+      "checkpoint_bytes": 1511012944,
+      "decode_tok_s_batch1": 123.29,
+      "decode_tok_s_batch1_runs": [
+        126.54,
+        124.73,
+        123.29,
+        122.01,
+        122.06
+      ],
+      "throughput_tok_s_batch64": 2116.7,
+      "gsm8k": {
+        "accuracy": 0.26,
+        "correct": 52,
+        "n": 200,
+        "gen_tokens": 117367,
+        "wall_s": 61.1,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "21",
+            "text": "mainder at the farmers' market daily for $\\$2 per fresh duck egg.\n*   Total eggs = $3 + 4 = 7$\n*   Total price = $7 \\text{ eggs} \\times \\$2/\\text{egg} = \\$14$\n\n**4. Total:**\n*   Total amount = $3 \\text{ eggs} \\text{ eaten} + 4 \\text{ eggs} \\text{ baked} + \\$14 \\text{ sold} = \\$21$\n\nThe answer is 21."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "nt of white fibers is half of 2 bolts.\nCalculation: $2 \\div 2 = 1$ bolt.\n\n**Group 3: Total bolts**\nTo find the total number of bolts, we add the amount of blue fibers and the amount of white fibers together.\nTotal = Group 1 + Group 2\nTotal = $2 + 1$\n\nThe total number of bolts is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "70000",
+            "text": "ue = $80,000 + $120,000 = **$200,000**\n\n**3. Calculate the total cost:**\n*   Total cost = Initial value + Repairs\n*   Total cost = $80,000 + $50,000 = **$130,000**\n\n**4. Calculate the profit:**\n*   Profit = Final value - Total cost\n*   Profit = $200,000 - $130,000 = **$70,000**\n\nThe answer is 70000."
+          }
+        ]
+      }
+    },
+    "k2560": {
+      "tag": "k2560",
+      "model_dir": "/tmp/wsi/ckpt/energy_recon_k2560",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 2560,
+      "checkpoint_bytes": 1589656184,
+      "decode_tok_s_batch1": 115.15,
+      "decode_tok_s_batch1_runs": [
+        121.67,
+        120.34,
+        115.15,
+        110.14,
+        106.68
+      ],
+      "throughput_tok_s_batch64": 2074.2,
+      "gsm8k": {
+        "accuracy": 0.3,
+        "correct": 60,
+        "n": 200,
+        "gen_tokens": 91987,
+        "wall_s": 46.0,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "20",
+            "text": "total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total} \\text{ total}"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "e and white fibers together.\n5.  **Sum the values**: The total number of bolts is $x + \\frac{x}{2}$.\n\nNow, we can simplify the expression by combining the fractions:\n$$x + \\frac{x}{2} = \\frac{2x}{2} + \\frac{x}{2} = \\frac{3x}{2}$$\n\nThe total number of bolts is $\\frac{3x}{2}$.\n\nThe answer is <number>."
+          },
+          {
+            "gold": "70000",
+            "pred": "120000",
+            "text": "5:\n$$80,000 \\times 1.5 = 120,000$$\n\n**3. Calculate the final value:**\nThe final value is the initial value plus the increase value:\n$$80,000 + 120,000 = 200,000$$\n\n**4. Calculate the profit:**\nThe profit is the final value minus the initial cost:\n$$200,000 - 80,000 = 120,000$$\n\nThe answer is 120000."
+          }
+        ]
+      }
+    }
+  },
+  "speedup_vs_full": {
+    "full": {
+      "batch1": 1.0,
+      "batchN": 1.0,
+      "size": 1.0
+    },
+    "k1024": {
+      "batch1": 1.2,
+      "batchN": 1.082,
+      "size": 0.775
+    },
+    "k1792": {
+      "batch1": 1.104,
+      "batchN": 1.052,
+      "size": 0.842
+    },
+    "k2048": {
+      "batch1": 1.075,
+      "batchN": 1.052,
+      "size": 0.865
+    },
+    "k2560": {
+      "batch1": 1.004,
+      "batchN": 1.03,
+      "size": 0.91
+    }
+  }
+}

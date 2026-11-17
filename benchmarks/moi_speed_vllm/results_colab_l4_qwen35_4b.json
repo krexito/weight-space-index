@@ -1,0 +1,227 @@
+{
+  "export": {
+    "model": "Qwen/Qwen3.5-4B",
+    "calib_tokens": 20145,
+    "calib_dtype": "torch.bfloat16",
+    "layers": 32,
+    "neurons_per_layer": 9216,
+    "ridge": 0.01,
+    "budgets": {
+      "k6400": {
+        "kept_neurons": 6400,
+        "dir": "/content/wsi/ckpt/energy_recon_k6400",
+        "time_s": {
+          "select_and_compensate": 60.63,
+          "slice_and_write_checkpoint": 28.39
+        },
+        "bytes": 7892454072
+      },
+      "k5248": {
+        "kept_neurons": 5248,
+        "dir": "/content/wsi/ckpt/energy_recon_k5248",
+        "time_s": {
+          "select_and_compensate": 44.19,
+          "slice_and_write_checkpoint": 24.47
+        },
+        "bytes": 7308528304
+      },
+      "k4608": {
+        "kept_neurons": 4608,
+        "dir": "/content/wsi/ckpt/energy_recon_k4608",
+        "time_s": {
+          "select_and_compensate": 36.25,
+          "slice_and_write_checkpoint": 19.38
+        },
+        "bytes": 6984125104
+      }
+    },
+    "timing": {
+      "load_model_s": 13.95,
+      "calibration_s": 96.4,
+      "calibration_passes": 2
+    },
+    "device": "NVIDIA L4",
+    "full_bytes": 9319828096,
+    "full_dir": "/root/.cache/huggingface/hub/models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+  },
+  "arms": {
+    "full": {
+      "tag": "full",
+      "model_dir": "/root/.cache/huggingface/hub/models--Qwen--Qwen3.5-4B/snapshots/851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "dtype": "auto",
+      "gpu": "NVIDIA L4",
+      "intermediate_size": 9216,
+      "checkpoint_bytes": 9319828096,
+      "decode_tok_s_batch1": 28.86,
+      "decode_tok_s_batch1_runs": [
+        28.88,
+        28.86,
+        28.82
+      ],
+      "throughput_tok_s_batch64": 863.4,
+      "gsm8k": {
+        "accuracy": 0.9,
+        "correct": 180,
+        "n": 200,
+        "gen_tokens": 70746,
+        "wall_s": 90.4,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "ins)\nRemaining eggs = 16 - (3 + 4)\nRemaining eggs = 16 - 7\nRemaining eggs = 9\n\n**Step 5: Calculate the total earnings at the farmers' market.**\nShe sells the remaining eggs for $2 per egg.\nTotal earnings = Remaining eggs \u00d7 Price per egg\nTotal earnings = 9 \u00d7 $2\nTotal earnings = $18\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "lf that much\" white fiber as blue fiber.\n    White fiber = $\\frac{1}{2} \\times 2$ bolts = 1 bolt.\n\n3.  **Calculate the total amount of fiber:**\n    Add the bolts of blue fiber and the bolts of white fiber together.\n    Total = Blue fiber + White fiber\n    Total = $2 + 1 = 3$ bolts.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "70000",
+            "text": "000 = \\$200,000 $$\n\n**Step 3: Calculate the profit.**\nProfit is the difference between the final value of the house and the total cost incurred.\n$$ \\text{Profit} = \\text{New Value} - \\text{Total Cost} $$\n$$ \\text{Profit} = \\$200,000 - \\$130,000 $$\n$$ \\text{Profit} = \\$70,000 $$\n\nThe answer is 70000."
+          }
+        ]
+      }
+    },
+    "k4608": {
+      "tag": "k4608",
+      "model_dir": "/content/wsi/ckpt/energy_recon_k4608",
+      "dtype": "auto",
+      "gpu": "NVIDIA L4",
+      "intermediate_size": 4608,
+      "checkpoint_bytes": 6984125104,
+      "decode_tok_s_batch1": 38.74,
+      "decode_tok_s_batch1_runs": [
+        38.75,
+        38.74,
+        38.73
+      ],
+      "throughput_tok_s_batch64": 1019.5,
+      "gsm8k": {
+        "accuracy": 0.75,
+        "correct": 150,
+        "n": 200,
+        "gen_tokens": 71393,
+        "wall_s": 73.9,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "ggs $\\times$ Price per egg\nDaily earnings = $9 \\times \\$2$\nDaily earnings = $18\n\n**Step 6: Determine the final amount made.**\nThe question asks specifically for the amount made *at the farmers' market*. Since she sells all 9 remaining eggs, the total she makes at the market is $18.\n\nThe answer is 18"
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": " much white fiber.\"\nCalculation: $2 \\text{ bolts} \\div 2 = 1 \\text{ bolt}$ of white fiber.\n\n**Step 3:** Calculate the total amount of fiber.\nAdd the blue fiber and the white fiber together:\n$2 \\text{ bolts} \\text{ (blue)} + 1 \\text{ bolt} \\text{ (white) = 3 \\text{ bolts}$ in total.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": null,
+            "text": "\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###\n###"
+          }
+        ]
+      }
+    },
+    "k5248": {
+      "tag": "k5248",
+      "model_dir": "/content/wsi/ckpt/energy_recon_k5248",
+      "dtype": "auto",
+      "gpu": "NVIDIA L4",
+      "intermediate_size": 5248,
+      "checkpoint_bytes": 7308528304,
+      "decode_tok_s_batch1": 36.93,
+      "decode_tok_s_batch1_runs": [
+        36.95,
+        36.92,
+        36.93
+      ],
+      "throughput_tok_s_batch64": 995.9,
+      "gsm8k": {
+        "accuracy": 0.825,
+        "correct": 165,
+        "n": 200,
+        "gen_tokens": 65933,
+        "wall_s": 71.3,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "$ \\text{16} - 3 - 4 = 9 $$\nSo, she sells 9 eggs.\n\n**Step 5: Calculate the total earnings.**\nShe sells the remaining 9 eggs at $2 per egg.\n$$ \\text{9 \\text{eggs} \\times \\$2/\\text{egg} = \\$18 $$\n\n**Step 6: Final calculation.**\nThe total amount she makes at the farmers' market is $18.\n\nThe answer is 18"
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "e problem states that the robe takes \"half that much white fiber.\"\n    Calculation: $2 \\div 2 = 1$ bolt of white fiber.\n\n3.  **Calculate the total amount of fiber:**\n    Add the blue fiber and the white fiber together:\n    $2 \\text{ (blue)} + 1 \\text{ (white)} = 3 \\text{ (total)}$.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "75000",
+            "text": "80,000 + $50,000 + $75,000 = $205,000.*\n\n**Step 4: Calculate the profit.**\nProfit is the difference between the total value and the total cost.\n$$ \\text{Profit} = \\text{Total Value} - \\text{Total Cost} $$\n$$ \\text{Profit} = \\$205,000 - \\$130,000 $$\n$$ \\text{Profit} = \\$75,000 $$\n\nThe answer is 75000"
+          }
+        ]
+      }
+    },
+    "k6400": {
+      "tag": "k6400",
+      "model_dir": "/content/wsi/ckpt/energy_recon_k6400",
+      "dtype": "auto",
+      "gpu": "NVIDIA L4",
+      "intermediate_size": 6400,
+      "checkpoint_bytes": 7892454072,
+      "decode_tok_s_batch1": 34.2,
+      "decode_tok_s_batch1_runs": [
+        34.23,
+        34.2,
+        34.18
+      ],
+      "throughput_tok_s_batch64": 953.4,
+      "gsm8k": {
+        "accuracy": 0.89,
+        "correct": 178,
+        "n": 200,
+        "gen_tokens": 65951,
+        "wall_s": 75.4,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": " 9\n\n**Step 5: Calculate the earnings from the sales.**\nShe sells the remaining 9 eggs at the farmers' market for $2 per egg.\nEarnings = Remaining eggs $\\times$ Price per egg\nEarnings = $9 \\times \\$2$\nEarnings = $18\n\n**Conclusion:**\nJanet makes $18 every day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": " states the robe takes \"half that much white fiber\" as the blue fiber.\n    Calculation: $2 \\div 2 = 1$ bolt of white fiber.\n\n3.  **Calculate the total amount:**\n    Add the blue fiber and white fiber together.\n    Calculation: $2 \\text{ (blue)} + 1 \\text{ (white)} = 3$ bolts total.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "195000",
+            "text": "lue of the house.**\nAdd the increase to the original total cost.\n$$ \\text{New Value} = \\$130,000 + \\$195,000 = \\$325,000 $$\n\n**Step 4: Calculate the profit.**\nSubtract the total cost from the new value to find the profit.\n$$ \\text{Profit} = \\$325,000 - \\$130,000 = \\$195,000 $$\n\nThe answer is 195000."
+          }
+        ]
+      }
+    }
+  },
+  "speedup_vs_full": {
+    "full": {
+      "batch1": 1.0,
+      "batchN": 1.0,
+      "size": 1.0
+    },
+    "k4608": {
+      "batch1": 1.342,
+      "batchN": 1.181,
+      "size": 0.749
+    },
+    "k5248": {
+      "batch1": 1.28,
+      "batchN": 1.153,
+      "size": 0.784
+    },
+    "k6400": {
+      "batch1": 1.185,
+      "batchN": 1.104,
+      "size": 0.847
+    }
+  }
+}

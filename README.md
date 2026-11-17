@@ -161,6 +161,7 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 | Per-token neurons (LFM3-1.7B, 200 GSM8K, `experiment_moi_lfm3_gsm8k.py`) | — | Full `83.0%`; 50% of MLP neurons: oracle `78.5%`, gate `62.5%`, trained router `63.5%`; at 30% or less a usable router collapses (`<= 32.5%`) |
 | Per-task index (Qwen3.5-0.8B, `experiment_capture_index_route.py`) | — | Router picks the right task `100%`; math ppl `5.33` full -> `6.40 / 8.92 / 15.72` at 70/50/30% (wrong-task index `7.89 / 12.63 / 29.80`, random `16.8 / 71.9 / 1684`) |
 | **Per-task index + compensation, real accuracy** (LFM3-1.7B, 200 GSM8K test, greedy, 512-token cap, `experiment_moi_task_index_lfm3.py`, [`results`](./benchmarks/moi_task_index_lfm3/results_colab_l4.json)) | — | Full `83.0%`; compensated math index (`energy+recon`) at 70/50/30% of MLP neurons: **`79.0% / 65.5% / 37.0%`** (same index uncompensated `66.5% / 33.5% / 7.5%`, random `3% / 0.5% / 1%`); model `2.78 / 2.33 / 1.87 GB` vs. `3.46 GB` |
+| **Speed of a compensated index, real model files** (Qwen3.5-4B, vLLM bf16, Colab L4, batch 1, 200 GSM8K test, `experiment_moi_speed_vllm.py`, [`results`](./benchmarks/moi_speed_vllm/results_colab_l4_qwen35_4b.json)) | — | Full `90.0%`, `28.9 tok/s`, `9.32 GB`; **69% of MLP neurons: `89.0%`, `34.2 tok/s` (`1.19×`), `7.89 GB`**; 57%: `82.5%`, `1.28×`; 50%: `75.0%`, `1.34×`. Batch-1 speedup equals the size ratio |
 
 > * SwiGLU models (Qwen, LFM3) have no "sleeping" neurons: every unit contributes a little, so Selective MoI always pays in quality, even with perfect per-token information (the oracle). ReLU models (OPT-125M: `93.7%` exact zeros) are far more tolerant.
 > * Additive MoI does not save resources; it adds a little (the p50c payload is `131,072` deltas, under 1 MB). Its gain is the absence of side effects: on the loop fix it matches the always-on edit on the task while leaving text that never triggers it bit-identical to the original model.
@@ -221,6 +222,33 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >   * `energy` selection plus compensation wins at every budget. Uneven per-layer budgets (`global`) never help.
 >   * Compensation specializes the model. WikiText ppl goes from `24.9` (full) to `51.95` with `energy` at 70% and to `71.8` with `energy+recon`. The math and wiki indexes share only `81% / 72% / 65%` of neurons at 70/50/30%, so each task needs its own index, which is the case for keeping several indexes.
 >   * There is no decode speedup: `~745 tok/s` at every size, because HF `generate` at batch 32 on a 1.7B model is not bandwidth-bound. The saving is memory.
+>
+>   **Does it run faster when served for real?** `experiment_moi_speed_vllm.py` writes each compensated `energy+recon` index as an ordinary, smaller Hugging Face checkpoint (`intermediate_size` sliced in every layer) and serves it with vLLM. Decode speed is measured with one request at a time (the laptop/phone case, where generation is limited by reading the weights from memory) and with 64 at a time; quality is GSM8K, 200 test problems, thinking off. Kept neuron counts are multiples of 128, so the GPU kernels stay aligned. The first T4 run used unaligned sizes (`2509`, `1075`) and those ran *slower* than the full model; it is kept as [`results_kaggle_t4_qwen35_08b_run1.json`](./benchmarks/moi_speed_vllm/results_kaggle_t4_qwen35_08b_run1.json).
+>
+>   **Qwen3.5-4B** (vLLM bf16, Colab L4, calibration on 20k GSM8K-train tokens, [`results`](./benchmarks/moi_speed_vllm/results_colab_l4_qwen35_4b.json)):
+>
+>   | MLP neurons kept | GSM8K | Batch 1 | Batch 64 | Checkpoint |
+>   |---|---|---|---|---|
+>   | 9216 (full) | `90.0%` | `28.9 tok/s` | `863 tok/s` | `9.32 GB` |
+>   | **6400 (69%)** | **`89.0%`** | **`34.2 tok/s` (`1.19×`)** | `953 tok/s` (`1.10×`) | `7.89 GB` (`0.85`) |
+>   | 5248 (57%) | `82.5%` | `36.9 tok/s` (`1.28×`) | `996 tok/s` (`1.15×`) | `7.31 GB` (`0.78`) |
+>   | 4608 (50%) | `75.0%` | `38.7 tok/s` (`1.34×`) | `1020 tok/s` (`1.18×`) | `6.98 GB` (`0.75`) |
+>
+>   **Qwen3.5-0.8B** (vLLM fp16, Kaggle T4, [`results`](./benchmarks/moi_speed_vllm/results_kaggle_t4_qwen35_08b.json)):
+>
+>   | MLP neurons kept | GSM8K | Batch 1 | Batch 64 | Checkpoint |
+>   |---|---|---|---|---|
+>   | 3584 (full) | `55.5%` | `114.7 tok/s` | `2013 tok/s` | `1.75 GB` |
+>   | 2560 (71%) | `30.0%` | `115.2 tok/s` (`1.00×`) | `2074 tok/s` | `1.59 GB` (`0.91`) |
+>   | 2048 (57%) | `26.0%` | `123.3 tok/s` (`1.07×`) | `2117 tok/s` | `1.51 GB` (`0.87`) |
+>   | 1792 (50%) | `14.5%` | `126.7 tok/s` (`1.10×`) | `2118 tok/s` | `1.47 GB` (`0.84`) |
+>   | 1024 (29%) | `4.5%` | `137.7 tok/s` (`1.20×`) | `2177 tok/s` | `1.35 GB` (`0.77`) |
+>
+>   * **On the 4B, 69% of the MLP costs one problem in 200** (`89.0%` vs. `90.0%`, within noise) and generates `19%` faster from a checkpoint `1.4 GB` smaller. At 50% it starts to break (`75%`, and some answers degenerate into repeated `###`).
+>   * **Batch-1 speedup is the size ratio.** 4B: `1/0.847 = 1.18` predicted vs. `1.19` measured; `1/0.749 = 1.34` vs. `1.34`. One-at-a-time decoding is bound by reading the weights, so every byte removed is speed. With 64 requests the GPU is closer to compute-bound and the gain is smaller.
+>   * **Bigger model, more spare neurons.** The 0.8B loses half its accuracy at 71% and gains almost no speed: its 248k-token vocabulary weighs about as much as all its MLPs (MLPs are `~35%` of parameters, vs. `~53%` in the 4B), so cutting MLP neurons barely shrinks it, and a model that small has little redundancy. LFM3-1.7B (above) sits in between.
+>   * **Build cost** (4B, L4): load `14 s`, calibration `96 s` (2 passes over 20k tokens), then per size `36–61 s` select + compensate and `19–28 s` to write the checkpoint. About 3.5 minutes for three sizes, no training.
+>   * Scope: one task (math), calibrated on that task. How a math index behaves on other tasks, and how fast an index can be swapped in from RAM or disk, are not measured here.
 
 ---
 

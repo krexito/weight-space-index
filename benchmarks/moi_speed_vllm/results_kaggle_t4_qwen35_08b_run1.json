@@ -1,0 +1,216 @@
+{
+  "export": {
+    "model": "Qwen/Qwen3.5-0.8B",
+    "calib_tokens": 20145,
+    "layers": 24,
+    "neurons_per_layer": 3584,
+    "ridge": 0.01,
+    "budgets": {
+      "0.7": {
+        "kept_neurons": 2509,
+        "dir": "/tmp/wsi/ckpt/energy_recon_0.7",
+        "bytes": 1581822584
+      },
+      "0.5": {
+        "kept_neurons": 1792,
+        "dir": "/tmp/wsi/ckpt/energy_recon_0.5",
+        "bytes": 1471691336
+      },
+      "0.3": {
+        "kept_neurons": 1075,
+        "dir": "/tmp/wsi/ckpt/energy_recon_0.3",
+        "bytes": 1361560064
+      }
+    },
+    "full_bytes": 1746942600,
+    "full_dir": "/root/.cache/huggingface/hub/models--Qwen--Qwen3.5-0.8B/snapshots/2fc06364715b967f1860aea9cf38778875588b17"
+  },
+  "arms": {
+    "0.3": {
+      "tag": "0.3",
+      "model_dir": "/tmp/wsi/ckpt/energy_recon_0.3",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 1075,
+      "checkpoint_bytes": 1361560064,
+      "decode_tok_s_batch1": 117.45,
+      "decode_tok_s_batch1_runs": [
+        117.14,
+        117.83,
+        117.49,
+        117.45,
+        116.49
+      ],
+      "throughput_tok_s_batch64": 2093.8,
+      "gsm8k": {
+        "accuracy": 0.025,
+        "correct": 5,
+        "n": 200,
+        "gen_tokens": 185153,
+        "wall_s": 95.8,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "2",
+            "text": "the following into the following:\n\nLet's break the following into the following:\n\nLet's break the following into the following:\n\nLet's break the following into the following:\n\nLet's break the following into the following:\n\nLet's break the following into the following:\n\nLet's break the following into"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "ts be $\\frac{1}{2} \\times 2$.\nLet the number of white bolts be $\\frac{1}{2} \\times 2$.\nLet the number of blue bolts be $\\frac{1}{2} \\times 2$.\nLet the number of white bolts be $\\frac{1}{2} \\times 2$.\nLet the number of blue bolts be $\\frac{1}{2} \\times 2$.\nLet the number of white bolts be $\\frac{1}{2"
+          },
+          {
+            "gold": "70000",
+            "pred": "150000",
+            "text": "f the house baseded is $150,000.\nThe value of the house baseded is $150,000.\nThe value of the house baseded is $150,000.\nThe value of the house baseded is $150,000.\nThe value of the house baseded is $150,000.\nThe value of the house baseded is $150,000.\nThe value of the house baseded is $150,000.\nThe"
+          }
+        ]
+      }
+    },
+    "0.5": {
+      "tag": "0.5",
+      "model_dir": "/tmp/wsi/ckpt/energy_recon_0.5",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 1792,
+      "checkpoint_bytes": 1471691336,
+      "decode_tok_s_batch1": 129.51,
+      "decode_tok_s_batch1_runs": [
+        129.51,
+        129.79,
+        129.61,
+        129.39,
+        128.3
+      ],
+      "throughput_tok_s_batch64": 2100.9,
+      "gsm8k": {
+        "accuracy": 0.145,
+        "correct": 29,
+        "n": 200,
+        "gen_tokens": 140670,
+        "wall_s": 72.6,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "3",
+            "text": "{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text{eg} \\text"
+          },
+          {
+            "gold": "3",
+            "pred": "2",
+            "text": "{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B} \\text{B}"
+          },
+          {
+            "gold": "70000",
+            "pred": "90000",
+            "text": "lly, we calculate the profit by subtracting the initial cost from the final value:\n$$ \\text{Profit} = \\text{Final Value} \\text{Minus} \\text{Initial Cost} $$\n$$ \\text{Profit} = \\text{170,000} \\text{Minus} \\text{80,000} $$\n$$ \\text{Profit} = \\text{90,000} $$\n\nThe profit made is $90,000.\n\n<number>90000"
+          }
+        ]
+      }
+    },
+    "0.7": {
+      "tag": "0.7",
+      "model_dir": "/tmp/wsi/ckpt/energy_recon_0.7",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 2509,
+      "checkpoint_bytes": 1581822584,
+      "decode_tok_s_batch1": 88.91,
+      "decode_tok_s_batch1_runs": [
+        88.99,
+        89.19,
+        88.91,
+        88.72,
+        88.13
+      ],
+      "throughput_tok_s_batch64": 1856.8,
+      "gsm8k": {
+        "accuracy": 0.34,
+        "correct": 68,
+        "n": 200,
+        "gen_tokens": 89536,
+        "wall_s": 49.6,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "26",
+            "text": "$\\$2 per fresh duck egg.\n$$13 \\text{ eggs} \\times \\$2/\\text{egg} = \\$26 \\text{ dollars}$$\n\n**5. Calculate the total amount made per day:**\nThe problem states that she sells the remainder at the farmers' market daily for $\\$2 per fresh duck egg.\n$$\\$26 \\text{ dollars}$$\n\n**Answer:**\nThe answer is 26."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "kes **half that much white fiber**.\n    *   Calculation: $2 \\text{ bolts} \\times \\frac{1}{2} = 1 \\text{ bolt}$.\n3.  **Calculate the total**: The total amount of fiber is the sum of the blue and white fibers.\n    *   Calculation: $2 \\text{ bolts} + 1 \\text{ bolt} = 3 \\text{ bolts}$.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "120000",
+            "text": "the initial value by 1.5:\n$$80,000 \\times 1.5 = 120,000$$\n\n**3. Calculate the final value:**\nAdd the increase to the initial value:\n$$80,000 + 120,000 = 200,000$$\n\n**4. Calculate the profit:**\nThe profit is the final value minus the initial cost:\n$$200,000 - 80,000 = 120,000$$\n\nThe answer is 120000."
+          }
+        ]
+      }
+    },
+    "full": {
+      "tag": "full",
+      "model_dir": "/root/.cache/huggingface/hub/models--Qwen--Qwen3.5-0.8B/snapshots/2fc06364715b967f1860aea9cf38778875588b17",
+      "dtype": "half",
+      "gpu": "Tesla T4",
+      "intermediate_size": 3584,
+      "checkpoint_bytes": 1746942600,
+      "decode_tok_s_batch1": 99.01,
+      "decode_tok_s_batch1_runs": [
+        98.85,
+        99.28,
+        99.26,
+        98.68,
+        99.01
+      ],
+      "throughput_tok_s_batch64": 2002.8,
+      "gsm8k": {
+        "accuracy": 0.56,
+        "correct": 112,
+        "n": 200,
+        "gen_tokens": 86538,
+        "wall_s": 45.4,
+        "samples": [
+          {
+            "gold": "18",
+            "pred": "18",
+            "text": "- 4 \\text{ (baked)} = 9 \\text{ eggs remaining}$$\n\n**Step 4: Calculate the revenue from selling the remaining eggs.**\nShe sells the remainder at $2 per fresh duck egg.\n$$9 \\text{ eggs} \\times \\$2/\\text{egg} = \\$18$$\n\n**Conclusion:**\nJanet makes $18 every day at the farmers' market.\n\nThe answer is 18."
+          },
+          {
+            "gold": "3",
+            "pred": "3",
+            "text": "    *   So, the robe requires 1 bolt of white fiber.\n\n3.  **Calculate the total number of bolts:**\n    *   Add the number of blue bolts and the number of white bolts together.\n    *   Calculation: $2 \\text{ (blue)} + 1 \\text{ (white)} = 3$.\n\nThe total number of bolts required is 3.\n\nThe answer is 3."
+          },
+          {
+            "gold": "70000",
+            "pred": "120000",
+            "text": "50$$\n\nSubstitute the initial cost:\n$$Value = \\$80,000 \\times 2.50$$\n$$Value = \\$200,000$$\n\n**Step 3: Calculate the profit.**\nProfit is the difference between the final value and the initial cost.\n$$Profit = Value - Cost$$\n$$Profit = \\$200,000 - \\$80,000$$\n$$Profit = \\$120,000$$\n\nThe answer is 120000"
+          }
+        ]
+      }
+    }
+  },
+  "speedup_vs_full": {
+    "0.3": {
+      "batch1": 1.186,
+      "batchN": 1.045,
+      "size": 0.779
+    },
+    "0.5": {
+      "batch1": 1.308,
+      "batchN": 1.049,
+      "size": 0.842
+    },
+    "0.7": {
+      "batch1": 0.898,
+      "batchN": 0.927,
+      "size": 0.905
+    },
+    "full": {
+      "batch1": 1.0,
+      "batchN": 1.0,
+      "size": 1.0
+    }
+  }
+}
