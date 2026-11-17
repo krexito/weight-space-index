@@ -57,9 +57,10 @@ def cmd_pick(a) -> None:
            "dev16": {"base": {k: v for k, v in base.items() if k != "rows"},
                      "grid": {f"{c}@{al:g}": v for (c, al), v in res.items()}},
            "fix_dir": str(work / f"wsi-fix-{best[0]}-a{best[1]:g}")}
-    (work / "followup.json").write_text(json.dumps(out, indent=2))
-    (work / "chosen_fix2.txt").write_text(out["fix_dir"])
-    print(f"chosen v2: {best[0]} layers {out['layers']}, alpha {best[1]:g}")
+    v = a.version
+    (work / ("followup.json" if v == 2 else f"followup{v}.json")).write_text(json.dumps(out, indent=2))
+    (work / f"chosen_fix{v}.txt").write_text(out["fix_dir"])
+    print(f"chosen v{v}: {best[0]} layers {out['layers']}, alpha {best[1]:g}")
 
 
 def moi_arm(work: Path, cont_file: str, reqs: dict, base_rows: dict, tok, eos: set) -> dict:
@@ -95,24 +96,31 @@ def cmd_report(a) -> None:
     eos, reqs = set(cfg["eos"]), {r["id"]: r for r in lr.read_jsonl(work / "requests_test.jsonl")}
     rows: dict = {}
     for name, f in {"base": "outputs_test_base.jsonl", "wsi_fixed": "outputs_test_wsi.jsonl",
-                    "wsi2_fixed": "outputs_test_wsi2.jsonl", "p50c": "outputs_test_p50c.jsonl"}.items():
+                    "wsi2_fixed": "outputs_test_wsi2.jsonl", "wsi3_fixed": "outputs_test_wsi3.jsonl",
+                    "p50c": "outputs_test_p50c.jsonl"}.items():
         if (work / f).exists():
             rows[name] = {r["id"]: r for r in dl.score(work, "requests_test.jsonl", f, tok)["rows"]}
     for name, f in {"wsi_moi": "outputs_test_moi.jsonl", "placebo_moi": "outputs_test_placebo.jsonl",
-                    "wsi2_moi": "outputs_test_moi2.jsonl"}.items():
+                    "wsi2_moi": "outputs_test_moi2.jsonl", "wsi3_moi": "outputs_test_moi3.jsonl"}.items():
         if (work / f).exists():
             rows[name] = moi_arm(work, f, reqs, rows["base"], tok, eos)
     ids = sorted(reqs)
     acc = {k: [bool(v[i]["correct"]) for i in ids] for k, v in rows.items()}
     pairs = [("placebo_moi", "base"), ("wsi_moi", "placebo_moi"), ("wsi2_moi", "placebo_moi"),
-             ("wsi2_fixed", "base"), ("wsi2_fixed", "wsi_fixed"), ("wsi2_moi", "wsi_moi"), ("wsi2_fixed", "p50c")]
+             ("wsi2_fixed", "base"), ("wsi2_fixed", "wsi_fixed"), ("wsi2_moi", "wsi_moi"), ("wsi2_fixed", "p50c"),
+             ("wsi3_fixed", "base"), ("wsi3_fixed", "wsi2_fixed"), ("wsi3_moi", "placebo_moi"), ("wsi3_moi", "wsi2_moi"),
+             ("wsi3_fixed", "p50c"), ("wsi3_moi", "p50c")]
     fu = json.loads((work / "followup.json").read_text()) if (work / "followup.json").exists() else {}
+    fu3 = json.loads((work / "followup3.json").read_text()) if (work / "followup3.json").exists() else None
     res = {"arms": {k: summary(v) for k, v in rows.items()},
            "paired": {f"{x}_vs_{y}": lr.paired_ci(acc[x], acc[y]) for x, y in pairs if x in acc and y in acc},
            "v2_choice": fu}
+    if fu3:
+        res["v3_choice"] = fu3
 
     exam: dict = {"p50c_layers": [15, 19], "v2_layers": fu.get("layers"),
-                  "candidates": fu.get("candidates")}
+                  "v3_layers": fu3.get("layers") if fu3 else None,
+                  "candidates": (fu3 or fu).get("candidates")}
     if a.p50c_dir:
         from safetensors import safe_open
 
@@ -141,7 +149,7 @@ def cmd_report(a) -> None:
                 rec["neuron_overlap_random_expectation"] = round(len(cols) * a.neurons / dW.shape[1], 2)
             exam[f"layer_{li}"] = rec
     res["exam_vs_p50c"] = exam
-    (work / "results_discover_followup.json").write_text(json.dumps(res, indent=2))
+    (work / a.out).write_text(json.dumps(res, indent=2))
 
     print(f"\n{'arm':12s} {'acc':>7s} {'loops':>7s} {'trunc':>7s}")
     for k, v in res["arms"].items():
@@ -150,7 +158,7 @@ def cmd_report(a) -> None:
         print(f"  {k}: {v['diff']:+.1%}  95% CI [{v['ci95'][0]:+.1%}, {v['ci95'][1]:+.1%}]  "
               f"({v['a_only']} vs {v['b_only']})")
     print("exam vs p50c:", json.dumps(exam, indent=1))
-    print("Saved", work / "results_discover_followup.json")
+    print("Saved", work / a.out)
 
 
 def main() -> None:
@@ -161,10 +169,12 @@ def main() -> None:
     m.add_argument("--max-new", type=int, default=16384)
     p = sub.add_parser("pick")
     p.add_argument("--work", required=True)
+    p.add_argument("--version", type=int, default=2, help="2 -> followup.json, 3 -> followup3.json")
     r = sub.add_parser("report")
     r.add_argument("--work", required=True)
     r.add_argument("--p50c-dir")
     r.add_argument("--neurons", type=int, default=64)
+    r.add_argument("--out", default="results_discover_followup.json")
     a = ap.parse_args()
     {"make-dev16": cmd_make_dev16, "pick": cmd_pick, "report": cmd_report}[a.cmd](a)
 

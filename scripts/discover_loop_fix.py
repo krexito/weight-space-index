@@ -315,9 +315,11 @@ def cmd_diagnose(a) -> None:
     tc = getattr(model.config, "text_config", None) or model.config
     ltypes = getattr(tc, "layer_types", None)
     if ltypes and len(ltypes) == L:
-        fa = [x for x in order if "full" in str(ltypes[x])][: a.top_layers]
-        if fa:
-            cands["fa"] = fa
+        fa_all = [x for x in order if "full" in str(ltypes[x])]
+        if fa_all:
+            cands["fa"] = fa_all[: a.top_layers]
+            if a.fa_layers and a.fa_layers != a.top_layers:  # e.g. fa3: the three most separated full-attention layers
+                cands[f"fa{a.fa_layers}"] = fa_all[: a.fa_layers]
     chosen = cands["top"]
     print("held-out separation d' per layer:", " ".join(f"L{li}:{s:.2f}" for li, s in enumerate(sep)))
     print("layer candidates:", cands)
@@ -350,6 +352,8 @@ def cmd_build(a) -> None:
     base = Path(cfg["base_dir"])
     diag = json.loads((work / "diagnosis.json").read_text())
     z = np.load(work / "wsi_directions.npz")
+    if a.cand not in diag["candidates"]:
+        raise SystemExit(f"candidate {a.cand} not in diagnosis.json: {sorted(diag['candidates'])}")
     layers_sel = diag["candidates"][a.cand]
     out = Path(a.out_dir) if a.out_dir else work / f"wsi-fix-{a.cand}-a{a.alpha:g}"
     if out.exists():
@@ -531,13 +535,14 @@ def main() -> None:
     d = sub.add_parser("diagnose")
     d.add_argument("--work", required=True)
     d.add_argument("--top-layers", type=int, default=2)
+    d.add_argument("--fa-layers", type=int, default=0, help="also add a candidate with this many full-attention layers")
     d.add_argument("--neurons", type=int, default=64)
     d.add_argument("--after-onset", type=int, default=768, help="tokens kept after the first looping token")
     d.add_argument("--max-seq", type=int, default=4096)
     b = sub.add_parser("build")
     b.add_argument("--work", required=True)
     b.add_argument("--alpha", type=float, required=True)
-    b.add_argument("--cand", default="top", choices=["top", "late", "fa"])
+    b.add_argument("--cand", default="top", help="a key of diagnosis.json candidates: top, late, fa, fa3, ...")
     b.add_argument("--out-dir")
     m = sub.add_parser("plan-moi")
     m.add_argument("--work", required=True)
