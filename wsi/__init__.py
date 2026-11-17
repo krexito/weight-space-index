@@ -24,10 +24,15 @@ from .query import WeightSpaceIndex, load_index
 from .tracer import (
     CompactTrace,
     capture_compact,
+    dequantize_block_fp4,
     dequantize_block_int4,
+    dequantize_block_ternary,
     diff_traces,
+    hadamard_transform,
     quantization_error,
+    quantize_block_fp4,
     quantize_block_int4,
+    quantize_block_ternary,
 )
 
 __all__ = [
@@ -42,11 +47,16 @@ __all__ = [
     "apply_selection",
     "capture_compact",
     "capture_index",
+    "dequantize_block_fp4",
     "dequantize_block_int4",
+    "dequantize_block_ternary",
     "diff_traces",
     "find_mlps",
+    "hadamard_transform",
     "quantization_error",
+    "quantize_block_fp4",
     "quantize_block_int4",
+    "quantize_block_ternary",
     "trace_all",
     "DynamicCircuitPager",
     "MixtureOfIndexes",

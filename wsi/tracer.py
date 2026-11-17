@@ -5,10 +5,9 @@ Pairs `wsi.capture.trace_all` with `WeightSpaceIndex` geometry when global avera
      (e.g., neutral vs. pushback turn, clean vs. trigger prompt). Handles unequal prompt lengths and
      ranks exact layers, attention heads, MLP neurons (`Δact_i * ||W_down[:, i]||`), cache state shifts,
      attention redistribution, and vocabulary readout (`explain_vector`).
-  2. `capture_compact(model, ids, ...)`: scalable token-by-token tracing using micro-block INT4/FP8
-     quantization on residual streams + Top-K sparse contribution-weighted MLP neurons + per-head L2
-     energy, compressing full sequences ~10-40x vs fp32 `trace_all` while preserving loop/drift onset
-     forensics (`detect_loop_onset`, `compare_positions`).
+  2. `capture_compact(model, ids, ...)`: scalable token-by-token tracing using micro-block INT8 / INT4 /
+     E2M1 FP4 (`NVFP4`-style) / optimal L2 1.58-bit Ternary quantization (with optional Walsh-Hadamard
+     rotation to suppress outliers) + Top-K sparse contribution-weighted MLP neurons + per-head L2 energy.
 """
 
 from __future__ import annotations
@@ -16,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -24,26 +24,64 @@ import torch.nn as nn
 
 from .capture import _is_linear, find_blocks, find_mlps, trace_all
 
+_E2M1_POS = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
+_POW3 = (1, 3, 9, 27, 81)
 
-# ----------------------------------------------------------------------------------------------- block quantization
-def quantize_block_int4(x: torch.Tensor, group_size: int = 16) -> tuple[torch.Tensor, torch.Tensor, tuple[int, ...]]:
-    """Micro-block symmetric INT4 quantization (two signed nibbles [-7..7] packed per uint8 byte + fp16 scale).
 
-    Per-group scaling (`group_size=16`, matching micro-scaled FP4 conventions) isolates large outlier
-    channels to their own 16-element group instead of crushing an entire hidden vector to zero.
-    Returns (packed_uint8, scales_fp16, orig_shape).
-    """
-    if group_size % 2 != 0:
-        raise ValueError("group_size must be even for 2-nibble uint8 packing")
+# ----------------------------------------------------------------------------------------------- Hadamard + block quantization
+@lru_cache(maxsize=16)
+def _hadamard_matrix(n: int) -> torch.Tensor:
+    """Normalized n x n Sylvester Hadamard matrix (H @ H.T == I, symmetric orthogonal)."""
+    if n < 1 or (n & (n - 1)) != 0:
+        raise ValueError(f"Hadamard block size must be power of 2, got {n}")
+    h = torch.ones((1, 1), dtype=torch.float32)
+    while h.shape[0] < n:
+        h = torch.cat([torch.cat([h, h], dim=1), torch.cat([h, -h], dim=1)], dim=0)
+    return h / (n ** 0.5)
+
+
+def resolve_hadamard_block(dim: int, requested: int) -> int:
+    """Largest power-of-2 <= requested that divides `dim` (0 disables Hadamard rotation)."""
+    if requested <= 0:
+        return 0
+    b = 1 << (requested.bit_length() - 1)
+    while b > 1 and (dim % b) != 0:
+        b //= 2
+    return b if b > 1 else 0
+
+
+def hadamard_transform(x: torch.Tensor, block: int) -> torch.Tensor:
+    """Orthonormal block Walsh-Hadamard transform on the last axis (inverse == forward)."""
+    if block <= 1 or (x.shape[-1] % block) != 0:
+        return x.float()
+    h = _hadamard_matrix(block).to(device=x.device, dtype=torch.float32)
+    orig = x.shape
+    return (x.float().reshape(-1, block) @ h).reshape(orig)
+
+
+def _pad_to_blocks(x: torch.Tensor, group_size: int) -> tuple[torch.Tensor, tuple[int, ...]]:
     orig_shape = tuple(x.shape)
     flat = x.detach().float().reshape(-1)
     pad = (-flat.numel()) % group_size
     if pad:
         flat = torch.cat([flat, torch.zeros(pad, device=flat.device, dtype=torch.float32)])
-    blocks = flat.reshape(-1, group_size)
-    max_abs = blocks.abs().amax(dim=1, keepdim=True)
-    scales = (max_abs / 7.0).clamp_min(1e-8)
-    q = torch.round(blocks / scales).clamp(-7, 7).to(torch.int8) + 8  # map [-7..7] -> [1..15]
+    return flat.reshape(-1, group_size), orig_shape
+
+
+def _unpad_shape(flat: torch.Tensor, orig_shape: tuple[int, ...]) -> torch.Tensor:
+    n = 1
+    for s in orig_shape:
+        n *= s
+    return flat.reshape(-1)[:n].reshape(orig_shape)
+
+
+def quantize_block_int4(x: torch.Tensor, group_size: int = 16) -> tuple[torch.Tensor, torch.Tensor, tuple[int, ...]]:
+    """Micro-block symmetric INT4 quantization (signed nibbles [-7..7] packed 2/byte + fp16 scale)."""
+    if group_size % 2 != 0:
+        raise ValueError("group_size must be even for 2-nibble uint8 packing")
+    blocks, orig_shape = _pad_to_blocks(x, group_size)
+    scales = (blocks.abs().amax(dim=1, keepdim=True) / 7.0).clamp_min(1e-8)
+    q = torch.round(blocks / scales).clamp(-7, 7).to(torch.int8) + 8
     q_u8 = q.to(torch.uint8).reshape(-1, 2)
     packed = ((q_u8[:, 0] & 0x0F) | ((q_u8[:, 1] & 0x0F) << 4)).cpu()
     return packed, scales.squeeze(1).to(torch.float16).cpu(), orig_shape
@@ -54,20 +92,71 @@ def dequantize_block_int4(packed: torch.Tensor, scales: torch.Tensor, orig_shape
     lo = (packed & 0x0F).to(torch.int8) - 8
     hi = ((packed >> 4) & 0x0F).to(torch.int8) - 8
     q = torch.stack([lo, hi], dim=1).reshape(-1, group_size).float()
-    deq = (q * scales.float().unsqueeze(1)).reshape(-1)
-    n = 1
-    for s in orig_shape:
-        n *= s
-    return deq[:n].reshape(orig_shape)
+    return _unpad_shape(q * scales.float().unsqueeze(1), orig_shape)
+
+
+def quantize_block_fp4(x: torch.Tensor, group_size: int = 16) -> tuple[torch.Tensor, torch.Tensor, tuple[int, ...]]:
+    """Micro-block E2M1 FP4 quantization (`NVFP4`-style grid +-{0, 0.5, 1, 1.5, 2, 3, 4, 6}, 2/byte + fp16 scale)."""
+    if group_size % 2 != 0:
+        raise ValueError("group_size must be even for 2-nibble uint8 packing")
+    blocks, orig_shape = _pad_to_blocks(x, group_size)
+    grid = torch.tensor(_E2M1_POS, device=blocks.device, dtype=torch.float32)
+    scales = (blocks.abs().amax(dim=1, keepdim=True) / 6.0).clamp_min(1e-8)
+    normed = blocks / scales
+    mags = normed.abs().unsqueeze(-1)
+    idx = (mags - grid).abs().argmin(dim=-1).to(torch.uint8)  # 0..7
+    sign = (normed < 0).to(torch.uint8) << 3
+    nib = (sign | idx).reshape(-1, 2)
+    packed = (nib[:, 0] | (nib[:, 1] << 4)).cpu()
+    return packed, scales.squeeze(1).to(torch.float16).cpu(), orig_shape
+
+
+def dequantize_block_fp4(packed: torch.Tensor, scales: torch.Tensor, orig_shape: tuple[int, ...],
+                         group_size: int = 16) -> torch.Tensor:
+    grid = torch.tensor(_E2M1_POS, device=packed.device, dtype=torch.float32)
+    nibs = torch.stack([packed & 0x0F, (packed >> 4) & 0x0F], dim=1).reshape(-1, group_size)
+    vals = grid[(nibs & 0x07).long()] * torch.where((nibs & 0x08) != 0, -1.0, 1.0)
+    return _unpad_shape(vals * scales.float().unsqueeze(1), orig_shape)
+
+
+def quantize_block_ternary(x: torch.Tensor, group_size: int = 16) -> tuple[torch.Tensor, torch.Tensor, tuple[int, ...]]:
+    """L2-optimal per-block 1.58-bit ternary ({-1, 0, +1}) packed at 5 trits per uint8 byte + fp16 block scale."""
+    blocks, orig_shape = _pad_to_blocks(x, group_size)
+    abs_b = blocks.abs()
+    order = abs_b.argsort(dim=1, descending=True)
+    sorted_abs = abs_b.gather(1, order)
+    csum = sorted_abs.cumsum(dim=1)
+    ks = torch.arange(1, group_size + 1, device=blocks.device, dtype=torch.float32)[None, :]
+    best_idx = (csum * csum / ks).argmax(dim=1)  # exact global optimum per block over top-m subsets
+    best_k = (best_idx + 1).float()
+    best_csum = csum.gather(1, best_idx.unsqueeze(1)).squeeze(1)
+    scales = (best_csum / best_k).clamp_min(1e-8)
+
+    # Set non-zero ternary sign on the winning top-m elements of each block
+    rank_in_block = order.argsort(dim=1)
+    active = rank_in_block <= best_idx.unsqueeze(1)
+    trits = torch.where(active, torch.where(blocks >= 0, 2, 0), 1).to(torch.uint8).reshape(-1)  # 0=-1, 1=0, 2=+1
+
+    pad5 = (-trits.numel()) % 5
+    if pad5:
+        trits = torch.cat([trits, torch.ones(pad5, device=trits.device, dtype=torch.uint8)])
+    pow3 = torch.tensor(_POW3, device=trits.device, dtype=torch.uint8)
+    packed = (trits.reshape(-1, 5) * pow3).sum(dim=1).to(torch.uint8).cpu()
+    return packed, scales.to(torch.float16).cpu(), orig_shape
+
+
+def dequantize_block_ternary(packed: torch.Tensor, scales: torch.Tensor, orig_shape: tuple[int, ...],
+                             group_size: int = 16) -> torch.Tensor:
+    n_elems = scales.numel() * group_size
+    p3 = torch.tensor(_POW3, device=packed.device, dtype=torch.int32)[None, :]
+    trits = ((packed.to(torch.int32).unsqueeze(1) // p3) % 3).reshape(-1)[:n_elems]
+    vals = (trits - 1).float().reshape(-1, group_size)
+    return _unpad_shape(vals * scales.float().unsqueeze(1), orig_shape)
 
 
 def quantize_fp8_or_int8(x: torch.Tensor, group_size: int = 16) -> tuple[torch.Tensor, torch.Tensor | None, str]:
     """Quantize to 1 byte/element (micro-block INT8 for portability; scale isolates outliers)."""
-    flat = x.detach().float().reshape(-1)
-    pad = (-flat.numel()) % group_size
-    if pad:
-        flat = torch.cat([flat, torch.zeros(pad, device=flat.device, dtype=torch.float32)])
-    blocks = flat.reshape(-1, group_size)
+    blocks, _ = _pad_to_blocks(x, group_size)
     scales = (blocks.abs().amax(dim=1, keepdim=True) / 127.0).clamp_min(1e-8)
     q = torch.round(blocks / scales).clamp(-127, 127).to(torch.int8).cpu()
     return q.reshape(-1), scales.squeeze(1).to(torch.float16).cpu(), "int8_blk"
@@ -75,11 +164,8 @@ def quantize_fp8_or_int8(x: torch.Tensor, group_size: int = 16) -> tuple[torch.T
 
 def dequantize_fp8_or_int8(q: torch.Tensor, scales: torch.Tensor, orig_shape: tuple[int, ...],
                            group_size: int = 16) -> torch.Tensor:
-    deq = (q.reshape(-1, group_size).float() * scales.float().unsqueeze(1)).reshape(-1)
-    n = 1
-    for s in orig_shape:
-        n *= s
-    return deq[:n].reshape(orig_shape)
+    deq = q.reshape(-1, group_size).float() * scales.float().unsqueeze(1)
+    return _unpad_shape(deq, orig_shape)
 
 
 def quantization_error(x: torch.Tensor, x_hat: torch.Tensor) -> dict[str, float]:
@@ -88,6 +174,41 @@ def quantization_error(x: torch.Tensor, x_hat: torch.Tensor) -> dict[str, float]
     norm = max(xf.norm().item(), 1e-12)
     cos = float(torch.nn.functional.cosine_similarity(xf.unsqueeze(0), hf.unsqueeze(0)).item()) if norm > 1e-12 else 1.0
     return {"rel_l2": round(diff / norm, 6), "cosine": round(cos, 6)}
+
+
+def _encode_resid(x: torch.Tensor, quant: str, group_size: int, had_block: int) -> dict[str, Any]:
+    shp = list(x.shape)
+    hb = resolve_hadamard_block(x.shape[-1], had_block)
+    xw = hadamard_transform(x, hb) if hb > 1 else x
+    if quant == "int4":
+        d, s, _ = quantize_block_int4(xw, group_size)
+        return {"data": d, "scales": s, "shape": shp}
+    if quant == "fp4":
+        d, s, _ = quantize_block_fp4(xw, group_size)
+        return {"data": d, "scales": s, "shape": shp}
+    if quant == "ternary":
+        d, s, _ = quantize_block_ternary(xw, group_size)
+        return {"data": d, "scales": s, "shape": shp}
+    if quant == "int8":
+        q, s, _ = quantize_fp8_or_int8(xw, group_size)
+        return {"data": q, "scales": s, "shape": shp}
+    return {"data": xw.to(torch.float16).cpu(), "scales": None, "shape": shp}
+
+
+def _decode_resid(r: dict[str, Any], quant: str, group_size: int, had_block: int) -> torch.Tensor:
+    shp = tuple(r["shape"])
+    if quant == "int4":
+        x = dequantize_block_int4(r["data"], r["scales"], shp, group_size)
+    elif quant == "fp4":
+        x = dequantize_block_fp4(r["data"], r["scales"], shp, group_size)
+    elif quant == "ternary":
+        x = dequantize_block_ternary(r["data"], r["scales"], shp, group_size)
+    elif quant == "int8":
+        x = dequantize_fp8_or_int8(r["data"], r["scales"], shp, group_size)
+    else:
+        x = r["data"].float()
+    hb = resolve_hadamard_block(shp[-1], had_block)
+    return hadamard_transform(x, hb) if hb > 1 else x
 
 
 # ----------------------------------------------------------------------------------------------- helpers
@@ -139,7 +260,7 @@ def _find_attn_out_projs(model: nn.Module, hidden: int) -> dict[str, tuple[nn.Mo
 # ----------------------------------------------------------------------------------------------- CompactTrace
 @dataclass
 class CompactTrace:
-    """Scalable token-by-token activation trace combining micro-block INT4/INT8 residuals, Top-K MLP units,
+    """Scalable token-by-token activation trace combining micro-block quantized residuals, Top-K MLP units,
     and per-head attention energies across full sequences."""
 
     seq_len: int
@@ -148,18 +269,14 @@ class CompactTrace:
     resid_quant: str
     group_size: int
     top_k_mlp: int
-    resid: dict[int, dict[str, Any]]  # layer -> {"data": Tensor, "scales": Tensor | None, "shape": tuple}
-    mlp_topk: dict[int, dict[str, torch.Tensor]]  # layer -> {"idx": int32[T, K], "val": fp16[T, K], "energy_frac": fp16[T]}
-    head_norms: dict[str, dict[str, Any]]  # mod_name -> {"layer": int|None, "n_heads": int, "l2": fp16[T, H]}
+    resid: dict[int, dict[str, Any]]
+    mlp_topk: dict[int, dict[str, torch.Tensor]]
+    head_norms: dict[str, dict[str, Any]]
+    hadamard_block: int = 0
     meta: dict[str, Any] = field(default_factory=dict)
 
     def dequant_resid(self, layer: int) -> torch.Tensor:
-        r = self.resid[layer]
-        if self.resid_quant == "int4":
-            return dequantize_block_int4(r["data"], r["scales"], tuple(r["shape"]), self.group_size)
-        if self.resid_quant == "int8":
-            return dequantize_fp8_or_int8(r["data"], r["scales"], tuple(r["shape"]), self.group_size)
-        return r["data"].float()
+        return _decode_resid(self.resid[layer], self.resid_quant, self.group_size, self.hadamard_block)
 
     def size_bytes(self) -> int:
         b = sum(r["data"].numel() * r["data"].element_size()
@@ -249,7 +366,8 @@ class CompactTrace:
         (p / "compact_trace.json").write_text(json.dumps({
             "seq_len": self.seq_len, "n_layers": self.n_layers, "hidden_size": self.hidden_size,
             "resid_quant": self.resid_quant, "group_size": self.group_size, "top_k_mlp": self.top_k_mlp,
-            "resid_shapes": resid_shapes, "heads": head_meta, "meta": self.meta,
+            "hadamard_block": self.hadamard_block, "resid_shapes": resid_shapes, "heads": head_meta,
+            "meta": self.meta,
         }, indent=2), encoding="utf-8")
         return p
 
@@ -270,8 +388,11 @@ class CompactTrace:
                                "energy_frac": tens[f"mlp.{l}.energy_frac"]}
         for idx, hm in info["heads"].items():
             head_norms[hm["module"]] = {"layer": hm["layer"], "n_heads": hm["n_heads"], "l2": tens[f"head.{idx}"]}
-        return cls(info["seq_len"], info["n_layers"], info["hidden_size"], info["resid_quant"],
-                   info["group_size"], info["top_k_mlp"], resid, mlp_topk, head_norms, info.get("meta", {}))
+        return cls(
+            info["seq_len"], info["n_layers"], info["hidden_size"], info["resid_quant"],
+            info["group_size"], info["top_k_mlp"], resid, mlp_topk, head_norms,
+            hadamard_block=info.get("hadamard_block", 0), meta=info.get("meta", {}),
+        )
 
 
 @torch.no_grad()
@@ -282,6 +403,7 @@ def capture_compact(
     top_k_mlp: int = 256,
     resid_quant: str = "int8",
     group_size: int = 16,
+    hadamard_block: int = 0,
     max_tokens: int | None = None,
 ) -> CompactTrace:
     """Record a compressed token-by-token trace: quantized residuals, Top-K weighted MLP units, and head L2 norms."""
@@ -304,7 +426,6 @@ def capture_compact(
         li = _layer_idx_from_name(g.down)
         mlp_by_down[g.down] = li if li is not None else len(mlp_by_down)
 
-    # Infer hidden width cleanly from the first available linear out_features
     d0 = mods[mlps[0].down]
     hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
     attns = _find_attn_out_projs(model, hidden)
@@ -319,15 +440,8 @@ def capture_compact(
             t = out[0] if isinstance(out, tuple) else out
             if not isinstance(t, torch.Tensor):
                 return
-            x = t.detach().reshape(-1, t.shape[-1])  # [T, H]
-            if resid_quant == "int4":
-                packed, sc, shp = quantize_block_int4(x, group_size)
-                resid_out[l] = {"data": packed, "scales": sc, "shape": list(shp)}
-            elif resid_quant == "int8":
-                q, sc, _ = quantize_fp8_or_int8(x, group_size)
-                resid_out[l] = {"data": q, "scales": sc, "shape": list(x.shape)}
-            else:
-                resid_out[l] = {"data": x.to(torch.float16).cpu(), "scales": None, "shape": list(x.shape)}
+            x = t.detach().reshape(-1, t.shape[-1])
+            resid_out[l] = _encode_resid(x, resid_quant, group_size, hadamard_block)
 
         handles.append(blk.register_forward_hook(bhook))
 
@@ -336,15 +450,16 @@ def capture_compact(
         wn = down_norms[dname]
 
         def mhook(mod, inp, out, li=li, wn=wn):
-            x = inp[0].detach().reshape(-1, inp[0].shape[-1]).float()  # [T, U]
+            x = inp[0].detach().reshape(-1, inp[0].shape[-1]).float()
+            idx_dt = torch.uint16 if x.shape[1] <= 65_535 else torch.int32
             contrib = x * wn.to(x.device)
             k = min(top_k_mlp, contrib.shape[1])
-            vals, idx = contrib.abs().topk(k, dim=1)
+            _, idx = contrib.abs().topk(k, dim=1)
             signed = contrib.gather(1, idx)
             tot_sq = (contrib * contrib).sum(dim=1).clamp_min(1e-12)
             kept_sq = (signed * signed).sum(dim=1)
             mlp_topk_out[li] = {
-                "idx": idx.to(torch.int32).cpu(),
+                "idx": idx.to(idx_dt).cpu(),
                 "val": signed.to(torch.float16).cpu(),
                 "energy_frac": (kept_sq / tot_sq).sqrt().to(torch.float16).cpu(),
             }
@@ -355,7 +470,7 @@ def capture_compact(
         li = _layer_idx_from_name(aname)
 
         def ahook(mod, inp, out, aname=aname, li=li, nh=nh):
-            x = inp[0].detach().reshape(-1, inp[0].shape[-1]).float()  # [T, nh * hd]
+            x = inp[0].detach().reshape(-1, inp[0].shape[-1]).float()
             l2 = x.reshape(x.shape[0], nh, -1).norm(dim=2)
             head_out[aname] = {"layer": li, "n_heads": nh, "l2": l2.to(torch.float16).cpu()}
 
@@ -367,7 +482,8 @@ def capture_compact(
         for h in handles:
             h.remove()
 
-    return CompactTrace(T, n_layers, hidden, resid_quant, group_size, top_k_mlp, resid_out, mlp_topk_out, head_out)
+    return CompactTrace(T, n_layers, hidden, resid_quant, group_size, top_k_mlp,
+                        resid_out, mlp_topk_out, head_out, hadamard_block=hadamard_block)
 
 
 # ----------------------------------------------------------------------------------------------- dense trace_all diff
@@ -408,7 +524,7 @@ def diff_traces(
         if l > 0 and dn > peak_norm:
             peak_layer, peak_vec, peak_norm = l, dv, dn
 
-    # 2. Causal MLP neuron shifts: delta_in[i] * ||W_down[:, i]||
+    # 2. Causal MLP neuron shifts: delta_in[i] * ||W_down[:, i]|| (only call WSI explain on the final top_k)
     mlps = find_mlps(model)
     mlp_hits = []
     for g in mlps:
@@ -451,20 +567,15 @@ def diff_traces(
         da = _at_pos(tr_a[key], pos_a)
         db = _at_pos(tr_b[key], pos_b)
         dx = (db - da).reshape(nh, -1)
-        w = am.weight.detach().float().cpu()  # Linear: [H, nh*hd], Conv1D: [nh*hd, H]
+        w = am.weight.detach().float().cpu()
         w_heads = w.t().reshape(nh, -1, w.shape[0]) if isinstance(am, nn.Linear) else w.reshape(nh, -1, w.shape[1])
-        # out_h = dx[h] @ w_heads[h] -> [nh, H]
         out_deltas = torch.einsum("hd,hdo->ho", dx, w_heads)
         norms = out_deltas.norm(dim=1)
         li = _layer_idx_from_name(aname)
         for hid in norms.topk(min(3, nh)).indices.tolist():
-            row = {
-                "layer": li, "module": aname, "head": int(hid),
-                "out_delta_norm": round(float(norms[hid]), 4),
-            }
+            row = {"layer": li, "module": aname, "head": int(hid), "out_delta_norm": round(float(norms[hid]), 4)}
             if li is not None and f"attentions.{li}" in tr_a and f"attentions.{li}" in tr_b:
-                tb_att = tr_b[f"attentions.{li}"]
-                ta_att = tr_a[f"attentions.{li}"]
+                tb_att, ta_att = tr_b[f"attentions.{li}"], tr_a[f"attentions.{li}"]
                 if tb_att.dim() == 4 and hid < tb_att.shape[1]:
                     att_a = ta_att[0, hid, pos_a].float()
                     att_b = tb_att[0, hid, pos_b].float()

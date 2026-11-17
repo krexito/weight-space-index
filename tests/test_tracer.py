@@ -21,10 +21,15 @@ from wsi import (  # noqa: E402
     WeightSpaceIndex,
     capture_compact,
     CompactTrace,
+    dequantize_block_fp4,
     dequantize_block_int4,
+    dequantize_block_ternary,
     diff_traces,
+    hadamard_transform,
     quantization_error,
+    quantize_block_fp4,
     quantize_block_int4,
+    quantize_block_ternary,
 )
 from wsi.tracer import dequantize_fp8_or_int8, quantize_fp8_or_int8  # noqa: E402
 
@@ -120,6 +125,26 @@ def test_block_int4_isolates_outliers() -> None:
     x_hat8 = dequantize_fp8_or_int8(q8, sc8, shp, group_size=16)
     assert quantization_error(x, x_hat8)["cosine"] > 0.9999
 
+    # FP4 E2M1 + Ternary: Hadamard rotation improves large-group (group_size=64) outlier tolerance
+    x_out = torch.randn(40, 128)
+    x_out[:, 3] = 15.0
+    x_out[:, 17] = -12.0
+    xh = hadamard_transform(x_out, block=64)
+    assert quantization_error(x_out, hadamard_transform(xh, block=64))["rel_l2"] < 1e-5
+    p_fp4, s_fp4, _ = quantize_block_fp4(xh, group_size=64)
+    xh_fp4 = hadamard_transform(dequantize_block_fp4(p_fp4, s_fp4, shp, group_size=64), block=64)
+    e_raw_fp4 = quantization_error(x_out, dequantize_block_fp4(*quantize_block_fp4(x_out, group_size=64), group_size=64))
+    e_had_fp4 = quantization_error(x_out, xh_fp4)
+    assert e_had_fp4["rel_l2"] < e_raw_fp4["rel_l2"] and e_had_fp4["cosine"] > 0.99
+
+    p_ter, s_ter, _ = quantize_block_ternary(xh, group_size=64)
+    xh_ter = hadamard_transform(dequantize_block_ternary(p_ter, s_ter, shp, group_size=64), block=64)
+    e_raw_ter = quantization_error(x_out, dequantize_block_ternary(*quantize_block_ternary(x_out, group_size=64), group_size=64))
+    e_had_ter = quantization_error(x_out, xh_ter)
+    assert e_had_ter["rel_l2"] < e_raw_ter["rel_l2"] and e_had_ter["cosine"] > 0.90
+    # Verify 5-trits-per-byte ternary packed buffer is strictly smaller than 4-bit packed buffer
+    assert p_ter.numel() < p_fp4.numel()
+
 
 def test_compact_trace_roundtrip_and_loop_onset() -> None:
     torch.manual_seed(1)
@@ -128,7 +153,11 @@ def test_compact_trace_roundtrip_and_loop_onset() -> None:
     ids = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 5, 6, 7, 8, 5, 6, 7, 8]])
     with tempfile.TemporaryDirectory() as td:
         tr8 = capture_compact(model, ids, top_k_mlp=16, group_size=16)  # default: int8
-        assert tr8.resid_quant == "int8"
+        assert tr8.resid_quant == "int8" and tr8.mlp_topk[0]["idx"].dtype == torch.uint16
+        tr_ter = capture_compact(model, ids, top_k_mlp=16, resid_quant="ternary", hadamard_block=32, group_size=16)
+        assert tr_ter.hadamard_block == 32
+        tr_ter.save(td + "_ter")
+        assert CompactTrace.load(td + "_ter").hadamard_block == 32
         tr = capture_compact(model, ids, top_k_mlp=16, resid_quant="int4", group_size=16)
         tr.save(td)
         loaded = CompactTrace.load(td)
