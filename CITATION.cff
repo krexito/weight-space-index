@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use Weight-Space Index (wsi) or Mixture of Indexes (MoI), please cite it as below."
+title: "Weight-Space Index (wsi) and Mixture of Indexes (MoI)"
+abstract: >-
+  Weight-Space Index (wsi) indexes the circuits of a transformer directly from its weights.
+  Mixture of Indexes (MoI) uses those indexes to change what a model loads or runs depending on the task.
+  Additive MoI keeps every weight and switches small weight edits on only when a router detects that they are
+  needed (for example, a reasoning-loop fix that WSI discovers from the base model alone).
+  Compensated Selective MoI loads only a task's subset of MLP neurons and refits the kept down-projection
+  columns from about 20k calibration tokens, which yields smaller and faster real checkpoints.
+authors:
+  - given-names: Ulises
+    family-names: Cardella
+    alias: Krexito
+type: software
+repository-code: "https://github.com/krexito/weight-space-index"
+url: "https://github.com/krexito/weight-space-index"
+license: Apache-2.0
+version: 0.2.0
+date-released: "2026-11-15"
+keywords:
+  - mixture of indexes
+  - MoI
+  - weight-space programming
+  - mechanistic interpretability
+  - model editing
+  - neuron pruning
+  - LLM inference
+references:
+  - type: software
+    title: "wsr: Weight-Space Reading"
+    authors:
+      - family-names: Kocabay
+        given-names: Şuayp Talha
+    repository-code: "https://github.com/suayptalha/wsr"
+    year: 2026
