@@ -114,7 +114,7 @@ def main() -> None:
     dense_bytes_b = sum(v.numel() * v.element_size() for v in tr_dense_b.values())
     del tr_dense_a, tr_dense_b
     gc.collect()
-    dense_diff = diff_traces(model, ids_neu, ids_psh, wsi=I, pos_a=-1, pos_b=-1, max_tokens=256, top_k=10)
+    dense_diff = diff_traces(model, ids_neu, ids_psh, wsi=I, pos_a=-1, pos_b=-1, max_tokens=256, top_k=10, compact=False)
     dense_s = round(time.perf_counter() - t0, 2)
 
     # 2. CompactTrace captures (default profile: int8+had64 resid, K1024 fp4, attn Top-16, cache int8)

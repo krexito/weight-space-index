@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .indexer import build_index
 from .query import WeightSpaceIndex
+from .tracer import CompactTrace, discover_compact_dirs
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,6 +80,35 @@ def main(argv: list[str] | None = None) -> int:
     p_edit.add_argument("model_dir", help="Path to the checkpoint directory")
     p_edit.add_argument("edit_path", help="Path to edit.safetensors or edit.json")
     p_edit.add_argument("-i", "--index-dir", help="Optional path to prebuilt index directory")
+
+    # wsi diff-compact
+    p_dc = sub.add_parser("diff-compact", help="X-ray diff two saved CompactTrace directories with WSI grounding")
+    p_dc.add_argument("model_dir", help="Path to the checkpoint directory")
+    p_dc.add_argument("trace_a", help="Path to baseline CompactTrace directory")
+    p_dc.add_argument("trace_b", help="Path to target CompactTrace directory")
+    p_dc.add_argument("--pos-a", type=int, default=-1, help="Token position in trace_a (default: -1)")
+    p_dc.add_argument("--pos-b", type=int, default=-1, help="Token position in trace_b (default: -1)")
+    p_dc.add_argument("--top-k", type=int, default=10, help="Top items per signal (default: 10)")
+    p_dc.add_argument("-i", "--index-dir", help="Optional path to prebuilt index directory")
+
+    # wsi discover-circuit
+    p_disc = sub.add_parser(
+        "discover-circuit",
+        help="Discover a multi-layer circuit & .moipatch from saved CompactTraces + WSI weight resonance",
+    )
+    p_disc.add_argument("model_dir", help="Path to the checkpoint directory")
+    p_disc.add_argument("--trace", action="append", default=[], required=True, help="CompactTrace directory (repeatable)")
+    p_disc.add_argument("--loop-trace", action="append", default=[], help="Looping CompactTrace directory (repeatable)")
+    p_disc.add_argument("--alpha", type=float, default=6.0, help="Edit strength alpha (default: 6.0)")
+    p_disc.add_argument("--top-k-neurons", type=int, default=64, help="Neurons per edited layer (default: 64)")
+    p_disc.add_argument(
+        "--variant",
+        default="wsi_fa3",
+        choices=["wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"],
+        help="Which discovered patch variant to save with -o (default: wsi_fa3)",
+    )
+    p_disc.add_argument("-o", "--out", default=None, help="Optional output path for the synthesized .moipatch file")
+    p_disc.add_argument("-i", "--index-dir", help="Optional path to prebuilt index directory")
 
     # wsi diff
     p_diff = sub.add_parser("diff", help="Diff two checkpoints of the same architecture (Base vs Fine-Tune)")
@@ -205,6 +235,21 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(idx.search_transduction(iq, oq), indent=2))
     elif args.cmd == "explain-edit":
         print(json.dumps(idx.explain_edit(args.edit_path), indent=2))
+    elif args.cmd == "diff-compact":
+        ct_a = CompactTrace.load(args.trace_a)
+        ct_b = CompactTrace.load(args.trace_b)
+        print(json.dumps(idx.diff_compact(ct_a, ct_b, pos_a=args.pos_a, pos_b=args.pos_b, top_k=args.top_k), indent=2))
+    elif args.cmd == "discover-circuit":
+        out = discover_compact_dirs(
+            idx,
+            args.trace,
+            loop_trace_dirs=args.loop_trace or None,
+            alpha=args.alpha,
+            top_k_neurons=args.top_k_neurons,
+            variant=args.variant,
+            save_patch_path=args.out,
+        )
+        print(json.dumps(out, indent=2))
 
     return 0
 

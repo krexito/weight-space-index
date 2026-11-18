@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from wsi import (  # noqa: E402
+    MoIPatch,
     WeightSpaceIndex,
     capture_compact,
     CompactTrace,
@@ -26,6 +27,7 @@ from wsi import (  # noqa: E402
     dequantize_block_ternary,
     diff_compact,
     diff_traces,
+    discover_compact_circuit,
     hadamard_transform,
     quantization_error,
     quantize_block_fp4,
@@ -182,10 +184,11 @@ def test_compact_trace_roundtrip_and_loop_onset() -> None:
     ids = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 5, 6, 7, 8, 5, 6, 7, 8]])
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        # Pareto-optimal defaults: int8+g64+had64 resid, auto Top-K (95% energy) fp4+bitmask/auto MLP (g16), Top-16 attn, int8 cache
+        # Pareto-optimal defaults: int8+g64+had64 resid, auto Top-K (95% energy) fp4+bitmask/auto MLP (g16), int8 heads, Top-16 attn, int8 cache
         tr_def = capture_compact(model, ids)
         assert tr_def.resid_quant == "int8" and tr_def.group_size == 64 and tr_def.hadamard_block == 64
         assert tr_def.mlp_quant == "fp4" and tr_def.mlp_group_size == 16 and 0 < tr_def.top_k_mlp <= 64
+        assert tr_def.head_quant == "int8"
         assert tr_def.meta["top_k_mlp_mode"] == "auto" and tr_def.meta["mlp_energy_target"] == 0.95
         assert tr_def.meta["mlp_mean_energy_frac"] >= 0.95
         assert all(m["mean_energy_frac"] >= 0.95 for m in tr_def.mlp_meta.values())
@@ -195,7 +198,14 @@ def test_compact_trace_roundtrip_and_loop_onset() -> None:
         assert bd["total"] == tr_def.size_bytes() and bd["attn_topk"] > 0 and bd["cache"] > 0
         tr_def.save(root / "default")
         loaded_def = CompactTrace.load(root / "default")
+        assert loaded_def.head_quant == "int8"
         assert loaded_def.byte_breakdown() == bd and loaded_def.meta == tr_def.meta
+        first_head_mod = next(iter(loaded_def.head_norms))
+        h_a, h_b = tr_def.dequant_head_in(first_head_mod), loaded_def.dequant_head_in(first_head_mod)
+        assert h_a is not None and h_b is not None and torch.equal(h_a, h_b)
+        tr_norm = capture_compact(model, ids, head_quant="norm")
+        assert tr_norm.head_quant == "norm" and tr_norm.dequant_head_in(first_head_mod) is None
+        assert tr_norm.size_bytes() < tr_def.size_bytes()
         tr_80 = capture_compact(model, ids, top_k_mlp=0.80)
         tr_99 = capture_compact(model, ids, mlp_energy_target=0.99)
         assert tr_80.meta["top_k_mlp_mode"] == "auto" and tr_80.meta["mlp_energy_target"] == 0.80
@@ -289,27 +299,205 @@ def test_diff_traces_pinpoints_planted_circuit_with_wsi() -> None:
             ids_a = [1, 2, 10]
             ids_b = [1, 2, 3, 4, 15]
             diff = diff_traces(model, ids_a, ids_b, wsi=I, pos_a=-1, pos_b=-1, top_k=5)
-            assert diff["len_a"] == 3 and diff["len_b"] == 5
-            top_mlp = diff["top_mlp_contributors"][0]
-            top_head = diff["top_attention_heads"][0]
-            assert (top_mlp["layer"], top_mlp["unit"]) == (2, 7)
-            assert (top_head["layer"], top_head["head"]) == (1, 2)
-            assert diff["peak_vector_readout"] is not None
-            promoted = [x["token"] for x in diff["peak_vector_readout"]["promoted"]]
-            assert "TARGET_OUT" in promoted
+            dense_diff = diff_traces(model, ids_a, ids_b, wsi=I, pos_a=-1, pos_b=-1, top_k=5, compact=False)
+            for res in (diff, dense_diff):
+                assert res["len_a"] == 3 and res["len_b"] == 5
+                top_mlp = res["top_mlp_contributors"][0]
+                top_head = res["top_attention_heads"][0]
+                assert (top_mlp["layer"], top_mlp["unit"]) == (2, 7)
+                assert (top_head["layer"], top_head["head"]) == (1, 2)
+                assert res["peak_vector_readout"] is not None
+                assert "TARGET_OUT" in [x["token"] for x in res["peak_vector_readout"]["promoted"]]
 
             cdiff = diff_compact(capture_compact(model, ids_a), capture_compact(model, ids_b),
                                  wsi=I, pos_a=-1, pos_b=-1, top_k=5)
             assert cdiff["len_a"] == 3 and cdiff["len_b"] == 5
             assert (cdiff["top_mlp_contributors"][0]["layer"], cdiff["top_mlp_contributors"][0]["unit"]) == (2, 7)
             assert (cdiff["top_attention_heads"][0]["layer"], cdiff["top_attention_heads"][0]["head"]) == (1, 2)
+            assert abs(cdiff["top_attention_heads"][0]["out_delta_norm"] - dense_diff["top_attention_heads"][0]["out_delta_norm"]) < 0.05
             assert "attn_b_top_src_pos" in cdiff["top_attention_heads"][0]
             assert len(cdiff["top_cache_deltas"]) > 0
             assert "TARGET_OUT" in [x["token"] for x in cdiff["peak_vector_readout"]["promoted"]]
+
+
+def test_hybrid_attn_topk_layer_mapping() -> None:
+    class _HybridDummyBlock(nn.Module):
+        def __init__(self, hidden: int, inter: int, has_full_attn: bool) -> None:
+            super().__init__()
+            if has_full_attn:
+                self.self_attn = _TinyAttn(hidden, n_heads=4)
+            else:
+                self.linear_attn = _TinyAttn(hidden, n_heads=4)
+            self.mlp = _TinyMLP(hidden, inter)
+
+        def forward(self, x: torch.Tensor):
+            ao, att = (self.self_attn if hasattr(self, "self_attn") else self.linear_attn)(x)
+            return x + ao + self.mlp(x + ao), att
+
+    class _HybridDummyModel(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.config = SimpleNamespace(model_type="qwen3_5_text", hidden_size=32, num_attention_heads=4)
+            self.model = nn.Module()
+            self.model.embed_tokens = nn.Embedding(32, 32)
+            # Only layers 1 and 3 are full `self_attn`; layers 0 and 2 are `linear_attn`
+            self.model.layers = nn.ModuleList([_HybridDummyBlock(32, 64, has_full_attn=(i in (1, 3))) for i in range(4)])
+
+        def forward(self, input_ids: torch.Tensor, output_attentions: bool = False, use_cache: bool = False):
+            h = self.model.embed_tokens(input_ids)
+            full_atts = []
+            for i, lyr in enumerate(self.model.layers):
+                h, att = lyr(h)
+                if output_attentions and i in (1, 3):
+                    full_atts.append(att)
+            return SimpleNamespace(logits=h, attentions=tuple(full_atts) if output_attentions else None, past_key_values=None)
+
+    m = _HybridDummyModel().eval()
+    ct = capture_compact(m, torch.tensor([[1, 2, 3, 4, 5]]))
+    assert sorted(ct.attn_topk) == [1, 3]
+
+
+def test_discover_compact_circuit() -> None:
+    torch.manual_seed(7)
+    m = _TinyCausalModel(vocab=32, hidden=32, inter=64, n_layers=4, n_heads=4).eval()
+    with torch.no_grad():
+        for p in m.parameters():
+            p.zero_()
+        # Separate healthy token 10 vs looping cue token 15 along dim 0 & 1
+        m.model.embed_tokens.weight[10, 0] = -1.5
+        m.model.embed_tokens.weight[15, 0] = 4.0
+        m.model.embed_tokens.weight[:, 2:] = 0.05 * torch.randn(32, 30)
+        # Small non-zero weights on all layers so every layer has active MLP neurons and non-zero SVD subspaces
+        for l, blk in enumerate(m.model.layers):
+            blk.self_attn.v_proj.weight[:8, 0] = 0.3 + 0.1 * l
+            blk.self_attn.o_proj.weight[1, :8] = 0.3 + 0.1 * l
+            blk.mlp.gate_proj.weight[:, 0] = 0.1
+            blk.mlp.up_proj.weight[:, 1] = 0.2
+            blk.mlp.down_proj.weight[:, :8] = 0.1 * torch.randn(32, 8)
+            blk.mlp.down_proj.weight[l, 0] = 0.8
+        # Strongly resonate layer 1 (origin) and layer 2 (downstream echo) along dim 5
+        for l in (1, 2):
+            m.model.layers[l].mlp.gate_proj.weight[7:15, 0] = 2.0
+            m.model.layers[l].mlp.up_proj.weight[7:15, 1] = 2.0
+            m.model.layers[l].mlp.down_proj.weight[5, 7:15] = 3.0
+        m.lm_head.weight[20, 5] = 4.0
+
+        ids_h = [1, 2, 10, 10, 10, 10, 10, 10]
+        ids_l = [1, 2, 10, 10, 15, 15, 15, 15, 15, 15]
+        ct_h = capture_compact(m, ids_h)
+        ct_l = capture_compact(m, ids_l)
+
+        tuples = [
+            ({"prompt_len": 2, "loop": False, "onset_resp": None}, ct_h, None),
+            ({"prompt_len": 2, "loop": True, "onset_resp": 2}, ct_l, None),
+        ]
+        res_model = discover_compact_circuit(tuples, model=m, alpha=1.5, top_k_neurons=8)
+        assert isinstance(res_model["patch"], MoIPatch)
+        assert set(["wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"]).issubset(res_model["patches"])
+        assert len(res_model["wsi_pair_layers"]) == 2 and res_model["wsi_resonant_dst"] is not None
+        hp = res_model["patch"].attach(m)
+        hp.on()
+        assert not hp.check_restored()
+        hp.off()
+        assert hp.check_restored() and hp.fingerprint_ok()
+
+        with tempfile.TemporaryDirectory() as td:
+            mpath = Path(td)
+            save_file(m.state_dict(), str(mpath / "model.safetensors"))
+            (mpath / "config.json").write_text(json.dumps({
+                "model_type": "llama", "hidden_size": 32, "intermediate_size": 64,
+                "num_hidden_layers": 4, "num_attention_heads": 4, "vocab_size": 32,
+            }))
+            (mpath / "tokenizer.json").write_text(json.dumps({"model": {"vocab": {f"tok_{i}": i for i in range(32)}}}))
+            I = WeightSpaceIndex.from_model(mpath)
+
+            res_wsi = I.discover_compact_circuit([(ct_h, 2, None), (ct_l, 2, 2)], alpha=1.5, top_k_neurons=8)
+            assert res_wsi["mlp_ranked"] == res_model["mlp_ranked"]
+            assert res_wsi["hybrid_ranked"] == res_model["hybrid_ranked"]
+            assert res_wsi["wsi_pair_layers"] == res_model["wsi_pair_layers"]
+            assert res_wsi["wsi_fa3_layers"] == res_model["wsi_fa3_layers"]
+            hw = res_wsi["patch"].attach(m)
+            hw.on()
+            assert not hw.check_restored()
+            hw.off()
+            assert hw.check_restored() and hw.fingerprint_ok()
+
+            # Also accept raw CompactTrace lists via `traces` + `loop_traces`
+            res_raw = I.discover_compact_circuit([ct_h], loop_traces=[ct_l], alpha=1.5, top_k_neurons=8)
+            assert isinstance(res_raw["patch"], MoIPatch) and len(res_raw["layer_stats"]) > 0
+            cd = I.diff_compact(ct_h, ct_l, pos_a=-1, pos_b=-1, top_k=3)
+            assert len(cd["top_mlp_contributors"]) == 3
+
+            # Verify CLI (`wsi.cli.main`) and MCP (`wsi.mcp_server.handle_rpc_message`) integration
+            ct_h_dir = mpath / "ct_h"
+            ct_l_dir = mpath / "ct_l"
+            ct_h.save(ct_h_dir)
+            ct_l.save(ct_l_dir)
+
+            import contextlib
+            import io
+            from wsi.cli import main as cli_main
+            from wsi.mcp_server import handle_rpc_message
+
+            cli_patch = mpath / "cli_fix.moipatch"
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc_dc = cli_main(["diff-compact", str(mpath), str(ct_h_dir), str(ct_l_dir), "--top-k", "3"])
+            assert rc_dc == 0
+            cli_dc = json.loads(buf.getvalue())
+            assert len(cli_dc["top_mlp_contributors"]) == 3
+
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc_disc = cli_main([
+                    "discover-circuit", str(mpath),
+                    "--trace", str(ct_h_dir),
+                    "--loop-trace", str(ct_l_dir),
+                    "--alpha", "1.5",
+                    "--top-k-neurons", "8",
+                    "-o", str(cli_patch),
+                ])
+            assert rc_disc == 0 and cli_patch.exists()
+            cli_disc = json.loads(buf.getvalue())
+            assert cli_disc["saved_patch"] == str(cli_patch)
+            assert MoIPatch.load(cli_patch).attach(m).fingerprint_ok()
+
+            list_resp = handle_rpc_message({"jsonrpc": "2.0", "id": 10, "method": "tools/list"})
+            t_names = {t["name"] for t in list_resp["result"]["tools"]}
+            assert "wsi_diff_compact" in t_names and "wsi_discover_compact_circuit" in t_names
+            assert len(t_names) == 13
+
+            mcp_dc = handle_rpc_message({
+                "jsonrpc": "2.0", "id": 11, "method": "tools/call",
+                "params": {"name": "wsi_diff_compact", "arguments": {
+                    "model_dir": str(mpath), "trace_a_dir": str(ct_h_dir), "trace_b_dir": str(ct_l_dir), "top_k": 3,
+                }},
+            })
+            assert not mcp_dc["result"]["isError"]
+            assert len(json.loads(mcp_dc["result"]["content"][0]["text"])["top_mlp_contributors"]) == 3
+
+            mcp_patch = mpath / "mcp_fix.moipatch"
+            mcp_disc = handle_rpc_message({
+                "jsonrpc": "2.0", "id": 12, "method": "tools/call",
+                "params": {"name": "wsi_discover_compact_circuit", "arguments": {
+                    "model_dir": str(mpath),
+                    "trace_dirs": [str(ct_h_dir)],
+                    "loop_trace_dirs": [str(ct_l_dir)],
+                    "alpha": 1.5,
+                    "top_k_neurons": 8,
+                    "save_patch_path": str(mcp_patch),
+                }},
+            })
+            assert not mcp_disc["result"]["isError"] and mcp_patch.exists()
+            mcp_payload = json.loads(mcp_disc["result"]["content"][0]["text"])
+            assert mcp_payload["saved_patch"] == str(mcp_patch)
+            assert MoIPatch.load(mcp_patch).attach(m).fingerprint_ok()
 
 
 if __name__ == "__main__":
     test_block_int4_isolates_outliers()
     test_compact_trace_roundtrip_and_loop_onset()
     test_diff_traces_pinpoints_planted_circuit_with_wsi()
+    test_hybrid_attn_topk_layer_mapping()
+    test_discover_compact_circuit()
     print("ALL TRACER TESTS PASSED!")

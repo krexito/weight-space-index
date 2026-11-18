@@ -17,9 +17,7 @@ Runs in ~4-5 min on Colab L4:
 from __future__ import annotations
 
 import argparse
-import gc
 import json
-import math
 import re
 import sys
 import time
@@ -32,9 +30,8 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from wsi.capture import find_mlps  # noqa: E402
-from wsi.moipatch import Edit, MoIPatch  # noqa: E402
-from wsi.tracer import capture_compact, diff_compact  # noqa: E402
+from wsi.moipatch import MoIPatch  # noqa: E402
+from wsi.tracer import capture_compact, diff_compact, discover_compact_circuit  # noqa: E402
 
 
 HUB_FILES = {
@@ -86,6 +83,18 @@ def _is_correct(txt: str, gold: str) -> bool:
         return abs(float(p) - float(gold)) < 1e-4
     except ValueError:
         return p == gold
+
+
+def _has_gold_anywhere(txt: str, gold: str) -> bool:
+    for raw in re.findall(r"-?\d[\d,]*\.?\d*", txt):
+        cand = raw.replace(",", "")
+        try:
+            if abs(float(cand) - float(gold)) < 1e-4:
+                return True
+        except ValueError:
+            if cand == gold:
+                return True
+    return False
 
 
 def _has_ngram_repeat(ids: list[int], n: int = 8, reps: int = 3) -> bool:
@@ -161,20 +170,6 @@ def _batched_generate(model, tok, questions: list[str], dev: torch.device, max_n
     return rows
 
 
-def _fisher_dir(x_healthy: torch.Tensor, x_loop: torch.Tensor) -> tuple[torch.Tensor, float]:
-    mh, ml = x_healthy.mean(dim=0), x_loop.mean(dim=0)
-    d = ml - mh
-    dn = float(d.norm())
-    if dn < 1e-8:
-        return torch.zeros_like(d), 0.0
-    u = d / dn
-    ph, pl = x_healthy @ u, x_loop @ u
-    vh = float(ph.var(unbiased=False)) if len(ph) > 1 else 0.0
-    vl = float(pl.var(unbiased=False)) if len(pl) > 1 else 0.0
-    score = float((pl.mean() - ph.mean()) ** 2 / max(0.5 * (vh + vl), 1e-8))
-    return u, score
-
-
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--model", default="Qwen/Qwen3.5-0.8B")
@@ -233,129 +228,24 @@ def main() -> None:
     bank_mb = round(sum(ct.size_bytes() for _, ct, _ in traces) / 2**20, 2)
     print(f"Captured {len(traces)} CompactTraces in {cap_s}s | total bank={bank_mb} MiB", flush=True)
 
-    # 3. Offline extraction of healthy vs loop samples from CompactTrace ONLY
-    mods = dict(model.named_modules())
-    mlps = find_mlps(model)
-    n_layers = len(mlps)
-    w_downs = {}
-    d_inter = 0
-    for l, g in enumerate(mlps):
-        w = mods[g.down].weight.detach().float().cpu()  # (D, U)
-        w_downs[l] = w
-        d_inter = w.shape[1]
-
-    healthy_res: dict[int, list[torch.Tensor]] = {l: [] for l in range(n_layers)}
-    loop_res: dict[int, list[torch.Tensor]] = {l: [] for l in range(n_layers)}
-    healthy_y: dict[int, list[torch.Tensor]] = {l: [] for l in range(n_layers)}
-    loop_y: dict[int, list[torch.Tensor]] = {l: [] for l in range(n_layers)}
-    healthy_xsum: dict[int, list[torch.Tensor]] = {l: [] for l in range(n_layers)}
-    loop_xsum: dict[int, list[torch.Tensor]] = {l: [] for l in range(n_layers)}
-    healthy_head: dict[int, list[torch.Tensor]] = {l: [] for l in range(n_layers)}
-    loop_head: dict[int, list[torch.Tensor]] = {l: [] for l in range(n_layers)}
-    healthy_att_focus: dict[int, list[torch.Tensor]] = {}
-    loop_att_focus: dict[int, list[torch.Tensor]] = {}
-
-    for r, ct, onset in traces:
-        T = ct.seq_len
-        p = r["prompt_len"]
-        if r["loop"]:
-            ons = min(p + r["onset_resp"], T - 1)  # token-level onset, always inside the response
-            h_start = min(p, T)
-            h_end = max(h_start, min(ons, p + 96, T))
-            h_idx = torch.arange(h_start, h_end)
-            l_start = max(ons, T - 192)
-            l_idx = torch.arange(l_start, T)
-        else:
-            h_idx = torch.arange(min(p, T), T)
-            l_idx = torch.empty(0, dtype=torch.long)
-
-        for l in range(n_layers):
-            R = ct.dequant_resid(l)
-            if len(h_idx):
-                healthy_res[l].append(R[h_idx])
-            if len(l_idx):
-                loop_res[l].append(R[l_idx])
-
-            idx_m, val_m = ct.dequant_mlp_topk(l)
-            w_raw = w_downs[l]
-            wn = w_raw.norm(dim=0).clamp_min(1e-12)
-            if len(h_idx):
-                ih, vh = idx_m[h_idx], val_m[h_idx]
-                xh = torch.zeros((len(h_idx), d_inter), dtype=torch.float32)
-                xh.scatter_(1, ih, vh / wn[ih])
-                healthy_y[l].append(xh @ w_raw.T)
-                healthy_xsum[l].append(xh.mean(dim=0, keepdim=True))
-            if len(l_idx):
-                il, vl = idx_m[l_idx], val_m[l_idx]
-                xl = torch.zeros((len(l_idx), d_inter), dtype=torch.float32)
-                xl.scatter_(1, il, vl / wn[il])
-                loop_y[l].append(xl @ w_raw.T)
-                loop_xsum[l].append(xl.mean(dim=0, keepdim=True))
-
-        for mod, h in ct.head_norms.items():
-            li = h["layer"]
-            if li is None or li not in healthy_head:
-                continue
-            l2 = h["l2"].float()
-            if len(h_idx):
-                healthy_head[li].append(l2[h_idx])
-            if len(l_idx):
-                loop_head[li].append(l2[l_idx])
-
-        for li in ct.attn_topk:
-            _, a_w = ct.dequant_attn_topk(li)  # (H, T, k_att)
-            # Concentration on top-2 non-BOS targets as a crisp per-head scalar
-            top2_mass = a_w[:, :, : min(2, a_w.shape[-1])].sum(dim=-1).T  # (T, H)
-            if len(h_idx):
-                healthy_att_focus.setdefault(li, []).append(top2_mass[h_idx])
-            if len(l_idx):
-                loop_att_focus.setdefault(li, []).append(top2_mass[l_idx])
-
-    # Rank layers across signals
-    layer_stats = []
-    u_mlp_by_layer = {}
-    top64_by_layer = {}
-    for l in range(n_layers):
-        if not loop_y[l] or not healthy_y[l]:
-            continue
-        yh_t, yl_t = torch.cat(healthy_y[l], dim=0), torch.cat(loop_y[l], dim=0)
-        rh_t, rl_t = torch.cat(healthy_res[l], dim=0), torch.cat(loop_res[l], dim=0)
-        u_m, f_m = _fisher_dir(yh_t, yl_t)
-        u_r, f_r = _fisher_dir(rh_t, rl_t)
-        u_mlp_by_layer[l] = u_m
-
-        # Select 64 neurons with highest directional excess write along u_m
-        dx = torch.cat(loop_xsum[l], dim=0).mean(dim=0) - torch.cat(healthy_xsum[l], dim=0).mean(dim=0)
-        proj_w = u_m @ w_downs[l]  # (U,)
-        neuron_score = dx * proj_w
-        top64_by_layer[l] = neuron_score.topk(64).indices.sort().values
-
-        hh_t = torch.cat(healthy_head[l], dim=0)
-        hl_t = torch.cat(loop_head[l], dim=0)
-        d_head = (hl_t.mean(dim=0) - hh_t.mean(dim=0)).abs() / ((0.5 * (hl_t.var(dim=0, unbiased=False) + hh_t.var(dim=0, unbiased=False))).sqrt().clamp_min(1e-6))
-        head_sep = float(d_head.max())
-
-        attn_sep = 0.0
-        if l in healthy_att_focus and l in loop_att_focus:
-            ah_t = torch.cat(healthy_att_focus[l], dim=0)
-            al_t = torch.cat(loop_att_focus[l], dim=0)
-            da_t = (al_t.mean(dim=0) - ah_t.mean(dim=0)).abs() / ((0.5 * (al_t.var(dim=0, unbiased=False) + ah_t.var(dim=0, unbiased=False))).sqrt().clamp_min(1e-6))
-            attn_sep = float(da_t.max())
-
-        layer_stats.append({
-            "layer": l,
-            "is_full_attn": l in healthy_att_focus,
-            "fisher_mlp": round(f_m, 4),
-            "fisher_resid": round(f_r, 4),
-            "head_max_d": round(head_sep, 4),
-            "attn_focus_d": round(attn_sep, 4),
-            "hybrid_score": round(f_m * (1.0 + 0.35 * head_sep + 0.5 * attn_sep), 4),
-        })
-
-    mlp_ranked = [r["layer"] for r in sorted(layer_stats, key=lambda x: -x["fisher_mlp"])]
-    hybrid_ranked = [r["layer"] for r in sorted(layer_stats, key=lambda x: -x["hybrid_score"])]
+    # 3. Offline Hybrid CompactTrace (origin) + WSI static weight resonance (echo amplifier) discovery
+    disc = discover_compact_circuit(traces, model=model, alpha=args.alpha)
+    layer_stats = disc["layer_stats"]
+    u_mlp_by_layer = disc["directions"]
+    top64_by_layer = disc["top_neurons"]
+    mlp_ranked = disc["mlp_ranked"]
+    hybrid_ranked = disc["hybrid_ranked"]
+    fa_layers = disc["fa_layers"]
+    fa_origins = disc["wsi_origins"]
+    l_res_dst = disc["wsi_resonant_dst"]
+    wsi_dir_ov = disc["wsi_resonant_directions"]
+    wsi_idx_ov = disc["wsi_resonant_neurons"]
+    wsi_pair_layers = disc["wsi_pair_layers"]
+    wsi_fa3_layers = disc["wsi_fa3_layers"]
+    wsi_resonance_table = disc["wsi_resonance_table"]
     print("Top layers (MLP only):", mlp_ranked[:6], flush=True)
     print("Top layers (Hybrid MLP+head+attn):", hybrid_ranked[:6], flush=True)
+    print(f"FA layers={fa_layers} | WSI origins={fa_origins} -> resonant dst={l_res_dst} | pair={wsi_pair_layers} | fa3={wsi_fa3_layers}", flush=True)
 
     # 4. Blind exam against official p50c patch
     p50c = MoIPatch.load(args.patch)
@@ -369,6 +259,10 @@ def main() -> None:
             cos_u = float(torch.nn.functional.cosine_similarity(u_mlp_by_layer[li].float().unsqueeze(0), e.u.float().unsqueeze(0)))
             ov = len(set(top64_by_layer[li].tolist()) & set(e.idx.long().tolist()))
             exam[f"layer_{li}"] = {"dir_cosine": round(abs(cos_u), 4), "neuron_overlap_of_64": ov}
+            if li in wsi_dir_ov:
+                cos_r = float(torch.nn.functional.cosine_similarity(wsi_dir_ov[li].float().unsqueeze(0), e.u.float().unsqueeze(0)))
+                ov_r = len(set(wsi_idx_ov[li].tolist()) & set(e.idx.long().tolist()))
+                exam[f"layer_{li}_wsi_resonant"] = {"dir_cosine": round(abs(cos_r), 4), "neuron_overlap_of_64": ov_r}
     print("Blind exam vs p50c:", exam, flush=True)
 
     # Causal diff_compact on one looping sequence (base vs p50c)
@@ -380,9 +274,9 @@ def main() -> None:
         hp.on()
         ct_p50c = capture_compact(model, seq0["full_ids"])
         hp.off()
-        loop_patch_diff = diff_compact(ct0, ct_p50c, pos_a=t_ons, pos_b=t_ons, top_k=6)
+        loop_patch_diff = diff_compact(ct0, ct_p50c, model=model, pos_a=t_ons, pos_b=t_ons, top_k=6)
 
-    # 5. Live held-out eval comparing: base vs ct_mlp_top2 vs ct_hybrid_top3 vs p50c
+    # 5. Live held-out eval comparing: base vs ct_mlp_top3 vs ct_mlp_fa3 vs ct_wsi_pair vs ct_wsi_fa3 vs p50c
     def _eval_arm(name: str, patch_obj: MoIPatch | None) -> dict:
         hp = patch_obj.attach(model) if patch_obj is not None else None
         if hp is not None:
@@ -395,33 +289,28 @@ def main() -> None:
             if hp is not None:
                 hp.off()
         acc = sum(_is_correct(r["text"], _extract_gold(a)) for r, a in zip(ev, gte["answer"])) / len(ev)
+        any_acc = sum(_has_gold_anywhere(r["text"], _extract_gold(a)) for r, a in zip(ev, gte["answer"])) / len(ev)
         lrate = sum(r["loop"] for r in ev) / len(ev)
         mean_tok = sum(r["gen_len"] for r in ev) / len(ev)
-        row = {"acc": round(acc, 4), "loop_rate": round(lrate, 4), "mean_gen_tok": round(mean_tok, 1), "s": ev_s}
+        row = {
+            "acc": round(acc, 4),
+            "any_num_acc": round(any_acc, 4),
+            "loop_rate": round(lrate, 4),
+            "mean_gen_tok": round(mean_tok, 1),
+            "s": ev_s,
+        }
         print(f"Eval [{name:<16}] -> {row}", flush=True)
         return row
 
-    def _build_patch(layers_pick: list[int]) -> MoIPatch:
-        edits = []
-        for l in layers_pick:
-            edits.append(Edit(module=f"layers.{l}.mlp.down_proj", u=u_mlp_by_layer[l].double(),
-                              alpha=args.alpha, idx=top64_by_layer[l].long()))
-        pt = MoIPatch(edits=edits, meta={"name": "compact-trace-discovered"})
-        for e in pt.edits:
-            w = mods[f"model.{e.module}"].weight if f"model.{e.module}" in mods else mods[e.module].weight
-            from wsi.moipatch import _dtype_name, _sha256
-            e.base_sha256, e.base_dtype, e.shape = _sha256(w), _dtype_name(w.dtype), tuple(w.shape)
-        return pt
-
-    # Find exact module prefix for fingerprinting
-    mlp_fa = [l for l in mlp_ranked if l in healthy_att_focus]
     eval_res = {"base": _eval_arm("base", None)}
-    if len(mlp_ranked) >= 3:
-        eval_res["ct_mlp_top3"] = _eval_arm("ct_mlp_top3", _build_patch(mlp_ranked[:3]))
-    if len(mlp_fa) >= 3:
-        eval_res["ct_mlp_fa3"] = _eval_arm("ct_mlp_fa3", _build_patch(mlp_fa[:3]))
-    if len(hybrid_ranked) >= 3:
-        eval_res["ct_hybrid_top3"] = _eval_arm("ct_hybrid_top3", _build_patch(hybrid_ranked[:3]))
+    for arm_name, key in (
+        ("ct_mlp_top3", "mlp_top3"),
+        ("ct_mlp_fa3", "mlp_fa3"),
+        ("ct_wsi_pair", "wsi_pair"),
+        ("ct_wsi_fa3", "wsi_fa3"),
+    ):
+        if key in disc["patches"]:
+            eval_res[arm_name] = _eval_arm(arm_name, disc["patches"][key])
     eval_res["p50c_ref"] = _eval_arm("p50c_ref", p50c)
 
     out = {
@@ -435,8 +324,14 @@ def main() -> None:
         "traces_captured": len(traces),
         "trace_bank_mb": bank_mb,
         "capture_s": cap_s,
+        "fa_layers": fa_layers,
         "mlp_top_layers": mlp_ranked[:6],
         "hybrid_top_layers": hybrid_ranked[:6],
+        "wsi_origins": fa_origins,
+        "wsi_resonant_dst": l_res_dst,
+        "wsi_pair_layers": wsi_pair_layers,
+        "wsi_fa3_layers": wsi_fa3_layers,
+        "wsi_resonance_table": wsi_resonance_table[:16],
         "layer_stats": layer_stats,
         "blind_exam_vs_p50c": exam,
         "causal_diff_base_vs_p50c_at_onset": loop_patch_diff,

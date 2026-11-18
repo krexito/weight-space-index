@@ -14,6 +14,7 @@ import sys
 from typing import Any
 
 from .query import WeightSpaceIndex
+from .tracer import CompactTrace, discover_compact_dirs
 
 # Cache of open WeightSpaceIndex instances by (model_dir, index_dir)
 _INDEX_CACHE: dict[tuple[str, str], WeightSpaceIndex] = {}
@@ -189,6 +190,51 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             "required": ["src_model_dir", "dst_model_dir", "edit_path"],
         },
     },
+    {
+        "name": "wsi_diff_compact",
+        "description": "Compare two saved CompactTrace directories with WSI weight grounding (W_O-projected head shifts, MLP neurons, cache deltas, and vocabulary readout).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the safetensors checkpoint directory"},
+                "trace_a_dir": {"type": "string", "description": "Path to baseline CompactTrace directory"},
+                "trace_b_dir": {"type": "string", "description": "Path to target CompactTrace directory"},
+                "pos_a": {"type": "integer", "default": -1},
+                "pos_b": {"type": "integer", "default": -1},
+                "top_k": {"type": "integer", "default": 10},
+            },
+            "required": ["model_dir", "trace_a_dir", "trace_b_dir"],
+        },
+    },
+    {
+        "name": "wsi_discover_compact_circuit",
+        "description": "Discover a multi-layer loop or behavioral intervention circuit from saved CompactTrace directories + static WSI SVD resonance, and optionally save a .moipatch file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the safetensors checkpoint directory"},
+                "trace_dirs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Saved CompactTrace directories (all traces when auto-detecting, or healthy traces when loop_trace_dirs is set)",
+                },
+                "loop_trace_dirs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional saved CompactTrace directories for looping/target runs",
+                },
+                "alpha": {"type": "number", "default": 6.0},
+                "top_k_neurons": {"type": "integer", "default": 64},
+                "save_patch_path": {"type": "string", "description": "Optional output path for the synthesized .moipatch file"},
+                "patch_variant": {
+                    "type": "string",
+                    "default": "wsi_fa3",
+                    "enum": ["wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"],
+                },
+            },
+            "required": ["model_dir", "trace_dirs"],
+        },
+    },
 ]
 
 
@@ -269,6 +315,28 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             save_path=args.get("save_path"),
         )
         return {k: v for k, v in res.items() if k != "_tensors"}
+    if name == "wsi_diff_compact":
+        idx = _get_wsi(args["model_dir"])
+        ct_a = CompactTrace.load(args["trace_a_dir"])
+        ct_b = CompactTrace.load(args["trace_b_dir"])
+        return idx.diff_compact(
+            ct_a,
+            ct_b,
+            pos_a=int(args.get("pos_a", -1)),
+            pos_b=int(args.get("pos_b", -1)),
+            top_k=int(args.get("top_k", 10)),
+        )
+    if name == "wsi_discover_compact_circuit":
+        idx = _get_wsi(args["model_dir"])
+        return discover_compact_dirs(
+            idx,
+            args["trace_dirs"],
+            loop_trace_dirs=args.get("loop_trace_dirs"),
+            alpha=float(args.get("alpha", 6.0)),
+            top_k_neurons=int(args.get("top_k_neurons", 64)),
+            variant=str(args.get("patch_variant", "wsi_fa3")),
+            save_patch_path=args.get("save_patch_path"),
+        )
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
 
 

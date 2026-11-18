@@ -1,19 +1,19 @@
-"""Token-level dense & compact activation tracing (`trace_all` forensics + block-quantized `CompactTrace`).
+"""Token-level dense & compact activation tracing (`CompactTrace` + differential X-ray).
 
-Pairs `wsi.capture.trace_all` with `WeightSpaceIndex` geometry when global averages fail:
-  1. `diff_traces(model, ids_a, ids_b, wsi=...)`: full-fidelity X-ray via `trace_all` across two prompts
-     (e.g., neutral vs. pushback turn, clean vs. trigger prompt). Handles unequal prompt lengths and
-     ranks exact layers, attention heads, MLP neurons (`Δact_i * ||W_down[:, i]||`), cache state shifts,
-     attention redistribution, and vocabulary readout (`explain_vector`).
+Pairs `wsi.capture.trace_all` / `capture_compact` with `WeightSpaceIndex` geometry when global averages fail:
+  1. `diff_traces(model, ids_a, ids_b, wsi=...)`: X-ray across two prompts (e.g., neutral vs. pushback turn,
+     clean vs. trigger prompt); uses `CompactTrace` + `diff_compact` by default (`compact=True`) or full
+     uncompressed `trace_all` with `compact=False`.
   2. `capture_compact(model, ids, ...)`: scalable token-by-token tracing defaulting to the best Pareto
-     profile from our Colab sweeps (`INT8` `group_size=64` + Walsh-Hadamard `64` residuals, `Top-1024`
-     `E2M1 FP4` bitmask/bitpack MLP units, per-head L2 energies, sparse `Top-16` attention links, and
-     `INT8` KV/DeltaNet cache states).
+     profile from our Colab sweeps (`INT8` `group_size=64` + Walsh-Hadamard `64` residuals, adaptive
+     `Top-K` `E2M1 FP4` bitmask/bitpack MLP units at 95% energy, `INT8` pre-`W_O` head vectors +
+     post-`W_O` L2 norms, sparse `Top-16` attention links, and `INT8` KV/DeltaNet cache states).
 """
 
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -22,6 +22,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from .capture import _is_linear, find_blocks, find_mlps, trace_all
 
@@ -362,10 +363,21 @@ class CompactTrace:
     attn_topk: dict[int, dict[str, torch.Tensor]] = field(default_factory=dict)
     cache_quant: str = "int8"
     cache: dict[str, dict[str, Any]] = field(default_factory=dict)
+    head_quant: str = "int8"
     meta: dict[str, Any] = field(default_factory=dict)
 
     def dequant_resid(self, layer: int) -> torch.Tensor:
         return _decode_resid(self.resid[layer], self.resid_quant, self.group_size, self.hadamard_block)
+
+    def dequant_head_in(self, mod: str) -> torch.Tensor | None:
+        """Reconstruct pre-output-projection head activations `(T, n_heads * head_dim) float32` if stored."""
+        h = self.head_norms.get(mod)
+        if not h or "data" not in h or "shape" not in h:
+            return None
+        return _decode_resid(
+            {"data": h["data"], "scales": h.get("scales"), "shape": h["shape"]},
+            self.head_quant, self.group_size, self.hadamard_block,
+        )
 
     def dequant_mlp_topk(self, layer: int) -> tuple[torch.Tensor, torch.Tensor]:
         """Reconstruct `(idx (T, k) int64, val (T, k) float32)` from uint16/bitpack/bitmask and quantized values."""
@@ -405,7 +417,12 @@ class CompactTrace:
         resid_b = sum(_tbytes(r["data"]) + (_tbytes(r["scales"]) if r["scales"] is not None else 0)
                       for r in self.resid.values())
         mlp_b = sum(_tbytes(t) for m in self.mlp_topk.values() for t in m.values())
-        head_b = sum(_tbytes(h["l2"]) for h in self.head_norms.values())
+        head_b = sum(
+            _tbytes(h["l2"])
+            + (_tbytes(h["data"]) if "data" in h else 0)
+            + (_tbytes(h["scales"]) if h.get("scales") is not None else 0)
+            for h in self.head_norms.values()
+        )
         attn_b = sum(_tbytes(t) for a in self.attn_topk.values() for t in a.values())
         cache_b = sum(_tbytes(c["data"]) + (_tbytes(c["scales"]) if c["scales"] is not None else 0)
                       for c in self.cache.values())
@@ -513,7 +530,13 @@ class CompactTrace:
         head_meta = {}
         for idx, (mod, h) in enumerate(self.head_norms.items()):
             flat[f"head.{idx}"] = h["l2"].contiguous()
-            head_meta[str(idx)] = {"module": mod, "layer": h["layer"], "n_heads": h["n_heads"]}
+            hmeta: dict[str, Any] = {"module": mod, "layer": h["layer"], "n_heads": h["n_heads"]}
+            if "data" in h:
+                flat[f"head.{idx}.data"] = h["data"].contiguous()
+                if h.get("scales") is not None:
+                    flat[f"head.{idx}.scales"] = h["scales"].contiguous()
+                hmeta["shape"] = list(h["shape"])
+            head_meta[str(idx)] = hmeta
         for l, a in self.attn_topk.items():
             flat[f"attn.{l}.idx"] = a["idx"].contiguous()
             flat[f"attn.{l}.w"] = a["w"].contiguous()
@@ -532,7 +555,7 @@ class CompactTrace:
             "mlp_meta": {str(l): m for l, m in self.mlp_meta.items()},
             "top_k_attn": self.top_k_attn, "attn_layers": sorted(self.attn_topk),
             "cache_quant": self.cache_quant, "cache_meta": cache_meta,
-            "resid_shapes": resid_shapes, "heads": head_meta, "meta": self.meta,
+            "head_quant": self.head_quant, "resid_shapes": resid_shapes, "heads": head_meta, "meta": self.meta,
         }, indent=2), encoding="utf-8")
         return p
 
@@ -553,7 +576,12 @@ class CompactTrace:
             if layer_t:
                 mlp_topk[l] = layer_t
         for idx, hm in info["heads"].items():
-            head_norms[hm["module"]] = {"layer": hm["layer"], "n_heads": hm["n_heads"], "l2": tens[f"head.{idx}"]}
+            h_entry: dict[str, Any] = {"layer": hm["layer"], "n_heads": hm["n_heads"], "l2": tens[f"head.{idx}"]}
+            if f"head.{idx}.data" in tens and "shape" in hm:
+                h_entry["data"] = tens[f"head.{idx}.data"]
+                h_entry["scales"] = tens.get(f"head.{idx}.scales")
+                h_entry["shape"] = hm["shape"]
+            head_norms[hm["module"]] = h_entry
         for l in info.get("attn_layers", ()):
             if f"attn.{l}.idx" in tens:
                 attn_topk[int(l)] = {"idx": tens[f"attn.{l}.idx"], "w": tens[f"attn.{l}.w"]}
@@ -576,6 +604,7 @@ class CompactTrace:
             attn_topk=attn_topk,
             cache_quant=info.get("cache_quant", "int8"),
             cache=cache,
+            head_quant=info.get("head_quant", "norm"),
             meta=info.get("meta", {}),
         )
 
@@ -596,12 +625,14 @@ def capture_compact(
     top_k_attn: int = 16,
     capture_cache: bool = True,
     cache_quant: str = "int8",
+    head_quant: str = "int8",
     max_tokens: int | None = None,
 ) -> CompactTrace:
     """Record a Pareto-optimal compressed token trace (~80-95 MiB per 1.6k tok on 0.8B):
     INT8 Hadamard-rotated residuals, adaptive or fixed Top-K FP4 bitmask/bitpack MLP units
     (default `top_k_mlp="auto"` picks per-layer `K` to reach `mlp_energy_target=0.95`),
-    per-head L2 norms, sparse Top-16 attention targets (`uint16+uint8`), and INT8 KV/recurrent cache states."""
+    `head_quant` pre-`W_O` head vectors + post-`W_O` L2 norms, sparse Top-16 attention targets,
+    and INT8 KV/recurrent cache states."""
     if isinstance(top_k_mlp, str):
         if top_k_mlp != "auto":
             raise ValueError(f"Unsupported top_k_mlp string {top_k_mlp!r}; expected 'auto', int, or (0, 1] fraction")
@@ -730,8 +761,16 @@ def capture_compact(
 
         def ahook(mod, inp, out, aname=aname, li=li, nh=nh):
             x = inp[0].detach().reshape(-1, inp[0].shape[-1]).float()
-            l2 = x.reshape(x.shape[0], nh, -1).norm(dim=2)
-            head_out[aname] = {"layer": li, "n_heads": nh, "l2": l2.to(torch.float16).cpu()}
+            w = mod.weight.detach().to(x.device, dtype=torch.float32)
+            wh = w.t().reshape(nh, -1, w.shape[0]) if isinstance(mod, nn.Linear) else w.reshape(nh, -1, w.shape[1])
+            l2 = torch.einsum("thd,hdo->tho", x.reshape(x.shape[0], nh, -1), wh).norm(dim=2)
+            h_entry: dict[str, Any] = {"layer": li, "n_heads": nh, "l2": l2.to(torch.float16).cpu()}
+            if head_quant != "norm":
+                h_enc = _encode_resid(x, head_quant, group_size, hadamard_block)
+                h_entry["data"] = h_enc["data"]
+                h_entry["scales"] = h_enc["scales"]
+                h_entry["shape"] = h_enc["shape"]
+            head_out[aname] = h_entry
 
         handles.append(am.register_forward_hook(ahook))
 
@@ -761,7 +800,17 @@ def capture_compact(
 
     attn_topk_out: dict[int, dict[str, torch.Tensor]] = {}
     if top_k_attn > 0 and out is not None:
-        for li, att in enumerate(getattr(out, "attentions", None) or ()):
+        raw_atts = list(getattr(out, "attentions", None) or ())
+        fa_layers = [
+            l for l, blk in enumerate(blocks)
+            if any("self_attn" in n or n == "attn" or n.startswith("attn.") or ".attn." in n for n, _ in blk.named_modules())
+        ]
+        attn_pairs = (
+            zip(fa_layers, raw_atts)
+            if (raw_atts and len(raw_atts) == len(fa_layers) and len(raw_atts) < n_layers)
+            else enumerate(raw_atts)
+        )
+        for li, att in attn_pairs:
             if not isinstance(att, torch.Tensor) or att.dim() != 4 or att.shape[-1] == 0:
                 continue
             a = att[0].detach().float()
@@ -796,7 +845,7 @@ def capture_compact(
         resid_out, mlp_topk_out, head_out, hadamard_block=hadamard_block,
         mlp_quant=mlp_quant, mlp_idx_mode=eff_idx_mode, mlp_group_size=mlp_group_size,
         mlp_meta=mlp_meta_out, top_k_attn=top_k_attn, attn_topk=attn_topk_out,
-        cache_quant=cache_quant, cache=cache_out, meta=trace_meta,
+        cache_quant=cache_quant, cache=cache_out, head_quant=head_quant, meta=trace_meta,
     )
 
 
@@ -833,12 +882,59 @@ def _cache_pair_delta(key: str, ta: torch.Tensor, tb: torch.Tensor, pos_a: int, 
     return None
 
 
+def _resolve_out_proj_weight(
+    mod_name: str,
+    nh: int,
+    d_in: int,
+    model: nn.Module | None,
+    wsi: Any | None,
+    *,
+    _mod_cache: dict[str, nn.Module] | None = None,
+    _ck_names: tuple[str, ...] | None = None,
+    _ck_name_set: set[str] | None = None,
+) -> torch.Tensor | None:
+    if nh <= 0 or d_in % nh != 0:
+        return None
+    hd = d_in // nh
+    if model is not None:
+        mods = _mod_cache if _mod_cache is not None else dict(model.named_modules())
+        am = mods.get(mod_name)
+        if am is not None and getattr(am, "weight", None) is not None:
+            w = am.weight.detach().float().cpu()
+            return w.t().reshape(nh, hd, -1) if isinstance(am, nn.Linear) else w.reshape(nh, hd, -1)
+    if wsi is not None and hasattr(wsi, "ck"):
+        names = tuple(wsi.ck.names()) if _ck_names is None else _ck_names
+        name_set = set(names) if _ck_name_set is None else _ck_name_set
+        bare = mod_name[6:] if mod_name.startswith("model.") else mod_name
+        tname = next(
+            (c for c in (f"{mod_name}.weight", f"{bare}.weight", f"model.{bare}.weight", f"model.language_model.{bare}.weight")
+             if c in name_set),
+            None,
+        )
+        if tname is None:
+            suffix = f".{bare}.weight"
+            tname = next((n for n in names if n.endswith(suffix)), None)
+        if tname is not None:
+            w = wsi.ck.get(tname).float().cpu()
+            if w.dim() == 2:
+                if hasattr(wsi, "anat"):
+                    try:
+                        out_ax = wsi.anat.out_axis(tname)
+                    except Exception:
+                        out_ax = 0 if w.shape[1] == d_in else 1
+                else:
+                    out_ax = 0 if w.shape[1] == d_in else 1
+                return w.t().reshape(nh, hd, -1) if out_ax == 0 else w.reshape(nh, hd, -1)
+    return None
+
+
 @torch.no_grad()
 def diff_compact(
     tr_a: CompactTrace,
     tr_b: CompactTrace,
     *,
     wsi: Any | None = None,
+    model: nn.Module | None = None,
     pos_a: int = -1,
     pos_b: int = -1,
     top_k: int = 10,
@@ -879,17 +975,38 @@ def diff_compact(
     head_hits = []
     attn_cache_a = {l: tr_a.dequant_attn_topk(l) for l in tr_a.attn_topk}
     attn_cache_b = {l: tr_b.dequant_attn_topk(l) for l in tr_b.attn_topk}
+    mod_cache = dict(model.named_modules()) if model is not None else None
+    ck_names = tuple(wsi.ck.names()) if (wsi is not None and hasattr(wsi, "ck") and callable(getattr(wsi.ck, "names", None))) else ()
+    ck_name_set = set(ck_names)
     for mod in sorted(set(tr_a.head_norms) & set(tr_b.head_norms)):
         ha, hb = tr_a.head_norms[mod], tr_b.head_norms[mod]
         li = ha["layer"]
+        nh = int(ha["n_heads"])
         da = ha["l2"][pos_a].float()
         db = hb["l2"][pos_b].float()
         diff = db - da
-        for hid in diff.abs().topk(min(3, len(diff))).indices.tolist():
+        xa = tr_a.dequant_head_in(mod)
+        xb = tr_b.dequant_head_in(mod)
+        if xa is not None and xb is not None:
+            xa_p = xa[pos_a].float().reshape(nh, -1)
+            xb_p = xb[pos_b].float().reshape(nh, -1)
+            dx = xb_p - xa_p
+            w_heads = _resolve_out_proj_weight(
+                mod, nh, dx.numel(), model, wsi,
+                _mod_cache=mod_cache, _ck_names=ck_names, _ck_name_set=ck_name_set,
+            )
+            if w_heads is not None:
+                norms = torch.einsum("hd,hdo->ho", dx, w_heads).norm(dim=1)
+            else:
+                gain = (da + db) / (xa_p.norm(dim=1) + xb_p.norm(dim=1)).clamp_min(1e-8)
+                norms = dx.norm(dim=1) * gain
+        else:
+            norms = diff.abs()
+        for hid in norms.topk(min(3, len(norms))).indices.tolist():
             row: dict[str, Any] = {
                 "layer": li, "module": mod, "head": int(hid),
                 "l2_a": round(float(da[hid]), 4), "l2_b": round(float(db[hid]), 4),
-                "out_delta_norm": round(float(diff[hid].abs()), 4),
+                "out_delta_norm": round(float(norms[hid]), 4),
                 "signed_l2_delta": round(float(diff[hid]), 4),
             }
             if li in attn_cache_a and li in attn_cache_b:
@@ -926,7 +1043,474 @@ def diff_compact(
     }
 
 
-# ----------------------------------------------------------------------------------------------- dense trace_all diff
+# ----------------------------------------------------------------------------------------------- hybrid CompactTrace + WSI discovery
+def _fisher_dir(x_healthy: torch.Tensor, x_loop: torch.Tensor) -> tuple[torch.Tensor, float]:
+    """Normalized healthy->loop mean shift direction and Fisher separation ratio."""
+    mh, ml = x_healthy.mean(dim=0), x_loop.mean(dim=0)
+    d = ml - mh
+    dn = float(d.norm())
+    if dn < 1e-8:
+        return torch.zeros_like(d), 0.0
+    u = d / dn
+    ph, pl = x_healthy @ u, x_loop @ u
+    vh = float(ph.var(unbiased=False)) if len(ph) > 1 else 0.0
+    vl = float(pl.var(unbiased=False)) if len(pl) > 1 else 0.0
+    score = float((pl.mean() - ph.mean()) ** 2 / max(0.5 * (vh + vl), 1e-8))
+    return u, score
+
+
+def _resolve_mlp_downs(
+    model: nn.Module | None,
+    wsi: Any | None,
+) -> tuple[dict[int, torch.Tensor], dict[int, dict[str, Any]]]:
+    """Resolve per-layer MLP `W_down` in `(D, U)` layout plus `MoIPatch` fingerprint metadata."""
+    from .moipatch import _dtype_name, _sha256, module_suffix
+
+    w_downs: dict[int, torch.Tensor] = {}
+    mod_meta: dict[int, dict[str, Any]] = {}
+    valid_dtypes = (torch.bfloat16, torch.float16, torch.float32)
+
+    def _suffix(path: str) -> str:
+        try:
+            return module_suffix(path)
+        except ValueError:
+            return path
+
+    if model is not None:
+        mods = dict(model.named_modules())
+        for l, g in enumerate(find_mlps(model)):
+            li = _layer_idx_from_name(g.down)
+            li = l if li is None else li
+            m = mods[g.down]
+            w_orig = m.weight.detach()
+            w_downs[li] = w_orig.float().cpu() if isinstance(m, nn.Linear) else w_orig.float().cpu().t()
+            dt = _dtype_name(w_orig.dtype) if w_orig.dtype in valid_dtypes else "float32"
+            mod_meta[li] = {
+                "module": _suffix(g.down),
+                "shape": tuple(w_orig.shape),
+                "base_dtype": dt,
+                "base_sha256": _sha256(w_orig) if w_orig.dtype in valid_dtypes else "",
+            }
+        return w_downs, mod_meta
+
+    if wsi is not None and hasattr(wsi, "anat") and hasattr(wsi, "ck"):
+        from .indexer import _to_residual_columns
+
+        for l in sorted(wsi.anat.layers):
+            tname = wsi.anat.mlp_out(l)
+            if not tname:
+                continue
+            w_orig = wsi.ck.get(tname).clone()
+            out_ax = wsi.anat.out_axis(tname)
+            w_downs[l] = _to_residual_columns(w_orig.float().cpu(), out_ax)
+            mod_full = tname[:-7] if tname.endswith(".weight") else tname
+            dt = _dtype_name(w_orig.dtype) if w_orig.dtype in valid_dtypes else "float32"
+            mod_meta[l] = {
+                "module": _suffix(mod_full),
+                "shape": tuple(w_orig.shape),
+                "base_dtype": dt,
+                "base_sha256": _sha256(w_orig) if w_orig.dtype in valid_dtypes else "",
+            }
+        return w_downs, mod_meta
+
+    raise ValueError("discover_compact_circuit requires at least one of `model` or `wsi`.")
+
+
+def _unpack_discovery_item(item: Any, forced_loop: bool | None) -> tuple[CompactTrace, int, bool, int | None]:
+    """Normalize `(meta, ct, ...)` / `(ct, prompt_len, onset_resp)` / `CompactTrace` items."""
+    if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[0], dict):
+        meta, ct = item[0], item[1]
+        p = int(meta.get("prompt_len", 0))
+        is_loop = bool(meta.get("loop", False)) if forced_loop is None else forced_loop
+        onset_resp = meta.get("onset_resp")
+    elif isinstance(item, tuple) and isinstance(item[0], CompactTrace):
+        ct = item[0]
+        p = int(item[1]) if len(item) >= 2 and item[1] is not None else 0
+        onset_resp = item[2] if len(item) >= 3 else None
+        is_loop = (onset_resp is not None) if forced_loop is None else forced_loop
+        if forced_loop is None and len(item) < 3:
+            det = ct.detect_loop_onset(
+                layer=min(15, ct.n_layers - 1),
+                window=min(16, max(2, ct.seq_len // 4)),
+                thr=0.96,
+            )
+            onset_tok = det.get("onset_token")
+            return ct, p, onset_tok is not None, onset_tok
+    elif isinstance(item, CompactTrace):
+        ct, p, onset_resp = item, 0, None
+        det_tok = None
+        if forced_loop is not False:
+            det = ct.detect_loop_onset(
+                layer=min(15, ct.n_layers - 1),
+                window=min(16, max(2, ct.seq_len // 4)),
+                thr=0.96,
+            )
+            det_tok = det.get("onset_token")
+        is_loop = (det_tok is not None) if forced_loop is None else forced_loop
+        if is_loop:
+            return ct, p, True, (det_tok if det_tok is not None else ct.seq_len // 2)
+        return ct, p, False, None
+    else:
+        raise TypeError(f"Unsupported trace entry type in discover_compact_circuit: {type(item).__name__}")
+
+    if not is_loop:
+        return ct, p, False, None
+    if onset_resp is not None:
+        return ct, p, True, min(p + int(onset_resp), max(0, ct.seq_len - 1))
+    det = ct.detect_loop_onset(
+        layer=min(15, ct.n_layers - 1),
+        window=min(16, max(2, ct.seq_len // 4)),
+        thr=0.96,
+    )
+    onset_tok = det.get("onset_token")
+    if onset_tok is None:
+        onset_tok = max(p, ct.seq_len // 2)
+    return ct, p, True, min(int(onset_tok), max(0, ct.seq_len - 1))
+
+
+def discover_compact_circuit(
+    traces: list[Any],
+    *,
+    loop_traces: list[Any] | None = None,
+    model: nn.Module | None = None,
+    wsi: Any | None = None,
+    alpha: float = 6.0,
+    top_k_neurons: int = 64,
+    healthy_window: int = 96,
+    loop_window: int = 192,
+    origin_range: tuple[int, int] | None = None,
+) -> dict[str, Any]:
+    """Discover a multi-layer intervention circuit from `CompactTrace` statistics + WSI SVD echo.
+
+    Combines offline `CompactTrace` signals (MLP Fisher separation, head shift, attention focus) to
+    locate where the behavioral deviation originates (`wsi_origins`), then uses static `W_down`
+    subspace SVD resonance (`WSI`) to locate downstream resonant amplifiers invisible to activation
+    variance (`wsi_resonant_dst`) and builds ready-to-attach `MoIPatch` objects.
+    """
+    from .moipatch import Edit, MoIPatch
+
+    w_downs, mod_meta = _resolve_mlp_downs(model, wsi)
+    n_layers = len(w_downs)
+    if n_layers == 0:
+        raise ValueError("No MLP down-projection weights found for discovery.")
+    layers_sorted = sorted(w_downs)
+    d_inter_by_layer = {l: int(w_downs[l].shape[1]) for l in layers_sorted}
+
+    entries: list[tuple[CompactTrace, int, bool, int | None]] = []
+    if loop_traces is not None:
+        entries.extend(_unpack_discovery_item(it, False) for it in traces)
+        entries.extend(_unpack_discovery_item(it, True) for it in loop_traces)
+    else:
+        entries.extend(_unpack_discovery_item(it, None) for it in traces)
+
+    healthy_res: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
+    loop_res: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
+    healthy_y: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
+    loop_y: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
+    healthy_xsum: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
+    loop_xsum: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
+    healthy_head: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
+    loop_head: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
+    healthy_att_focus: dict[int, list[torch.Tensor]] = {}
+    loop_att_focus: dict[int, list[torch.Tensor]] = {}
+
+    for ct, p, is_loop, ons in entries:
+        T = ct.seq_len
+        if T == 0:
+            continue
+        if is_loop:
+            ons_t = max(0, min(ons if ons is not None else T // 2, T - 1))
+            h_start = min(p, T)
+            h_end = max(h_start, min(ons_t, p + healthy_window, T))
+            h_idx = torch.arange(h_start, h_end)
+            l_start = max(ons_t, T - loop_window)
+            l_idx = torch.arange(l_start, T)
+        else:
+            h_idx = torch.arange(min(p, T), T)
+            l_idx = torch.empty(0, dtype=torch.long)
+
+        for l in layers_sorted:
+            if l in ct.resid:
+                R = ct.dequant_resid(l)
+                if len(h_idx):
+                    healthy_res[l].append(R[h_idx])
+                if len(l_idx):
+                    loop_res[l].append(R[l_idx])
+
+            if l in ct.mlp_topk:
+                idx_m, val_m = ct.dequant_mlp_topk(l)
+                w_raw = w_downs[l]
+                d_inter = d_inter_by_layer[l]
+                wn = w_raw.norm(dim=0).clamp_min(1e-12)
+                if len(h_idx):
+                    ih, vh = idx_m[h_idx], val_m[h_idx]
+                    xh = torch.zeros((len(h_idx), d_inter), dtype=torch.float32)
+                    xh.scatter_(1, ih, vh / wn[ih])
+                    healthy_y[l].append(xh @ w_raw.T)
+                    healthy_xsum[l].append(xh.mean(dim=0, keepdim=True))
+                if len(l_idx):
+                    il, vl = idx_m[l_idx], val_m[l_idx]
+                    xl = torch.zeros((len(l_idx), d_inter), dtype=torch.float32)
+                    xl.scatter_(1, il, vl / wn[il])
+                    loop_y[l].append(xl @ w_raw.T)
+                    loop_xsum[l].append(xl.mean(dim=0, keepdim=True))
+
+        for h in ct.head_norms.values():
+            li = h["layer"]
+            if li is None or li not in healthy_head:
+                continue
+            l2 = h["l2"].float()
+            if len(h_idx):
+                healthy_head[li].append(l2[h_idx])
+            if len(l_idx):
+                loop_head[li].append(l2[l_idx])
+
+        for li in ct.attn_topk:
+            _, a_w = ct.dequant_attn_topk(li)
+            top2_mass = a_w[:, :, : min(2, a_w.shape[-1])].sum(dim=-1).T  # (T, H)
+            if len(h_idx):
+                healthy_att_focus.setdefault(li, []).append(top2_mass[h_idx])
+            if len(l_idx):
+                loop_att_focus.setdefault(li, []).append(top2_mass[l_idx])
+
+    layer_stats: list[dict[str, Any]] = []
+    u_mlp_by_layer: dict[int, torch.Tensor] = {}
+    topk_by_layer: dict[int, torch.Tensor] = {}
+    dx_by_layer: dict[int, torch.Tensor] = {}
+
+    for l in layers_sorted:
+        if not loop_y[l] or not healthy_y[l]:
+            continue
+        yh_t, yl_t = torch.cat(healthy_y[l], dim=0), torch.cat(loop_y[l], dim=0)
+        u_m, f_m = _fisher_dir(yh_t, yl_t)
+        f_r = 0.0
+        if healthy_res[l] and loop_res[l]:
+            _, f_r = _fisher_dir(torch.cat(healthy_res[l], dim=0), torch.cat(loop_res[l], dim=0))
+        u_mlp_by_layer[l] = u_m
+
+        dx = torch.cat(loop_xsum[l], dim=0).mean(dim=0) - torch.cat(healthy_xsum[l], dim=0).mean(dim=0)
+        dx_by_layer[l] = dx
+        k_pick = min(top_k_neurons, d_inter_by_layer[l])
+        topk_by_layer[l] = (dx * (u_m @ w_downs[l])).topk(k_pick).indices.sort().values
+
+        head_sep = 0.0
+        if healthy_head[l] and loop_head[l]:
+            hh_t, hl_t = torch.cat(healthy_head[l], dim=0), torch.cat(loop_head[l], dim=0)
+            denom_h = (0.5 * (hl_t.var(dim=0, unbiased=False) + hh_t.var(dim=0, unbiased=False))).sqrt().clamp_min(1e-6)
+            head_sep = float(((hl_t.mean(dim=0) - hh_t.mean(dim=0)).abs() / denom_h).max())
+
+        attn_sep = 0.0
+        if l in healthy_att_focus and l in loop_att_focus:
+            ah_t, al_t = torch.cat(healthy_att_focus[l], dim=0), torch.cat(loop_att_focus[l], dim=0)
+            denom_a = (0.5 * (al_t.var(dim=0, unbiased=False) + ah_t.var(dim=0, unbiased=False))).sqrt().clamp_min(1e-6)
+            attn_sep = float(((al_t.mean(dim=0) - ah_t.mean(dim=0)).abs() / denom_a).max())
+
+        layer_stats.append({
+            "layer": l,
+            "is_full_attn": l in healthy_att_focus,
+            "fisher_mlp": round(f_m, 4),
+            "fisher_resid": round(f_r, 4),
+            "head_max_d": round(head_sep, 4),
+            "attn_focus_d": round(attn_sep, 4),
+            "hybrid_score": round(f_m * (1.0 + 0.35 * head_sep + 0.5 * attn_sep), 4),
+        })
+
+    if not layer_stats:
+        raise ValueError("Need at least one healthy and one looping token span to discover a circuit.")
+
+    mlp_ranked = [r["layer"] for r in sorted(layer_stats, key=lambda x: -x["fisher_mlp"])]
+    hybrid_ranked = [r["layer"] for r in sorted(layer_stats, key=lambda x: -x["hybrid_score"])]
+
+    fa_layers = sorted(l for l in layers_sorted if l in healthy_att_focus)
+    if not fa_layers:
+        fa_layers = sorted(s["layer"] for s in layer_stats if s["is_full_attn"])
+
+    orig_lo, orig_hi = origin_range if origin_range is not None else ((6, 16) if n_layers >= 20 else (1, max(1, n_layers - 2)))
+    fa_origins = [l for l in hybrid_ranked if l in fa_layers and orig_lo <= l <= orig_hi][:2]
+    if not fa_origins:
+        fa_origins = [l for l in hybrid_ranked if l in fa_layers][:2]
+    if not fa_origins:
+        fa_origins = hybrid_ranked[:2]
+
+    hidden_dim = int(next(iter(w_downs.values())).shape[0])
+    p_svd: dict[int, torch.Tensor] = {}
+    for l, idx_k in topk_by_layer.items():
+        U_svd, _, _ = torch.linalg.svd(w_downs[l][:, idx_k].float(), full_matrices=False)
+        p_svd[l] = U_svd[:, 0]
+
+    wsi_resonance_table: list[dict[str, Any]] = []
+    res_candidates: dict[tuple[int, int], tuple[float, torch.Tensor, torch.Tensor]] = {}
+    for l_src in fa_origins:
+        for l_dst in sorted(u_mlp_by_layer):
+            if l_dst <= l_src or l_dst not in p_svd:
+                continue
+            echo_svd_cos = abs(float(torch.dot(p_svd[l_src], p_svd[l_dst])))
+            echo_sigma = echo_svd_cos * math.sqrt(hidden_dim)
+            dot_u = float(torch.dot(u_mlp_by_layer[l_src], u_mlp_by_layer[l_dst]))
+            dir_cos = abs(dot_u)
+            wsi_score = echo_svd_cos * (1.0 + dir_cos)
+            sgn = 1.0 if dot_u >= 0.0 else -1.0
+            u_res = F.normalize(u_mlp_by_layer[l_dst] + 0.5 * sgn * u_mlp_by_layer[l_src], dim=0)
+            k_dst = min(top_k_neurons, d_inter_by_layer[l_dst])
+            idx_res = (dx_by_layer[l_dst] * (u_res @ w_downs[l_dst])).topk(k_dst).indices.sort().values
+            wsi_resonance_table.append({
+                "src_layer": l_src,
+                "dst_layer": l_dst,
+                "is_full_attn": l_dst in fa_layers,
+                "echo_svd_cos": round(echo_svd_cos, 4),
+                "echo_sigma": round(echo_sigma, 2),
+                "dir_cos": round(dir_cos, 4),
+                "wsi_resonance_score": round(wsi_score, 4),
+            })
+            res_candidates[(l_src, l_dst)] = (wsi_score, u_res, idx_res)
+    wsi_resonance_table.sort(key=lambda r: -r["wsi_resonance_score"])
+
+    max_orig = max(fa_origins) if fa_origins else -1
+    min_orig = min(fa_origins) if fa_origins else -1
+    max_layer = max(layers_sorted)
+    dst_fa_cands = [r for r in wsi_resonance_table if r["is_full_attn"] and r["dst_layer"] > max_orig and r["dst_layer"] < max_layer]
+    if not dst_fa_cands and fa_origins:
+        dst_fa_cands = [
+            r for r in wsi_resonance_table
+            if r["is_full_attn"] and r["dst_layer"] > fa_origins[0] and r["dst_layer"] < max_layer and r["dst_layer"] not in fa_origins
+        ]
+    if not dst_fa_cands:
+        dst_fa_cands = [r for r in wsi_resonance_table if r["is_full_attn"] and r["dst_layer"] > max_orig]
+    if not dst_fa_cands and fa_origins:
+        dst_fa_cands = [r for r in wsi_resonance_table if r["is_full_attn"] and r["dst_layer"] > min_orig and r["dst_layer"] not in fa_origins]
+    if not dst_fa_cands and fa_origins:
+        dst_fa_cands = [r for r in wsi_resonance_table if r["is_full_attn"] and r["dst_layer"] > fa_origins[0] and r["dst_layer"] < max_layer]
+    if not dst_fa_cands:
+        dst_fa_cands = wsi_resonance_table[:1]
+
+    l_res_dst = dst_fa_cands[0]["dst_layer"] if dst_fa_cands else None
+    win_src = dst_fa_cands[0]["src_layer"] if dst_fa_cands else (fa_origins[0] if fa_origins else None)
+
+    wsi_dir_ov: dict[int, torch.Tensor] = {}
+    wsi_idx_ov: dict[int, torch.Tensor] = {}
+    if l_res_dst is not None and win_src is not None and (win_src, l_res_dst) in res_candidates:
+        _, u_r, idx_r = res_candidates[(win_src, l_res_dst)]
+        wsi_dir_ov[l_res_dst] = u_r
+        wsi_idx_ov[l_res_dst] = idx_r
+
+    wsi_pair_layers = [win_src, l_res_dst] if (win_src is not None and l_res_dst is not None) else []
+    wsi_fa3_layers = list(dict.fromkeys(fa_origins[:2] + ([l_res_dst] if l_res_dst is not None else [])))
+
+    def build_patch(
+        layers_pick: list[int],
+        dir_ov: dict[int, torch.Tensor] | None = None,
+        idx_ov: dict[int, torch.Tensor] | None = None,
+        *,
+        use_wsi_resonance: bool = True,
+        patch_alpha: float | None = None,
+    ) -> MoIPatch:
+        d_ov = dir_ov if dir_ov is not None else (wsi_dir_ov if use_wsi_resonance else {})
+        i_ov = idx_ov if idx_ov is not None else (wsi_idx_ov if use_wsi_resonance else {})
+        a_val = float(alpha if patch_alpha is None else patch_alpha)
+        edits = []
+        for l in layers_pick:
+            meta_l = mod_meta[l]
+            u_use = d_ov.get(l, u_mlp_by_layer[l])
+            idx_use = i_ov.get(l, topk_by_layer[l])
+            edits.append(Edit(
+                module=meta_l["module"],
+                u=u_use.double(),
+                alpha=a_val,
+                idx=idx_use.long(),
+                base_sha256=meta_l["base_sha256"],
+                base_dtype=meta_l["base_dtype"],
+                shape=meta_l["shape"],
+            ))
+        return MoIPatch(
+            edits=edits,
+            meta={
+                "name": "compact-wsi-discovered",
+                "wsi_origins": fa_origins,
+                "wsi_resonant_dst": l_res_dst,
+                "wsi_pair_layers": wsi_pair_layers,
+                "wsi_fa3_layers": wsi_fa3_layers,
+            },
+        )
+
+    mlp_fa = [l for l in mlp_ranked if l in fa_layers]
+    patches: dict[str, MoIPatch] = {}
+    if len(wsi_fa3_layers) >= 3:
+        patches["wsi_fa3"] = build_patch(wsi_fa3_layers)
+    if len(wsi_pair_layers) >= 2:
+        patches["wsi_pair"] = build_patch(wsi_pair_layers)
+    if len(mlp_ranked) >= 3:
+        patches["mlp_top3"] = build_patch(mlp_ranked[:3], use_wsi_resonance=False)
+    if len(mlp_fa) >= 3:
+        patches["mlp_fa3"] = build_patch(mlp_fa[:3], use_wsi_resonance=False)
+
+    recommended = (
+        patches.get("wsi_fa3")
+        or patches.get("wsi_pair")
+        or patches.get("mlp_top3")
+        or build_patch(hybrid_ranked[: min(2, len(hybrid_ranked))])
+    )
+
+    return {
+        "fa_layers": fa_layers,
+        "mlp_ranked": mlp_ranked,
+        "hybrid_ranked": hybrid_ranked,
+        "wsi_origins": fa_origins,
+        "wsi_resonant_src": win_src,
+        "wsi_resonant_dst": l_res_dst,
+        "wsi_pair_layers": wsi_pair_layers,
+        "wsi_fa3_layers": wsi_fa3_layers,
+        "wsi_resonance_table": wsi_resonance_table,
+        "layer_stats": layer_stats,
+        "directions": u_mlp_by_layer,
+        "top_neurons": topk_by_layer,
+        "wsi_resonant_directions": wsi_dir_ov,
+        "wsi_resonant_neurons": wsi_idx_ov,
+        "patch": recommended,
+        "patches": patches,
+        "build_patch": build_patch,
+    }
+
+
+def discover_compact_dirs(
+    wsi: Any,
+    trace_dirs: list[str],
+    *,
+    loop_trace_dirs: list[str] | None = None,
+    alpha: float = 6.0,
+    top_k_neurons: int = 64,
+    variant: str = "wsi_fa3",
+    save_patch_path: str | None = None,
+) -> dict[str, Any]:
+    """Load saved `CompactTrace` directories, run hybrid discovery, optionally save a `.moipatch`, and return a JSON summary."""
+    traces = [CompactTrace.load(p) for p in trace_dirs]
+    loop_traces = [CompactTrace.load(p) for p in loop_trace_dirs] if loop_trace_dirs else None
+    res = wsi.discover_compact_circuit(
+        traces,
+        loop_traces=loop_traces,
+        alpha=float(alpha),
+        top_k_neurons=int(top_k_neurons),
+    )
+    saved_patch = None
+    if save_patch_path:
+        chosen = res["patches"].get(variant) or res["patch"]
+        saved_patch = str(chosen.save(save_patch_path))
+    return {
+        "fa_layers": res["fa_layers"],
+        "mlp_ranked": res["mlp_ranked"],
+        "hybrid_ranked": res["hybrid_ranked"],
+        "wsi_origins": res["wsi_origins"],
+        "wsi_resonant_src": res["wsi_resonant_src"],
+        "wsi_resonant_dst": res["wsi_resonant_dst"],
+        "wsi_pair_layers": res["wsi_pair_layers"],
+        "wsi_fa3_layers": res["wsi_fa3_layers"],
+        "wsi_resonance_table": res["wsi_resonance_table"],
+        "layer_stats": res["layer_stats"],
+        "available_patches": list(res["patches"]),
+        "saved_patch": saved_patch,
+    }
+
+
+# ----------------------------------------------------------------------------------------------- differential trace API
 @torch.no_grad()
 def diff_traces(
     model: nn.Module,
@@ -936,12 +1520,21 @@ def diff_traces(
     wsi: Any | None = None,
     pos_a: int = -1,
     pos_b: int = -1,
-    max_tokens: int = 64,
+    max_tokens: int | None = None,
     top_k: int = 10,
+    compact: bool = True,
 ) -> dict[str, Any]:
-    """Full-fidelity X-ray comparing trace_all(ids_a) vs trace_all(ids_b) and linking shifts to WSI weights."""
-    tr_a = trace_all(model, ids_a, max_tokens=max_tokens)
-    tr_b = trace_all(model, ids_b, max_tokens=max_tokens)
+    """X-ray comparing `ids_a` vs `ids_b` and linking shifts to WSI weights.
+    Uses lossless-head `CompactTrace` + `diff_compact` by default (`compact=True`);
+    pass `compact=False` for full uncompressed `trace_all`."""
+    if compact:
+        ct_a = capture_compact(model, ids_a, max_tokens=max_tokens)
+        ct_b = capture_compact(model, ids_b, max_tokens=max_tokens)
+        return diff_compact(ct_a, ct_b, wsi=wsi, model=model, pos_a=pos_a, pos_b=pos_b, top_k=top_k)
+
+    max_tok = 64 if max_tokens is None else int(max_tokens)
+    tr_a = trace_all(model, ids_a, max_tokens=max_tok)
+    tr_b = trace_all(model, ids_b, max_tokens=max_tok)
     mods = dict(model.named_modules())
 
     def _at_pos(t: torch.Tensor, pos: int) -> torch.Tensor:

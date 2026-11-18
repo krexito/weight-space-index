@@ -2114,6 +2114,20 @@ class WeightSpaceIndex:
 
     create_mixture_of_indexes = create_dynamic_circuit_pager
 
+    def diff_compact(self, tr_a: Any, tr_b: Any, **kwargs: Any) -> dict[str, Any]:
+        """Compare two `CompactTrace` runs, automatically supplying `wsi=self` for head/vocab/neuron grounding."""
+        from .tracer import diff_compact
+
+        kwargs.setdefault("wsi", self)
+        return diff_compact(tr_a, tr_b, **kwargs)
+
+    def discover_compact_circuit(self, traces: Any, **kwargs: Any) -> dict[str, Any]:
+        """Discover a multi-layer circuit from `CompactTrace`s + this checkpoint's static WSI geometry."""
+        from .tracer import discover_compact_circuit
+
+        kwargs.setdefault("wsi", self)
+        return discover_compact_circuit(traces, **kwargs)
+
 
 def load_index(model_dir: str | Path, index_dir: str | Path | None = None, **kwargs: Any) -> WeightSpaceIndex:
     """Convenience loader for `WeightSpaceIndex`."""
