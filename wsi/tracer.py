@@ -5,9 +5,10 @@ Pairs `wsi.capture.trace_all` with `WeightSpaceIndex` geometry when global avera
      (e.g., neutral vs. pushback turn, clean vs. trigger prompt). Handles unequal prompt lengths and
      ranks exact layers, attention heads, MLP neurons (`Δact_i * ||W_down[:, i]||`), cache state shifts,
      attention redistribution, and vocabulary readout (`explain_vector`).
-  2. `capture_compact(model, ids, ...)`: scalable token-by-token tracing using micro-block INT8 / INT4 /
-     E2M1 FP4 (`NVFP4`-style) / optimal L2 1.58-bit Ternary quantization (with optional Walsh-Hadamard
-     rotation to suppress outliers) + Top-K sparse contribution-weighted MLP neurons + per-head L2 energy.
+  2. `capture_compact(model, ids, ...)`: scalable token-by-token tracing defaulting to the best Pareto
+     profile from our Colab sweeps (`INT8` `group_size=64` + Walsh-Hadamard `64` residuals, `Top-1024`
+     `E2M1 FP4` bitmask/bitpack MLP units, per-head L2 energies, sparse `Top-16` attention links, and
+     `INT8` KV/DeltaNet cache states).
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from .capture import _is_linear, find_blocks, find_mlps, trace_all
 
 _E2M1_POS = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
 _POW3 = (1, 3, 9, 27, 81)
+_BIT8 = (1, 2, 4, 8, 16, 32, 64, 128)
 
 
 # ----------------------------------------------------------------------------------------------- Hadamard + block quantization
@@ -211,6 +213,71 @@ def _decode_resid(r: dict[str, Any], quant: str, group_size: int, had_block: int
     return hadamard_transform(x, hb) if hb > 1 else x
 
 
+def resolve_mlp_idx_mode(k: int, d_inter: int, requested: str = "auto") -> str:
+    """Pick sparse neuron index format: 'bitmask' when denser than packed widths, else min-width 'bitpack' or 'uint16'."""
+    if requested in ("uint16", "bitpack", "bitmask"):
+        return requested
+    bits = max(1, (d_inter - 1).bit_length())
+    b_pack = (k * bits + 7) // 8
+    b_mask = (d_inter + 7) // 8
+    b_u16 = k * 2 if d_inter <= 65_535 else k * 4
+    if b_mask < min(b_pack, b_u16):
+        return "bitmask"
+    if b_pack < b_u16 and bits <= 31:
+        return "bitpack"
+    return "uint16"
+
+
+def pack_bitpack_u8(idx: torch.Tensor, bits: int) -> torch.Tensor:
+    """Pack `(T, k)` non-negative integers `< 2**bits` losslessly into `(T, ceil(k*bits/8))` `uint8`."""
+    t_len, k = idx.shape
+    shifts = torch.arange(bits, device=idx.device, dtype=torch.int32)
+    bits_flat = ((idx.to(torch.int32).unsqueeze(-1) >> shifts) & 1).reshape(t_len, k * bits)
+    n_bytes = (k * bits + 7) // 8
+    pad = n_bytes * 8 - bits_flat.shape[1]
+    if pad:
+        bits_flat = torch.cat([bits_flat, torch.zeros((t_len, pad), device=idx.device, dtype=torch.int32)], dim=1)
+    w8 = torch.tensor(_BIT8, device=idx.device, dtype=torch.int32)
+    return (bits_flat.reshape(t_len, n_bytes, 8) * w8).sum(dim=2).to(torch.uint8).cpu()
+
+
+def unpack_bitpack_u8(packed: torch.Tensor, k: int, bits: int) -> torch.Tensor:
+    """Unpack `(T, ceil(k*bits/8))` `uint8` back into exact `(T, k)` `int64` neuron indices."""
+    t_len = packed.shape[0]
+    b_shifts = torch.arange(8, device=packed.device, dtype=torch.int32)
+    bits_flat = ((packed.to(torch.int32).unsqueeze(-1) >> b_shifts) & 1).reshape(t_len, -1)[:, : k * bits]
+    weights = 1 << torch.arange(bits, device=packed.device, dtype=torch.int64)
+    return (bits_flat.reshape(t_len, k, bits).to(torch.int64) * weights).sum(dim=2)
+
+
+def pack_bitmask_u8(idx: torch.Tensor, d_inter: int) -> torch.Tensor:
+    """Pack `(T, k)` unique column indices `< d_inter` into `(T, ceil(d_inter/8))` `uint8` bitmask."""
+    t_len = idx.shape[0]
+    bits = torch.zeros((t_len, d_inter), device=idx.device, dtype=torch.int32)
+    bits.scatter_(1, idx.long(), 1)
+    n_bytes = (d_inter + 7) // 8
+    pad = n_bytes * 8 - d_inter
+    if pad:
+        bits = torch.cat([bits, torch.zeros((t_len, pad), device=idx.device, dtype=torch.int32)], dim=1)
+    w8 = torch.tensor(_BIT8, device=idx.device, dtype=torch.int32)
+    return (bits.reshape(t_len, n_bytes, 8) * w8).sum(dim=2).to(torch.uint8).cpu()
+
+
+def unpack_bitmask_u8(packed: torch.Tensor, k: int, d_inter: int) -> torch.Tensor:
+    """Unpack `(T, ceil(d_inter/8))` `uint8` bitmask back into ascending `(T, k)` `int64` neuron indices."""
+    t_len = packed.shape[0]
+    b_shifts = torch.arange(8, device=packed.device, dtype=torch.int32)
+    bits = ((packed.to(torch.int32).unsqueeze(-1) >> b_shifts) & 1).reshape(t_len, -1)[:, :d_inter]
+    rows, cols = bits.nonzero(as_tuple=True)
+    if cols.numel() == t_len * k:
+        return cols.reshape(t_len, k).to(torch.int64)
+    out = torch.zeros((t_len, k), dtype=torch.int64, device=packed.device)
+    for t in range(t_len):
+        c = cols[rows == t][:k]
+        out[t, : c.numel()] = c
+    return out
+
+
 # ----------------------------------------------------------------------------------------------- helpers
 def _layer_idx_from_name(name: str) -> int | None:
     m = re.search(r"layers\.(\d+)\.", name)
@@ -258,10 +325,24 @@ def _find_attn_out_projs(model: nn.Module, hidden: int) -> dict[str, tuple[nn.Mo
 
 
 # ----------------------------------------------------------------------------------------------- CompactTrace
+def _extract_cache_tensors(cache_obj: Any) -> dict[str, torch.Tensor]:
+    out: dict[str, torch.Tensor] = {}
+    for name in ("key_cache", "value_cache", "conv_states", "recurrent_states", "ssm_states"):
+        for i, t in enumerate(getattr(cache_obj, name, None) or ()):
+            if isinstance(t, torch.Tensor) and t.numel():
+                out[f"{name}.{i}"] = t
+    for i, lyr in enumerate(getattr(cache_obj, "layers", None) or ()):
+        for attr in ("keys", "values", "conv_states", "recurrent_states"):
+            t = getattr(lyr, attr, None)
+            if isinstance(t, torch.Tensor) and t.numel():
+                out[f"layers.{i}.{attr}"] = t
+    return out
+
+
 @dataclass
 class CompactTrace:
     """Scalable token-by-token activation trace combining micro-block quantized residuals, Top-K MLP units,
-    and per-head attention energies across full sequences."""
+    per-head attention energies, optional Top-K sparse attention links, and quantized KV/recurrent cache."""
 
     seq_len: int
     n_layers: int
@@ -273,18 +354,72 @@ class CompactTrace:
     mlp_topk: dict[int, dict[str, torch.Tensor]]
     head_norms: dict[str, dict[str, Any]]
     hadamard_block: int = 0
+    mlp_quant: str = "fp16"
+    mlp_idx_mode: str = "uint16"
+    mlp_group_size: int = 16
+    mlp_meta: dict[int, dict[str, Any]] = field(default_factory=dict)
+    top_k_attn: int = 0
+    attn_topk: dict[int, dict[str, torch.Tensor]] = field(default_factory=dict)
+    cache_quant: str = "int8"
+    cache: dict[str, dict[str, Any]] = field(default_factory=dict)
     meta: dict[str, Any] = field(default_factory=dict)
 
     def dequant_resid(self, layer: int) -> torch.Tensor:
         return _decode_resid(self.resid[layer], self.resid_quant, self.group_size, self.hadamard_block)
 
+    def dequant_mlp_topk(self, layer: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Reconstruct `(idx (T, k) int64, val (T, k) float32)` from uint16/bitpack/bitmask and quantized values."""
+        m = self.mlp_topk[layer]
+        meta = self.mlp_meta.get(layer, {})
+        if "idx" in m:
+            idx = m["idx"].long()
+        elif "idx_pack" in m:
+            idx = unpack_bitpack_u8(m["idx_pack"], int(meta["k"]), int(meta["bits"]))
+        elif "idx_mask" in m:
+            idx = unpack_bitmask_u8(m["idx_mask"], int(meta["k"]), int(meta["d_inter"]))
+        else:
+            raise KeyError(f"Missing MLP index tensor in layer {layer}: {list(m)}")
+
+        t_len, k = int(idx.shape[0]), int(idx.shape[1])
+        shp = tuple(meta.get("shape", (t_len, k)))
+        if self.mlp_quant == "fp16" or ("val_scales" not in m and m["val"].dtype in (torch.float16, torch.bfloat16, torch.float32)):
+            val = m["val"].float()
+        else:
+            val = _decode_resid({"data": m["val"], "scales": m.get("val_scales"), "shape": shp},
+                                self.mlp_quant, self.mlp_group_size, 0)
+        return idx, val
+
+    def dequant_attn_topk(self, layer: int) -> tuple[torch.Tensor, torch.Tensor]:
+        """Reconstruct `(target_idx (H, T, k_att) int64, weights (H, T, k_att) float32)` for a full-attn layer."""
+        a = self.attn_topk[layer]
+        return a["idx"].long(), a["w"].float() / 255.0
+
+    def dequant_cache(self, key: str) -> torch.Tensor:
+        """Reconstruct a cached KV or DeltaNet state tensor in its original shape."""
+        return _decode_resid(self.cache[key], self.cache_quant, self.group_size, 0)
+
+    def byte_breakdown(self) -> dict[str, int]:
+        def _tbytes(t: torch.Tensor) -> int:
+            return t.numel() * t.element_size()
+
+        resid_b = sum(_tbytes(r["data"]) + (_tbytes(r["scales"]) if r["scales"] is not None else 0)
+                      for r in self.resid.values())
+        mlp_b = sum(_tbytes(t) for m in self.mlp_topk.values() for t in m.values())
+        head_b = sum(_tbytes(h["l2"]) for h in self.head_norms.values())
+        attn_b = sum(_tbytes(t) for a in self.attn_topk.values() for t in a.values())
+        cache_b = sum(_tbytes(c["data"]) + (_tbytes(c["scales"]) if c["scales"] is not None else 0)
+                      for c in self.cache.values())
+        return {
+            "resid": resid_b,
+            "mlp_topk": mlp_b,
+            "head_norms": head_b,
+            "attn_topk": attn_b,
+            "cache": cache_b,
+            "total": resid_b + mlp_b + head_b + attn_b + cache_b,
+        }
+
     def size_bytes(self) -> int:
-        b = sum(r["data"].numel() * r["data"].element_size()
-                + (r["scales"].numel() * r["scales"].element_size() if r["scales"] is not None else 0)
-                for r in self.resid.values())
-        b += sum(t.numel() * t.element_size() for m in self.mlp_topk.values() for t in m.values())
-        b += sum(h["l2"].numel() * h["l2"].element_size() for h in self.head_norms.values())
-        return b
+        return self.byte_breakdown()["total"]
 
     def compare_positions(self, t_target: int, t_ref: int, *, top_k: int = 8) -> dict[str, Any]:
         """Find which layers, MLP neurons, and attention heads shifted strongest at token `t_target` vs `t_ref`."""
@@ -297,9 +432,10 @@ class CompactTrace:
                 "delta_norm": round(float((vb - va).norm()), 4),
                 "cosine": round(float(torch.nn.functional.cosine_similarity(va[None], vb[None])), 5),
             })
-        for l, m in sorted(self.mlp_topk.items()):
-            ia, va = m["idx"][t_ref].tolist(), m["val"][t_ref].float().tolist()
-            ib, vb = m["idx"][t_target].tolist(), m["val"][t_target].float().tolist()
+        for l in sorted(self.mlp_topk):
+            idx_l, val_l = self.dequant_mlp_topk(l)
+            ia, va = idx_l[t_ref].tolist(), val_l[t_ref].tolist()
+            ib, vb = idx_l[t_target].tolist(), val_l[t_target].tolist()
             ma, mb = dict(zip(ia, va)), dict(zip(ib, vb))
             for u in set(ma) | set(mb):
                 da, db = ma.get(u, 0.0), mb.get(u, 0.0)
@@ -316,12 +452,28 @@ class CompactTrace:
                                     "delta": round(float(diff[hid]), 4), "abs_delta": round(float(diff[hid].abs()), 4)})
         mlp_shifts.sort(key=lambda x: -x["abs_delta"])
         head_shifts.sort(key=lambda x: -x["abs_delta"])
-        return {
+        res_out: dict[str, Any] = {
             "t_target": t_target, "t_ref": t_ref,
             "layer_shifts": sorted(layer_shifts, key=lambda x: -x["delta_norm"])[:top_k],
             "top_mlp_shifts": mlp_shifts[:top_k],
             "top_head_shifts": head_shifts[:top_k],
         }
+        if self.attn_topk:
+            attn_shifts = []
+            for l in sorted(self.attn_topk):
+                idx_a, w_a = self.dequant_attn_topk(l)
+                for hid in range(idx_a.shape[0]):
+                    ma = dict(zip(idx_a[hid, t_ref].tolist(), w_a[hid, t_ref].tolist()))
+                    mb = dict(zip(idx_a[hid, t_target].tolist(), w_a[hid, t_target].tolist()))
+                    l1 = sum(abs(mb.get(u, 0.0) - ma.get(u, 0.0)) for u in set(ma) | set(mb))
+                    attn_shifts.append({
+                        "layer": l, "head": hid, "l1_shift": round(l1, 4),
+                        "target_top_src_pos": int(idx_a[hid, t_target, 0]),
+                        "target_top_weight": round(float(w_a[hid, t_target, 0]), 4),
+                    })
+            attn_shifts.sort(key=lambda x: -x["l1_shift"])
+            res_out["top_attn_shifts"] = attn_shifts[:top_k]
+        return res_out
 
     def detect_loop_onset(self, layer: int | None = None, window: int = 8, thr: float = 0.96) -> dict[str, Any]:
         """Scan token-to-previous-token residual cosine inside one trace to locate repetition onset `t*`."""
@@ -362,12 +514,25 @@ class CompactTrace:
         for idx, (mod, h) in enumerate(self.head_norms.items()):
             flat[f"head.{idx}"] = h["l2"].contiguous()
             head_meta[str(idx)] = {"module": mod, "layer": h["layer"], "n_heads": h["n_heads"]}
+        for l, a in self.attn_topk.items():
+            flat[f"attn.{l}.idx"] = a["idx"].contiguous()
+            flat[f"attn.{l}.w"] = a["w"].contiguous()
+        cache_meta = {}
+        for idx, (ck, c) in enumerate(self.cache.items()):
+            flat[f"cache.{idx}.data"] = c["data"].contiguous()
+            if c["scales"] is not None:
+                flat[f"cache.{idx}.scales"] = c["scales"].contiguous()
+            cache_meta[str(idx)] = {"key": ck, "shape": list(c["shape"])}
         save_file(flat, str(p / "compact_trace.safetensors"))
         (p / "compact_trace.json").write_text(json.dumps({
             "seq_len": self.seq_len, "n_layers": self.n_layers, "hidden_size": self.hidden_size,
             "resid_quant": self.resid_quant, "group_size": self.group_size, "top_k_mlp": self.top_k_mlp,
-            "hadamard_block": self.hadamard_block, "resid_shapes": resid_shapes, "heads": head_meta,
-            "meta": self.meta,
+            "hadamard_block": self.hadamard_block, "mlp_quant": self.mlp_quant,
+            "mlp_idx_mode": self.mlp_idx_mode, "mlp_group_size": self.mlp_group_size,
+            "mlp_meta": {str(l): m for l, m in self.mlp_meta.items()},
+            "top_k_attn": self.top_k_attn, "attn_layers": sorted(self.attn_topk),
+            "cache_quant": self.cache_quant, "cache_meta": cache_meta,
+            "resid_shapes": resid_shapes, "heads": head_meta, "meta": self.meta,
         }, indent=2), encoding="utf-8")
         return p
 
@@ -378,20 +543,40 @@ class CompactTrace:
         p = Path(trace_dir)
         info = json.loads((p / "compact_trace.json").read_text(encoding="utf-8"))
         tens = load_file(str(p / "compact_trace.safetensors"))
-        resid, mlp_topk, head_norms = {}, {}, {}
+        resid, mlp_topk, head_norms, attn_topk, cache = {}, {}, {}, {}, {}
         for l_str, shp in info["resid_shapes"].items():
             l = int(l_str)
             resid[l] = {"data": tens[f"resid.{l}.data"], "scales": tens.get(f"resid.{l}.scales"), "shape": shp}
         for l in range(info["n_layers"]):
-            if f"mlp.{l}.idx" in tens:
-                mlp_topk[l] = {"idx": tens[f"mlp.{l}.idx"], "val": tens[f"mlp.{l}.val"],
-                               "energy_frac": tens[f"mlp.{l}.energy_frac"]}
+            prefix = f"mlp.{l}."
+            layer_t = {k[len(prefix):]: v for k, v in tens.items() if k.startswith(prefix)}
+            if layer_t:
+                mlp_topk[l] = layer_t
         for idx, hm in info["heads"].items():
             head_norms[hm["module"]] = {"layer": hm["layer"], "n_heads": hm["n_heads"], "l2": tens[f"head.{idx}"]}
+        for l in info.get("attn_layers", ()):
+            if f"attn.{l}.idx" in tens:
+                attn_topk[int(l)] = {"idx": tens[f"attn.{l}.idx"], "w": tens[f"attn.{l}.w"]}
+        for idx, cm in info.get("cache_meta", {}).items():
+            cache[cm["key"]] = {
+                "data": tens[f"cache.{idx}.data"],
+                "scales": tens.get(f"cache.{idx}.scales"),
+                "shape": cm["shape"],
+            }
+        mlp_meta = {int(ls): m for ls, m in info.get("mlp_meta", {}).items()}
         return cls(
             info["seq_len"], info["n_layers"], info["hidden_size"], info["resid_quant"],
             info["group_size"], info["top_k_mlp"], resid, mlp_topk, head_norms,
-            hadamard_block=info.get("hadamard_block", 0), meta=info.get("meta", {}),
+            hadamard_block=info.get("hadamard_block", 0),
+            mlp_quant=info.get("mlp_quant", "fp16"),
+            mlp_idx_mode=info.get("mlp_idx_mode", "uint16"),
+            mlp_group_size=info.get("mlp_group_size", info["group_size"]),
+            mlp_meta=mlp_meta,
+            top_k_attn=info.get("top_k_attn", 0),
+            attn_topk=attn_topk,
+            cache_quant=info.get("cache_quant", "int8"),
+            cache=cache,
+            meta=info.get("meta", {}),
         )
 
 
@@ -400,13 +585,21 @@ def capture_compact(
     model: nn.Module,
     input_ids: torch.Tensor | list[int],
     *,
-    top_k_mlp: int = 256,
+    top_k_mlp: int = 1024,
     resid_quant: str = "int8",
-    group_size: int = 16,
-    hadamard_block: int = 0,
+    group_size: int = 64,
+    hadamard_block: int = 64,
+    mlp_quant: str = "fp4",
+    mlp_idx_mode: str = "auto",
+    mlp_group_size: int = 16,
+    top_k_attn: int = 16,
+    capture_cache: bool = True,
+    cache_quant: str = "int8",
     max_tokens: int | None = None,
 ) -> CompactTrace:
-    """Record a compressed token-by-token trace: quantized residuals, Top-K weighted MLP units, and head L2 norms."""
+    """Record a Pareto-optimal compressed token trace (~80-95 MiB per 1.6k tok on 0.8B):
+    INT8 Hadamard-rotated residuals, Top-1024 FP4 bitmask/bitpack MLP units, per-head L2 norms,
+    sparse Top-16 attention targets (`uint16+uint8`), and INT8 KV/recurrent cache states."""
     dev = next(model.parameters()).device
     ids = (input_ids if isinstance(input_ids, torch.Tensor) else torch.tensor(input_ids)).reshape(1, -1)
     if max_tokens is not None:
@@ -432,6 +625,7 @@ def capture_compact(
 
     resid_out: dict[int, dict[str, Any]] = {}
     mlp_topk_out: dict[int, dict[str, torch.Tensor]] = {}
+    mlp_meta_out: dict[int, dict[str, Any]] = {}
     head_out: dict[str, dict[str, Any]] = {}
     handles = []
 
@@ -451,18 +645,39 @@ def capture_compact(
 
         def mhook(mod, inp, out, li=li, wn=wn):
             x = inp[0].detach().reshape(-1, inp[0].shape[-1]).float()
-            idx_dt = torch.uint16 if x.shape[1] <= 65_535 else torch.int32
+            d_inter = x.shape[1]
             contrib = x * wn.to(x.device)
-            k = min(top_k_mlp, contrib.shape[1])
+            k = min(top_k_mlp, d_inter)
             _, idx = contrib.abs().topk(k, dim=1)
             signed = contrib.gather(1, idx)
             tot_sq = (contrib * contrib).sum(dim=1).clamp_min(1e-12)
             kept_sq = (signed * signed).sum(dim=1)
-            mlp_topk_out[li] = {
-                "idx": idx.to(idx_dt).cpu(),
-                "val": signed.to(torch.float16).cpu(),
-                "energy_frac": (kept_sq / tot_sq).sqrt().to(torch.float16).cpu(),
-            }
+
+            mode = resolve_mlp_idx_mode(k, d_inter, mlp_idx_mode)
+            bits = max(1, (d_inter - 1).bit_length())
+            entry: dict[str, torch.Tensor] = {}
+            if mode == "bitmask":
+                idx_use, perm = idx.sort(dim=1)
+                val_use = signed.gather(1, perm)
+                entry["idx_mask"] = pack_bitmask_u8(idx_use, d_inter)
+            elif mode == "bitpack":
+                val_use = signed
+                entry["idx_pack"] = pack_bitpack_u8(idx, bits)
+            else:
+                idx_dt = torch.uint16 if d_inter <= 65_535 else torch.int32
+                val_use = signed
+                entry["idx"] = idx.to(idx_dt).cpu()
+
+            if mlp_quant == "fp16":
+                entry["val"] = val_use.to(torch.float16).cpu()
+            else:
+                venc = _encode_resid(val_use, mlp_quant, mlp_group_size, 0)
+                entry["val"] = venc["data"]
+                if venc["scales"] is not None:
+                    entry["val_scales"] = venc["scales"]
+            entry["energy_frac"] = (kept_sq / tot_sq).sqrt().to(torch.float16).cpu()
+            mlp_topk_out[li] = entry
+            mlp_meta_out[li] = {"mode": mode, "k": k, "d_inter": d_inter, "bits": bits, "shape": [int(x.shape[0]), k]}
 
         handles.append(m.register_forward_hook(mhook))
 
@@ -476,14 +691,58 @@ def capture_compact(
 
         handles.append(am.register_forward_hook(ahook))
 
+    out = None
     try:
-        model(input_ids=ids.to(dev), use_cache=False)
+        try:
+            out = model(input_ids=ids.to(dev), output_attentions=(top_k_attn > 0), use_cache=capture_cache)
+        except (TypeError, ValueError, NotImplementedError):
+            resid_out.clear()
+            mlp_topk_out.clear()
+            mlp_meta_out.clear()
+            head_out.clear()
+            if top_k_attn > 0:
+                try:
+                    out = model(input_ids=ids.to(dev), use_cache=capture_cache)
+                except (TypeError, ValueError, NotImplementedError):
+                    resid_out.clear()
+                    mlp_topk_out.clear()
+                    mlp_meta_out.clear()
+                    head_out.clear()
+                    out = model(input_ids=ids.to(dev), use_cache=False)
+            else:
+                out = model(input_ids=ids.to(dev), use_cache=False)
     finally:
         for h in handles:
             h.remove()
 
-    return CompactTrace(T, n_layers, hidden, resid_quant, group_size, top_k_mlp,
-                        resid_out, mlp_topk_out, head_out, hadamard_block=hadamard_block)
+    attn_topk_out: dict[int, dict[str, torch.Tensor]] = {}
+    if top_k_attn > 0 and out is not None:
+        for li, att in enumerate(getattr(out, "attentions", None) or ()):
+            if not isinstance(att, torch.Tensor) or att.dim() != 4 or att.shape[-1] == 0:
+                continue
+            a = att[0].detach().float()
+            k_att = min(top_k_attn, a.shape[-1])
+            vals, a_idx = a.topk(k_att, dim=-1)
+            idx_dt = torch.uint16 if a.shape[-1] <= 65_535 else torch.int32
+            attn_topk_out[li] = {
+                "idx": a_idx.to(idx_dt).cpu(),
+                "w": torch.round(vals.clamp(0.0, 1.0) * 255.0).to(torch.uint8).cpu(),
+            }
+
+    cache_out: dict[str, dict[str, Any]] = {}
+    if capture_cache and out is not None:
+        for ck, cv in _extract_cache_tensors(getattr(out, "past_key_values", None)).items():
+            cache_out[ck] = _encode_resid(cv, cache_quant, group_size, 0)
+
+    modes = {m["mode"] for m in mlp_meta_out.values()}
+    eff_idx_mode = next(iter(modes)) if len(modes) == 1 else mlp_idx_mode
+    return CompactTrace(
+        T, n_layers, hidden, resid_quant, group_size, top_k_mlp,
+        resid_out, mlp_topk_out, head_out, hadamard_block=hadamard_block,
+        mlp_quant=mlp_quant, mlp_idx_mode=eff_idx_mode, mlp_group_size=mlp_group_size,
+        mlp_meta=mlp_meta_out, top_k_attn=top_k_attn, attn_topk=attn_topk_out,
+        cache_quant=cache_quant, cache=cache_out,
+    )
 
 
 # ----------------------------------------------------------------------------------------------- dense trace_all diff

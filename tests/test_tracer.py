@@ -30,8 +30,16 @@ from wsi import (  # noqa: E402
     quantize_block_fp4,
     quantize_block_int4,
     quantize_block_ternary,
+    resolve_mlp_idx_mode,
 )
-from wsi.tracer import dequantize_fp8_or_int8, quantize_fp8_or_int8  # noqa: E402
+from wsi.tracer import (  # noqa: E402
+    dequantize_fp8_or_int8,
+    pack_bitmask_u8,
+    pack_bitpack_u8,
+    quantize_fp8_or_int8,
+    unpack_bitmask_u8,
+    unpack_bitpack_u8,
+)
 
 
 class _TinyAttn(nn.Module):
@@ -53,6 +61,7 @@ class _TinyAttn(nn.Module):
         scores = (q @ k.transpose(-2, -1)) / (hd ** 0.5)
         mask = torch.triu(torch.full((T, T), float("-inf"), device=x.device), diagonal=1)
         attn = torch.softmax(scores + mask, dim=-1)
+        self._last_kv = (k.detach(), v.detach())
         ctx = (attn @ v).transpose(1, 2).reshape(B, T, H)
         return self.o_proj(ctx), attn
 
@@ -103,8 +112,14 @@ class _TinyCausalModel(nn.Module):
             if atts is not None:
                 atts.append(att)
         logits = self.lm_head(self.model.norm(h))
+        pkv = None
+        if use_cache:
+            ks = [lyr.self_attn._last_kv[0] for lyr in self.model.layers]
+            vs = [lyr.self_attn._last_kv[1] for lyr in self.model.layers]
+            rec = [h[:, :1, :16].detach()]
+            pkv = SimpleNamespace(key_cache=ks, value_cache=vs, recurrent_states=rec)
         return SimpleNamespace(logits=logits, hidden_states=tuple(hs) if hs else None,
-                               attentions=tuple(atts) if atts else None, past_key_values=None)
+                               attentions=tuple(atts) if atts else None, past_key_values=pkv)
 
 
 def test_block_int4_isolates_outliers() -> None:
@@ -148,19 +163,78 @@ def test_block_int4_isolates_outliers() -> None:
 
 def test_compact_trace_roundtrip_and_loop_onset() -> None:
     torch.manual_seed(1)
+    # Direct lossless tests for bitpack (12-bit / 14-bit) & bitmask + auto crossing rules
+    for d_inter, k in ((3584, 17), (3584, 256), (9216, 17)):
+        bits = (d_inter - 1).bit_length()
+        perm = torch.stack([torch.randperm(d_inter)[:k] for _ in range(7)])
+        p_bp = pack_bitpack_u8(perm, bits)
+        assert torch.equal(unpack_bitpack_u8(p_bp, k, bits), perm.long())
+        p_bm = pack_bitmask_u8(perm, d_inter)
+        assert torch.equal(unpack_bitmask_u8(p_bm, k, d_inter), torch.sort(perm.long(), dim=1).values)
+    assert resolve_mlp_idx_mode(256, 3584, "auto") == "bitpack"
+    assert resolve_mlp_idx_mode(512, 3584, "auto") == "bitmask"
+    assert resolve_mlp_idx_mode(512, 9216, "auto") == "bitpack"
+    assert resolve_mlp_idx_mode(1024, 9216, "auto") == "bitmask"
+
     model = _TinyCausalModel(vocab=32, hidden=32, inter=64, n_layers=3, n_heads=4).eval()
     # Non-repeating prefix followed by a periodic repeating loop at t >= 12
     ids = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 5, 6, 7, 8, 5, 6, 7, 8]])
     with tempfile.TemporaryDirectory() as td:
-        tr8 = capture_compact(model, ids, top_k_mlp=16, group_size=16)  # default: int8
-        assert tr8.resid_quant == "int8" and tr8.mlp_topk[0]["idx"].dtype == torch.uint16
+        root = Path(td)
+        # Pareto-optimal defaults: int8+g64+had64 resid, fp4+bitmask/auto MLP (g16), Top-16 attn, int8 cache
+        tr_def = capture_compact(model, ids)
+        assert tr_def.resid_quant == "int8" and tr_def.group_size == 64 and tr_def.hadamard_block == 64
+        assert tr_def.mlp_quant == "fp4" and tr_def.mlp_group_size == 16 and tr_def.top_k_mlp == 1024
+        assert tr_def.mlp_idx_mode == "bitmask" and tr_def.top_k_attn == 16
+        assert len(tr_def.attn_topk) == 3 and "key_cache.0" in tr_def.cache and "recurrent_states.0" in tr_def.cache
+        bd = tr_def.byte_breakdown()
+        assert bd["total"] == tr_def.size_bytes() and bd["attn_topk"] > 0 and bd["cache"] > 0
+        tr_def.save(root / "default")
+        loaded_def = CompactTrace.load(root / "default")
+        assert loaded_def.byte_breakdown() == bd
+        with torch.no_grad():
+            ref_out = model(ids, output_attentions=True, use_cache=True)
+        a_idx, a_w = loaded_def.dequant_attn_topk(1)
+        assert a_idx.shape == (4, 20, 16) and float((ref_out.attentions[1][0].topk(16, dim=-1).values - a_w).abs().max()) < 0.005
+        assert quantization_error(ref_out.past_key_values.key_cache[0], loaded_def.dequant_cache("key_cache.0"))["cosine"] > 0.9999
+        assert quantization_error(ref_out.past_key_values.recurrent_states[0], loaded_def.dequant_cache("recurrent_states.0"))["cosine"] > 0.9999
+        cmp_def = loaded_def.compare_positions(t_target=19, t_ref=2, top_k=4)
+        assert "top_attn_shifts" in cmp_def and len(cmp_def["top_attn_shifts"]) == 4
+
+        # Explicit baseline: uint16 + fp16 MLP without attn/cache
+        tr_u16 = capture_compact(model, ids, top_k_mlp=16, mlp_quant="fp16", mlp_idx_mode="uint16",
+                                 group_size=16, hadamard_block=0, top_k_attn=0, capture_cache=False)
+        assert tr_u16.resid_quant == "int8" and tr_u16.mlp_topk[0]["idx"].dtype == torch.uint16
+
+        # Auto + int8 MLP (inter=64, top_k=16 -> bitmask beats bitpack/uint16, strictly smaller!)
+        tr_auto = capture_compact(model, ids, top_k_mlp=16, mlp_quant="int8", mlp_idx_mode="auto",
+                                  group_size=16, hadamard_block=0, top_k_attn=0, capture_cache=False)
+        assert tr_auto.resid_quant == "int8" and tr_auto.mlp_quant == "int8" and tr_auto.mlp_idx_mode == "bitmask"
+        assert tr_auto.size_bytes() < tr_u16.size_bytes()
+        tr_auto.save(root / "auto")
+        loaded_auto = CompactTrace.load(root / "auto")
+        idx_u, val_u = tr_u16.dequant_mlp_topk(0)
+        idx_a, val_a = loaded_auto.dequant_mlp_topk(0)
+        assert torch.equal(torch.sort(idx_u, dim=1).values, idx_a)
+        assert quantization_error(val_u.gather(1, idx_u.argsort(dim=1)), val_a)["cosine"] > 0.9999
+
+        # Explicit bitpack + fp4 MLP
+        tr_bp = capture_compact(model, ids, top_k_mlp=16, mlp_quant="fp4", mlp_idx_mode="bitpack", group_size=16)
+        assert tr_bp.mlp_idx_mode == "bitpack" and "idx_pack" in tr_bp.mlp_topk[0]
+        tr_bp.save(root / "bitpack")
+        loaded_bp = CompactTrace.load(root / "bitpack")
+        idx_b, val_b = loaded_bp.dequant_mlp_topk(0)
+        assert torch.equal(idx_b, idx_u) and quantization_error(val_u, val_b)["cosine"] > 0.98
+        assert len(loaded_bp.compare_positions(t_target=19, t_ref=2, top_k=4)["top_mlp_shifts"]) == 4
+
         tr_ter = capture_compact(model, ids, top_k_mlp=16, resid_quant="ternary", hadamard_block=32, group_size=16)
         assert tr_ter.hadamard_block == 32
-        tr_ter.save(td + "_ter")
-        assert CompactTrace.load(td + "_ter").hadamard_block == 32
+        tr_ter.save(root / "ter")
+        assert CompactTrace.load(root / "ter").hadamard_block == 32
+
         tr = capture_compact(model, ids, top_k_mlp=16, resid_quant="int4", group_size=16)
-        tr.save(td)
-        loaded = CompactTrace.load(td)
+        tr.save(root / "main")
+        loaded = CompactTrace.load(root / "main")
         assert loaded.seq_len == 20 and loaded.size_bytes() > 0
         onset = loaded.detect_loop_onset(layer=2, window=4, thr=0.95)
         assert onset["onset_token"] is not None and onset["onset_token"] >= 12
