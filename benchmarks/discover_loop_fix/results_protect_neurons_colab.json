@@ -1,0 +1,155 @@
+{
+ "choice": "skip10",
+ "protect": {
+  "layers": [
+   11,
+   15,
+   7
+  ],
+  "alpha": 6.0,
+  "n_good_runs": 30,
+  "loss_tokens_A": 15279,
+  "n_columns": {
+   "orig": {
+    "11": 64,
+    "15": 64,
+    "7": 64
+   },
+   "skip10": {
+    "11": 64,
+    "15": 64,
+    "7": 64
+   },
+   "skip25": {
+    "11": 64,
+    "15": 64,
+    "7": 64
+   },
+   "drop10": {
+    "11": 40,
+    "15": 27,
+    "7": 36
+   }
+  },
+  "predicted_harm": {
+   "orig": 1e-05,
+   "skip10": -0.007026,
+   "skip25": -0.008192,
+   "drop10": -0.005805
+  },
+  "heldout_nll": {
+   "base": 0.39903,
+   "orig": 0.42567,
+   "skip10": 0.41544,
+   "skip25": 0.41462,
+   "drop10": 0.41045
+  },
+  "harm_of_orig_columns_pct_rank": {
+   "11": 0.434,
+   "15": 0.632,
+   "7": 0.626
+  },
+  "orig_matches_v3_columns": {
+   "11": "64/64",
+   "15": "64/64",
+   "7": "64/64"
+  },
+  "dev16": {
+   "orig": {
+    "n": 64,
+    "accuracy": 0.328125,
+    "loop_killed": 0.640625,
+    "truncated": 0.015625
+   },
+   "skip10": {
+    "n": 64,
+    "accuracy": 0.40625,
+    "loop_killed": 0.515625,
+    "truncated": 0.015625
+   },
+   "skip25": {
+    "n": 64,
+    "accuracy": 0.40625,
+    "loop_killed": 0.5625,
+    "truncated": 0.0
+   },
+   "drop10": {
+    "n": 64,
+    "accuracy": 0.359375,
+    "loop_killed": 0.625,
+    "truncated": 0.0
+   }
+  },
+  "choice": "skip10"
+ },
+ "arms": {
+  "base": {
+   "n": 200,
+   "accuracy": 0.09,
+   "loop_killed": 0.905,
+   "truncated": 0.0
+  },
+  "v3_fixed": {
+   "n": 200,
+   "accuracy": 0.405,
+   "loop_killed": 0.535,
+   "truncated": 0.0
+  },
+  "v3_moi": {
+   "n": 200,
+   "accuracy": 0.55,
+   "loop_killed": 0.245,
+   "truncated": 0.02
+  },
+  "protected_fixed": {
+   "n": 200,
+   "accuracy": 0.415,
+   "loop_killed": 0.525,
+   "truncated": 0.01
+  },
+  "protected_moi": {
+   "n": 200,
+   "accuracy": 0.575,
+   "loop_killed": 0.255,
+   "truncated": 0.065
+  }
+ },
+ "paired": {
+  "protected_fixed_vs_v3_fixed": {
+   "diff": 0.01,
+   "ci95": [
+    -0.06,
+    0.08
+   ],
+   "a_only": 26,
+   "b_only": 24
+  },
+  "protected_moi_vs_v3_moi": {
+   "diff": 0.025,
+   "ci95": [
+    -0.03,
+    0.08
+   ],
+   "a_only": 18,
+   "b_only": 13
+  },
+  "protected_fixed_vs_base": {
+   "diff": 0.325,
+   "ci95": [
+    0.255,
+    0.395
+   ],
+   "a_only": 67,
+   "b_only": 2
+  },
+  "v3_fixed_vs_base": {
+   "diff": 0.315,
+   "ci95": [
+    0.245,
+    0.385
+   ],
+   "a_only": 66,
+   "b_only": 3
+  }
+ }
+}
