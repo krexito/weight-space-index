@@ -24,6 +24,7 @@ from wsi import (  # noqa: E402
     dequantize_block_fp4,
     dequantize_block_int4,
     dequantize_block_ternary,
+    diff_compact,
     diff_traces,
     hadamard_transform,
     quantization_error,
@@ -181,17 +182,26 @@ def test_compact_trace_roundtrip_and_loop_onset() -> None:
     ids = torch.tensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 5, 6, 7, 8, 5, 6, 7, 8]])
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
-        # Pareto-optimal defaults: int8+g64+had64 resid, fp4+bitmask/auto MLP (g16), Top-16 attn, int8 cache
+        # Pareto-optimal defaults: int8+g64+had64 resid, auto Top-K (95% energy) fp4+bitmask/auto MLP (g16), Top-16 attn, int8 cache
         tr_def = capture_compact(model, ids)
         assert tr_def.resid_quant == "int8" and tr_def.group_size == 64 and tr_def.hadamard_block == 64
-        assert tr_def.mlp_quant == "fp4" and tr_def.mlp_group_size == 16 and tr_def.top_k_mlp == 1024
+        assert tr_def.mlp_quant == "fp4" and tr_def.mlp_group_size == 16 and 0 < tr_def.top_k_mlp <= 64
+        assert tr_def.meta["top_k_mlp_mode"] == "auto" and tr_def.meta["mlp_energy_target"] == 0.95
+        assert tr_def.meta["mlp_mean_energy_frac"] >= 0.95
+        assert all(m["mean_energy_frac"] >= 0.95 for m in tr_def.mlp_meta.values())
         assert tr_def.mlp_idx_mode == "bitmask" and tr_def.top_k_attn == 16
         assert len(tr_def.attn_topk) == 3 and "key_cache.0" in tr_def.cache and "recurrent_states.0" in tr_def.cache
         bd = tr_def.byte_breakdown()
         assert bd["total"] == tr_def.size_bytes() and bd["attn_topk"] > 0 and bd["cache"] > 0
         tr_def.save(root / "default")
         loaded_def = CompactTrace.load(root / "default")
-        assert loaded_def.byte_breakdown() == bd
+        assert loaded_def.byte_breakdown() == bd and loaded_def.meta == tr_def.meta
+        tr_80 = capture_compact(model, ids, top_k_mlp=0.80)
+        tr_99 = capture_compact(model, ids, mlp_energy_target=0.99)
+        assert tr_80.meta["top_k_mlp_mode"] == "auto" and tr_80.meta["mlp_energy_target"] == 0.80
+        assert tr_80.meta["mlp_mean_energy_frac"] >= 0.80 and tr_99.meta["mlp_mean_energy_frac"] >= 0.99
+        assert tr_80.top_k_mlp <= tr_def.top_k_mlp <= tr_99.top_k_mlp
+        assert tr_80.size_bytes() <= tr_def.size_bytes() <= tr_99.size_bytes()
         with torch.no_grad():
             ref_out = model(ids, output_attentions=True, use_cache=True)
         a_idx, a_w = loaded_def.dequant_attn_topk(1)
@@ -287,6 +297,15 @@ def test_diff_traces_pinpoints_planted_circuit_with_wsi() -> None:
             assert diff["peak_vector_readout"] is not None
             promoted = [x["token"] for x in diff["peak_vector_readout"]["promoted"]]
             assert "TARGET_OUT" in promoted
+
+            cdiff = diff_compact(capture_compact(model, ids_a), capture_compact(model, ids_b),
+                                 wsi=I, pos_a=-1, pos_b=-1, top_k=5)
+            assert cdiff["len_a"] == 3 and cdiff["len_b"] == 5
+            assert (cdiff["top_mlp_contributors"][0]["layer"], cdiff["top_mlp_contributors"][0]["unit"]) == (2, 7)
+            assert (cdiff["top_attention_heads"][0]["layer"], cdiff["top_attention_heads"][0]["head"]) == (1, 2)
+            assert "attn_b_top_src_pos" in cdiff["top_attention_heads"][0]
+            assert len(cdiff["top_cache_deltas"]) > 0
+            assert "TARGET_OUT" in [x["token"] for x in cdiff["peak_vector_readout"]["promoted"]]
 
 
 if __name__ == "__main__":

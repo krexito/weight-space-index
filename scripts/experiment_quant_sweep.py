@@ -81,9 +81,9 @@ def _local_or_hub(name_or_dir: str) -> str:
 def _load_model(mdir: str, dev: torch.device):
     dtype = torch.bfloat16 if dev.type == "cuda" else torch.float32
     try:
-        return AutoModelForCausalLM.from_pretrained(mdir, dtype=dtype, attn_implementation="eager").to(dev).eval()
+        return AutoModelForCausalLM.from_pretrained(mdir, dtype=dtype, attn_implementation="eager", trust_remote_code=True).to(dev).eval()
     except Exception:
-        return AutoModelForCausalLM.from_pretrained(mdir, dtype=dtype).to(dev).eval()
+        return AutoModelForCausalLM.from_pretrained(mdir, dtype=dtype, trust_remote_code=True).to(dev).eval()
 
 
 def _find_norm_and_head(model):
@@ -96,8 +96,10 @@ def _find_norm_and_head(model):
         getattr(model, "language_model", None),
         model,
     ):
-        if owner is not None and hasattr(owner, "norm"):
-            return owner.norm, head
+        if owner is not None:
+            for attr in ("norm", "embedding_norm", "final_layernorm", "ln_f"):
+                if hasattr(owner, attr):
+                    return getattr(owner, attr), head
     raise RuntimeError("Could not locate final norm + lm_head on model")
 
 
@@ -287,7 +289,7 @@ def main() -> None:
     print(f"Device: {dev} | Model: {args.model}", flush=True)
 
     mdir = _local_or_hub(args.model)
-    tok = AutoTokenizer.from_pretrained(mdir)
+    tok = AutoTokenizer.from_pretrained(mdir, trust_remote_code=True)
     model = _load_model(mdir, dev)
     _, blocks = find_blocks(model)
     n_layers = len(blocks)
@@ -296,8 +298,12 @@ def main() -> None:
     # 1. Pick a real sequence (preferring one with loop onset, like experiment_trace_xray.py)
     seq, prompt_len, gen_s, chosen_q = None, 0, 0.0, CANDIDATE_PROMPTS[0]
     for q in CANDIDATE_PROMPTS:
-        prompt = tok.apply_chat_template([{"role": "user", "content": q}], tokenize=False,
-                                         add_generation_prompt=True, enable_thinking=True)
+        try:
+            prompt = tok.apply_chat_template([{"role": "user", "content": q}], tokenize=False,
+                                             add_generation_prompt=True, enable_thinking=True)
+        except TypeError:
+            prompt = tok.apply_chat_template([{"role": "user", "content": q}], tokenize=False,
+                                             add_generation_prompt=True)
         enc = tok(prompt, return_tensors="pt").to(dev)
         t0 = time.perf_counter()
         with torch.no_grad():

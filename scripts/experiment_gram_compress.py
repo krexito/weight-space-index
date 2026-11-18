@@ -34,8 +34,28 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 try:
     from wsi.capture import apply_selection, find_mlps  # noqa: E402
-except ImportError:  # Colab: wsi/capture.py copied next to this script as wsi_capture.py
+    from wsi.tracer import (  # noqa: E402
+        dequantize_block_fp4,
+        dequantize_block_int4,
+        dequantize_fp8_or_int8,
+        hadamard_transform,
+        quantize_block_fp4,
+        quantize_block_int4,
+        quantize_fp8_or_int8,
+        resolve_hadamard_block,
+    )
+except ImportError:  # Colab fallback
     from wsi_capture import apply_selection, find_mlps  # noqa: E402
+    from wsi_tracer import (  # noqa: E402
+        dequantize_block_fp4,
+        dequantize_block_int4,
+        dequantize_fp8_or_int8,
+        hadamard_transform,
+        quantize_block_fp4,
+        quantize_block_int4,
+        quantize_fp8_or_int8,
+        resolve_hadamard_block,
+    )
 
 HUB_FILES = {
     "gsm8k/test.parquet": ("openai/gsm8k", "main/test-00000-of-00001.parquet"),
@@ -72,6 +92,7 @@ def main() -> None:
     ap.add_argument("--ranks", default="32,128,256,1024")
     ap.add_argument("--token-subsets", default="2000,5000,20000")
     ap.add_argument("--ridge", type=float, default=1e-2, help="lambda as a fraction of mean diag(G_SS)")
+    ap.add_argument("--variants", default="all", help="Comma-separated subset of variants or 'all'")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--out", default=str(ROOT / "benchmarks" / "gram_compress" / "results.json"))
     args = ap.parse_args()
@@ -109,15 +130,30 @@ def main() -> None:
     held = {"math": [chat(q, clean_solution(a)) for q, a in zip(gte["question"], gte["answer"])],
             "wiki": [wt[i : i + 256] for i in range(0, 256 * args.n_eval, 256)]}
 
-    # ------------------------------------------------ calibration: energy scores + Gram (with snapshots at N tokens)
+    # ------------------------------------------------ calibration: energy scores + Gram (with snapshots & Top-K fp4)
+    wnorm = {d: mods[d].weight.detach().float().norm(dim=0) for d in downs}
+    k_mlp_trace = min(1024, U)
     st = {d: {"sq": torch.zeros(U, device=dev, dtype=torch.float64),
-              "G": torch.zeros(U, U, device=dev, dtype=torch.float32)} for d in downs}
+              "G": torch.zeros(U, U, device=dev, dtype=torch.float32),
+              "G_topk": torch.zeros(U, U, device=dev, dtype=torch.float32)} for d in downs}
 
     def hook(name):
+        wn = wnorm[name]
+
         def f(mod, inp):
             x = inp[0].detach().reshape(-1, U).float()
             st[name]["sq"] += (x * x).sum(0).double()
             st[name]["G"] += x.T @ x
+            contrib = x * wn
+            _, idx = contrib.abs().topk(k_mlp_trace, dim=1)
+            idx_s, _ = idx.sort(dim=1)
+            vals = contrib.gather(1, idx_s)
+            p_v, s_v, shp_v = quantize_block_fp4(vals, group_size=16)
+            v_hat = dequantize_block_fp4(p_v, s_v, shp_v, group_size=16).to(dev)
+            x_hat = torch.zeros_like(x)
+            x_hat.scatter_(1, idx_s, v_hat / wn[idx_s].clamp_min(1e-12))
+            st[name]["G_topk"] += x_hat.T @ x_hat
+
         return f
 
     hs = [mods[d].register_forward_pre_hook(hook(d)) for d in downs]
@@ -136,6 +172,7 @@ def main() -> None:
     print(f"calibration: {ntok:,} tokens ({len(calib)} seqs) in {time.perf_counter() - t0:.0f}s", flush=True)
 
     Gfull = {d: st[d]["G"].double() / ntok for d in downs}
+    Gtopk = {d: st[d]["G_topk"].double() / ntok for d in downs}
     wnorm = {d: mods[d].weight.float().norm(dim=0).double() for d in downs}
     energy = {d: (st[d]["sq"] / ntok).sqrt() * wnorm[d] for d in downs}
 
@@ -151,6 +188,30 @@ def main() -> None:
         spectrum[str(k)] = round(sum(float(eig[d][0][:k].sum() / Gfull[d].trace()) for d in downs) / L, 4)
     print(f"eigendecomposition in {time.perf_counter() - t1:.0f}s; energy captured by top-k: {spectrum}", flush=True)
 
+    tri_i, tri_j = torch.triu_indices(U, U, device=dev)
+    hb_g = resolve_hadamard_block(U, 64)
+
+    def _quant_sym(mat: torch.Tensor, fmt: str, use_had: bool) -> torch.Tensor:
+        m = mat.float()
+        if use_had and hb_g > 1:
+            m = hadamard_transform(hadamard_transform(m, hb_g).T, hb_g).T
+        vec = m[tri_i, tri_j]
+        if fmt == "int8":
+            q, sc, _ = quantize_fp8_or_int8(vec, group_size=64)
+            v_hat = dequantize_fp8_or_int8(q, sc, (vec.numel(),), group_size=64).to(dev)
+        elif fmt == "int4":
+            p, sc, shp = quantize_block_int4(vec, group_size=16)
+            v_hat = dequantize_block_int4(p, sc, shp, group_size=16).to(dev)
+        else:
+            p, sc, shp = quantize_block_fp4(vec, group_size=16)
+            v_hat = dequantize_block_fp4(p, sc, shp, group_size=16).to(dev)
+        out_m = torch.zeros_like(m)
+        out_m[tri_i, tri_j] = v_hat
+        out_m = out_m + out_m.T - torch.diag(out_m.diagonal())
+        if use_had and hb_g > 1:
+            out_m = hadamard_transform(hadamard_transform(out_m, hb_g).T, hb_g).T
+        return out_m.double()
+
     def gram(variant: str, d: str) -> torch.Tensor:
         G = Gfull[d]
         if variant == "full":
@@ -158,6 +219,16 @@ def main() -> None:
         if variant == "fp16":
             s = G.abs().max()
             return (G / s).to(torch.float16).double() * s
+        if variant == "had64-int8":
+            return _quant_sym(G, "int8", True)
+        if variant == "triu-int8":
+            return _quant_sym(G, "int8", False)
+        if variant == "had64-int4":
+            return _quant_sym(G, "int4", True)
+        if variant == "triu-fp4":
+            return _quant_sym(G, "fp4", False)
+        if variant == "mlp-k1024-fp4":
+            return Gtopk[d]
         if variant.startswith("lowrank-"):
             k = int(variant.split("-")[1].split("+")[0])
             e, V = eig[d]
@@ -170,10 +241,18 @@ def main() -> None:
         raise ValueError(variant)
 
     def size_bytes(variant: str) -> int:
+        n_tri = U * (U + 1) // 2
         if variant == "full":
             return L * U * U * 4
         if variant == "fp16":
-            return L * U * (U + 1) // 2 * 2
+            return L * n_tri * 2
+        if variant in ("had64-int8", "triu-int8"):
+            return L * (n_tri + ((n_tri + 63) // 64) * 2)
+        if variant in ("had64-int4", "triu-fp4"):
+            return L * (((n_tri + 1) // 2) + ((n_tri + 15) // 16) * 2)
+        if variant == "mlp-k1024-fp4":
+            per_tok = (U + 7) // 8 + (k_mlp_trace + 1) // 2 + ((k_mlp_trace + 15) // 16) * 2
+            return L * ntok * per_tok
         if variant.startswith("lowrank-"):
             k = int(variant.split("-")[1].split("+")[0])
             return L * ((U * k + k) * 2 + (U * 2 if variant.endswith("+diag") else 0))
@@ -201,14 +280,23 @@ def main() -> None:
     def evaluate(sel: dict | None, variant: str | None = None) -> dict:
         if sel is None:
             return {t: round(ppl(s), 3) for t, s in held.items()}
-        new_w = {d: recon_weight(d, ix.to(dev), gram(variant, d)) for d, ix in sel.items()} if variant else {}
+        try:
+            new_w = {d: recon_weight(d, ix.to(dev), gram(variant, d)) for d, ix in sel.items()} if variant else {}
+        except RuntimeError as exc:
+            return {"math": float("inf"), "wiki": float("inf"), "error": str(exc)}
         with apply_selection(model, sel):
             for d, w in new_w.items():
                 mods[d].weight.data.copy_(w)
             return {t: round(ppl(s), 3) for t, s in held.items()}
 
-    variants = (["full", "fp16"] + [f"lowrank-{k}{x}" for k in ranks for x in ("", "+diag")]
-                + [f"tokens-{N}" for N in subsets if N in snaps])
+    all_variants = (["full", "fp16", "had64-int8", "triu-int8", "had64-int4", "triu-fp4", "mlp-k1024-fp4"]
+                    + [f"lowrank-{k}{x}" for k in ranks for x in ("", "+diag")]
+                    + [f"tokens-{N}" for N in subsets if N in snaps])
+    if args.variants == "all":
+        variants = all_variants
+    else:
+        wanted = {x.strip() for x in args.variants.split(",") if x.strip()}
+        variants = [v for v in all_variants if v in wanted]
     res = {"model": args.model_dir, "calib_tokens": ntok, "neurons_per_layer": U, "layers": L,
            "spectrum_energy_topk": spectrum, "full": evaluate(None),
            "size_bytes": {v: size_bytes(v) for v in variants}, "budgets": {}}

@@ -585,7 +585,8 @@ def capture_compact(
     model: nn.Module,
     input_ids: torch.Tensor | list[int],
     *,
-    top_k_mlp: int = 1024,
+    top_k_mlp: int | float | str = "auto",
+    mlp_energy_target: float = 0.95,
     resid_quant: str = "int8",
     group_size: int = 64,
     hadamard_block: int = 64,
@@ -598,8 +599,24 @@ def capture_compact(
     max_tokens: int | None = None,
 ) -> CompactTrace:
     """Record a Pareto-optimal compressed token trace (~80-95 MiB per 1.6k tok on 0.8B):
-    INT8 Hadamard-rotated residuals, Top-1024 FP4 bitmask/bitpack MLP units, per-head L2 norms,
-    sparse Top-16 attention targets (`uint16+uint8`), and INT8 KV/recurrent cache states."""
+    INT8 Hadamard-rotated residuals, adaptive or fixed Top-K FP4 bitmask/bitpack MLP units
+    (default `top_k_mlp="auto"` picks per-layer `K` to reach `mlp_energy_target=0.95`),
+    per-head L2 norms, sparse Top-16 attention targets (`uint16+uint8`), and INT8 KV/recurrent cache states."""
+    if isinstance(top_k_mlp, str):
+        if top_k_mlp != "auto":
+            raise ValueError(f"Unsupported top_k_mlp string {top_k_mlp!r}; expected 'auto', int, or (0, 1] fraction")
+        auto_mlp = True
+        target_ef = float(mlp_energy_target)
+    elif isinstance(top_k_mlp, float) and 0.0 < top_k_mlp <= 1.0:
+        auto_mlp = True
+        target_ef = float(top_k_mlp)
+    elif isinstance(top_k_mlp, int) and top_k_mlp <= 0:
+        auto_mlp = True
+        target_ef = float(mlp_energy_target)
+    else:
+        auto_mlp = False
+        target_ef = float(mlp_energy_target)
+
     dev = next(model.parameters()).device
     ids = (input_ids if isinstance(input_ids, torch.Tensor) else torch.tensor(input_ids)).reshape(1, -1)
     if max_tokens is not None:
@@ -647,11 +664,34 @@ def capture_compact(
             x = inp[0].detach().reshape(-1, inp[0].shape[-1]).float()
             d_inter = x.shape[1]
             contrib = x * wn.to(x.device)
-            k = min(top_k_mlp, d_inter)
-            _, idx = contrib.abs().topk(k, dim=1)
-            signed = contrib.gather(1, idx)
-            tot_sq = (contrib * contrib).sum(dim=1).clamp_min(1e-12)
-            kept_sq = (signed * signed).sum(dim=1)
+            if auto_mlp:
+                abs_sorted, idx_all = contrib.abs().sort(dim=1, descending=True)
+                cum_sq = (abs_sorted * abs_sorted).cumsum(dim=1)
+                raw_tot_sq = cum_sq[:, -1:]
+                tok_ef = torch.where(
+                    raw_tot_sq > 1e-12,
+                    (cum_sq / raw_tot_sq.clamp_min(1e-12)).clamp_max(1.0).sqrt(),
+                    torch.ones_like(cum_sq),
+                )
+                mean_ef = tok_ef.mean(dim=0)
+                hits = (mean_ef >= target_ef).nonzero(as_tuple=True)[0]
+                k_raw = int(hits[0].item()) + 1 if hits.numel() > 0 else d_inter
+                g = max(1, mlp_group_size)
+                k = min(d_inter, max(min(g, d_inter), ((k_raw + g - 1) // g) * g))
+                idx = idx_all[:, :k]
+                signed = contrib.gather(1, idx)
+                ef_vec = tok_ef[:, k - 1]
+            else:
+                k = min(int(top_k_mlp), d_inter)
+                _, idx = contrib.abs().topk(k, dim=1)
+                signed = contrib.gather(1, idx)
+                raw_tot = (contrib * contrib).sum(dim=1)
+                kept_sq = (signed * signed).sum(dim=1)
+                ef_vec = torch.where(
+                    raw_tot > 1e-12,
+                    (kept_sq / raw_tot.clamp_min(1e-12)).clamp_max(1.0).sqrt(),
+                    torch.ones_like(raw_tot),
+                )
 
             mode = resolve_mlp_idx_mode(k, d_inter, mlp_idx_mode)
             bits = max(1, (d_inter - 1).bit_length())
@@ -675,9 +715,13 @@ def capture_compact(
                 entry["val"] = venc["data"]
                 if venc["scales"] is not None:
                     entry["val_scales"] = venc["scales"]
-            entry["energy_frac"] = (kept_sq / tot_sq).sqrt().to(torch.float16).cpu()
+            entry["energy_frac"] = ef_vec.to(torch.float16).cpu()
             mlp_topk_out[li] = entry
-            mlp_meta_out[li] = {"mode": mode, "k": k, "d_inter": d_inter, "bits": bits, "shape": [int(x.shape[0]), k]}
+            mlp_meta_out[li] = {
+                "mode": mode, "k": k, "d_inter": d_inter, "bits": bits,
+                "shape": [int(x.shape[0]), k],
+                "mean_energy_frac": round(float(ef_vec.mean().item()), 5),
+            }
 
         handles.append(m.register_forward_hook(mhook))
 
@@ -736,13 +780,150 @@ def capture_compact(
 
     modes = {m["mode"] for m in mlp_meta_out.values()}
     eff_idx_mode = next(iter(modes)) if len(modes) == 1 else mlp_idx_mode
+    eff_top_k_mlp = round(sum(m["k"] for m in mlp_meta_out.values()) / len(mlp_meta_out)) if (auto_mlp and mlp_meta_out) else (0 if auto_mlp else int(top_k_mlp))
+    trace_meta = {
+        "top_k_mlp_mode": "auto" if auto_mlp else "fixed",
+        "mlp_energy_target": round(float(target_ef), 4) if auto_mlp else None,
+        "mlp_k_min": min((m["k"] for m in mlp_meta_out.values()), default=0),
+        "mlp_k_max": max((m["k"] for m in mlp_meta_out.values()), default=0),
+        "mlp_k_mean": eff_top_k_mlp,
+        "mlp_mean_energy_frac": round(
+            sum(m["mean_energy_frac"] for m in mlp_meta_out.values()) / max(1, len(mlp_meta_out)), 5
+        ),
+    }
     return CompactTrace(
-        T, n_layers, hidden, resid_quant, group_size, top_k_mlp,
+        T, n_layers, hidden, resid_quant, group_size, eff_top_k_mlp,
         resid_out, mlp_topk_out, head_out, hadamard_block=hadamard_block,
         mlp_quant=mlp_quant, mlp_idx_mode=eff_idx_mode, mlp_group_size=mlp_group_size,
         mlp_meta=mlp_meta_out, top_k_attn=top_k_attn, attn_topk=attn_topk_out,
-        cache_quant=cache_quant, cache=cache_out,
+        cache_quant=cache_quant, cache=cache_out, meta=trace_meta,
     )
+
+
+def _annotate_mlp_wsi(rows: list[dict[str, Any]], wsi: Any | None) -> None:
+    if wsi is None:
+        return
+    for row in rows:
+        if row.get("layer") is not None:
+            try:
+                row["transduction_rule"] = wsi.explain_neuron(layer=row["layer"], unit=row["unit"])["transduction_rule"]
+            except Exception:
+                pass
+
+
+def _explain_peak_vector(peak_layer: int | None, peak_vec: torch.Tensor | None,
+                         peak_norm: float, wsi: Any | None) -> dict[str, Any] | None:
+    if wsi is None or peak_vec is None or peak_norm <= 1e-6:
+        return None
+    try:
+        ex = wsi.explain_vector(peak_vec / peak_vec.norm(), top_k=6)
+        return {"layer": peak_layer, "promoted": ex.get("promoted_tokens", []),
+                "suppressed": ex.get("suppressed_tokens", [])}
+    except Exception:
+        return None
+
+
+def _cache_pair_delta(key: str, ta: torch.Tensor, tb: torch.Tensor, pos_a: int, pos_b: int) -> dict[str, Any] | None:
+    ta, tb = ta.float(), tb.float()
+    if ta.shape == tb.shape:
+        return {"key": key, "delta_norm": round(float((tb - ta).norm()), 4)}
+    if ta.dim() == 4 and tb.dim() == 4 and ta.shape[:2] == tb.shape[:2] and ta.shape[3] == tb.shape[3]:
+        va, vb = ta[:, :, pos_a, :], tb[:, :, pos_b, :]
+        return {"key": f"{key}[pos]", "delta_norm": round(float((vb - va).norm()), 4)}
+    return None
+
+
+@torch.no_grad()
+def diff_compact(
+    tr_a: CompactTrace,
+    tr_b: CompactTrace,
+    *,
+    wsi: Any | None = None,
+    pos_a: int = -1,
+    pos_b: int = -1,
+    top_k: int = 10,
+) -> dict[str, Any]:
+    """Compare two compressed `CompactTrace` runs of any length (`resid`, `mlp_topk`, `head_norms`, `attn_topk`, `cache`)."""
+    layer_curve = []
+    peak_layer, peak_vec, peak_norm = None, None, -1.0
+    for l in sorted(set(tr_a.resid) & set(tr_b.resid)):
+        va = tr_a.dequant_resid(l)[pos_a]
+        vb = tr_b.dequant_resid(l)[pos_b]
+        dv = vb - va
+        dn = float(dv.norm())
+        rel = dn / max(float(va.norm()), 1e-12)
+        cos = float(torch.nn.functional.cosine_similarity(va[None], vb[None]))
+        layer_curve.append({"layer": l, "delta_norm": round(dn, 4), "rel_delta": round(rel, 5), "cosine": round(cos, 5)})
+        if (l > 0 or len(tr_a.resid) == 1) and dn > peak_norm:
+            peak_layer, peak_vec, peak_norm = l, dv, dn
+
+    mlp_hits = []
+    for l in sorted(set(tr_a.mlp_topk) & set(tr_b.mlp_topk)):
+        ia_t, va_t = tr_a.dequant_mlp_topk(l)
+        ib_t, vb_t = tr_b.dequant_mlp_topk(l)
+        ma = dict(zip(ia_t[pos_a].tolist(), va_t[pos_a].tolist()))
+        mb = dict(zip(ib_t[pos_b].tolist(), vb_t[pos_b].tolist()))
+        for u in set(ma) | set(mb):
+            da, db = ma.get(u, 0.0), mb.get(u, 0.0)
+            signed = db - da
+            mlp_hits.append({
+                "layer": l, "unit": int(u),
+                "contrib_a": round(da, 4), "contrib_b": round(db, 4),
+                "resid_shift_norm": round(abs(signed), 4),
+                "signed_shift": round(signed, 4),
+            })
+    mlp_hits.sort(key=lambda r: -r["resid_shift_norm"])
+    top_mlp = mlp_hits[:top_k]
+    _annotate_mlp_wsi(top_mlp, wsi)
+
+    head_hits = []
+    attn_cache_a = {l: tr_a.dequant_attn_topk(l) for l in tr_a.attn_topk}
+    attn_cache_b = {l: tr_b.dequant_attn_topk(l) for l in tr_b.attn_topk}
+    for mod in sorted(set(tr_a.head_norms) & set(tr_b.head_norms)):
+        ha, hb = tr_a.head_norms[mod], tr_b.head_norms[mod]
+        li = ha["layer"]
+        da = ha["l2"][pos_a].float()
+        db = hb["l2"][pos_b].float()
+        diff = db - da
+        for hid in diff.abs().topk(min(3, len(diff))).indices.tolist():
+            row: dict[str, Any] = {
+                "layer": li, "module": mod, "head": int(hid),
+                "l2_a": round(float(da[hid]), 4), "l2_b": round(float(db[hid]), 4),
+                "out_delta_norm": round(float(diff[hid].abs()), 4),
+                "signed_l2_delta": round(float(diff[hid]), 4),
+            }
+            if li in attn_cache_a and li in attn_cache_b:
+                idx_a, w_a = attn_cache_a[li]
+                idx_b, w_b = attn_cache_b[li]
+                if hid < idx_a.shape[0] and hid < idx_b.shape[0]:
+                    row["attn_a_top_src_pos"] = int(idx_a[hid, pos_a, 0])
+                    row["attn_a_top_weight"] = round(float(w_a[hid, pos_a, 0]), 4)
+                    row["attn_b_top_src_pos"] = int(idx_b[hid, pos_b, 0])
+                    row["attn_b_top_weight"] = round(float(w_b[hid, pos_b, 0]), 4)
+                    ma_att = dict(zip(idx_a[hid, pos_a].tolist(), w_a[hid, pos_a].tolist()))
+                    mb_att = dict(zip(idx_b[hid, pos_b].tolist(), w_b[hid, pos_b].tolist()))
+                    l1 = sum(abs(mb_att.get(u, 0.0) - ma_att.get(u, 0.0)) for u in set(ma_att) | set(mb_att))
+                    row["attn_topk_l1_shift"] = round(l1, 4)
+            head_hits.append(row)
+    head_hits.sort(key=lambda r: -r["out_delta_norm"])
+
+    cache_shifts = []
+    for k in sorted(set(tr_a.cache) & set(tr_b.cache)):
+        item = _cache_pair_delta(k, tr_a.dequant_cache(k), tr_b.dequant_cache(k), pos_a, pos_b)
+        if item is not None:
+            cache_shifts.append(item)
+    cache_shifts.sort(key=lambda r: -r["delta_norm"])
+
+    return {
+        "len_a": tr_a.seq_len, "len_b": tr_b.seq_len,
+        "pos_a": pos_a, "pos_b": pos_b,
+        "peak_residual_layer": peak_layer, "peak_residual_delta_norm": round(peak_norm, 4),
+        "layer_curve": layer_curve,
+        "top_mlp_contributors": top_mlp,
+        "top_attention_heads": head_hits[:top_k],
+        "top_cache_deltas": cache_shifts[:top_k],
+        "peak_vector_readout": _explain_peak_vector(peak_layer, peak_vec, peak_norm, wsi),
+    }
 
 
 # ----------------------------------------------------------------------------------------------- dense trace_all diff
@@ -807,13 +988,7 @@ def diff_traces(
             })
     mlp_hits.sort(key=lambda r: -r["resid_shift_norm"])
     top_mlp = mlp_hits[:top_k]
-    if wsi is not None:
-        for row in top_mlp:
-            if row["layer"] is not None:
-                try:
-                    row["transduction_rule"] = wsi.explain_neuron(layer=row["layer"], unit=row["unit"])["transduction_rule"]
-                except Exception:
-                    pass
+    _annotate_mlp_wsi(top_mlp, wsi)
 
     # 3. Exact Attention / Linear-Attn Head output vector shift ||(x_b - x_a)_h @ W_O_h^T||
     hidden = peak_vec.numel() if peak_vec is not None else 0
@@ -856,23 +1031,10 @@ def diff_traces(
     for k in sorted(set(tr_a) & set(tr_b)):
         if not k.startswith("cache."):
             continue
-        ta, tb = tr_a[k].float(), tr_b[k].float()
-        if ta.shape == tb.shape:
-            cache_shifts.append({"key": k, "delta_norm": round(float((tb - ta).norm()), 4)})
-        elif ta.dim() == 4 and tb.dim() == 4 and ta.shape[:2] == tb.shape[:2] and ta.shape[3] == tb.shape[3]:
-            va, vb = ta[:, :, pos_a, :], tb[:, :, pos_b, :]
-            cache_shifts.append({"key": f"{k}[pos]", "delta_norm": round(float((vb - va).norm()), 4)})
+        item = _cache_pair_delta(k, tr_a[k], tr_b[k], pos_a, pos_b)
+        if item is not None:
+            cache_shifts.append(item)
     cache_shifts.sort(key=lambda r: -r["delta_norm"])
-
-    # 5. Optional static readout of peak residual shift via WSI
-    vec_readout = None
-    if wsi is not None and peak_vec is not None and peak_norm > 1e-6:
-        try:
-            ex = wsi.explain_vector(peak_vec / peak_vec.norm(), top_k=6)
-            vec_readout = {"layer": peak_layer, "promoted": ex.get("promoted_tokens", []),
-                           "suppressed": ex.get("suppressed_tokens", [])}
-        except Exception:
-            pass
 
     return {
         "len_a": int(tr_a[f"hidden_states.{hs_layers[0]}"].shape[1]) if hs_layers else None,
@@ -883,5 +1045,5 @@ def diff_traces(
         "top_mlp_contributors": top_mlp,
         "top_attention_heads": head_hits[:top_k],
         "top_cache_deltas": cache_shifts[:top_k],
-        "peak_vector_readout": vec_readout,
+        "peak_vector_readout": _explain_peak_vector(peak_layer, peak_vec, peak_norm, wsi),
     }
