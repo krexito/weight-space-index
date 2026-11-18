@@ -97,7 +97,7 @@ class MoIPatch:
 
         tensors, edits = {}, []
         for i, e in enumerate(self.edits):
-            tensors[f"edit.{i}.u"] = e.u.detach().float().cpu().contiguous()
+            tensors[f"edit.{i}.u"] = e.u.detach().to(torch.float64 if e.u.dtype == torch.float64 else torch.float32).cpu().contiguous()  # keep fp64 so the patched bf16 weights are bit-identical to the run
             if e.idx is not None:
                 tensors[f"edit.{i}.idx"] = e.idx.detach().long().cpu().contiguous()
             edits.append({"module": e.module, "alpha": float(e.alpha), "has_idx": e.idx is not None,
@@ -162,7 +162,7 @@ class MoIPatch:
                 raise KeyError(f"{e.module} not found in {model_dir}")
             f_, k = index[e.module]
             with safe_open(str(f_), "pt") as s:
-                W = s.get_tensor(k)
+                W = s.get_tensor(k).clone()  # copy before the mmap closes (reading it after crashes on Windows)
             e.base_sha256, e.base_dtype, e.shape = _sha256(W), _dtype_name(W.dtype), tuple(W.shape)
 
     # ------------------------------------------------------------------ runtime
@@ -205,7 +205,7 @@ class MoIPatch:
             lines.append(f"  policy: {m['policy']}")
         if m.get("expected"):
             lines.append(f"  expected: {json.dumps(m['expected'])}")
-        n_bytes = sum(e.u.numel() * 4 + (e.idx.numel() * 8 if e.idx is not None else 0) for e in self.edits)
+        n_bytes = sum(e.u.numel() * e.u.element_size() + (e.idx.numel() * 8 if e.idx is not None else 0) for e in self.edits)
         lines.append(f"  payload: {n_bytes / 1024:.1f} KB of recipe")
         return "\n".join(x for x in lines if x)
 

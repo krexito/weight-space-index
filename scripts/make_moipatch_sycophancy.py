@@ -66,7 +66,7 @@ def main(argv=None):
         else:
             mod, u = f"layers.{li}.mlp.down_proj", dg["u"][li]
             idx = torch.as_tensor(np.asarray(dg["neurons"][li])) if target == "mlp" else None
-        edits.append(Edit(module=mod, u=torch.from_numpy(np.asarray(u, np.float32)), alpha=alpha, idx=idx))
+        edits.append(Edit(module=mod, u=torch.from_numpy(np.asarray(u, np.float64)), alpha=alpha, idx=idx))
 
     gates = []
     if sig == "maxprob":
