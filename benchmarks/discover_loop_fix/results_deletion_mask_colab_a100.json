@@ -1,0 +1,304 @@
+{
+  "sft": {
+    "elicit": 1500,
+    "elicit_accuracy": 0.116,
+    "elicit_loops": 0.7093333333333334,
+    "examples": 174,
+    "skipped_too_long": 0,
+    "target_tokens": 605184
+  },
+  "mask": {
+    "deleted_total": 410083,
+    "deleted_frac_all_weights": 0.000545038280418719,
+    "deleted_frac_gate": 0.004655781246366955,
+    "deleted_per_layer": [
+      14493,
+      14167,
+      14380,
+      14672,
+      15070,
+      15487,
+      15751,
+      16203,
+      16383,
+      16718,
+      16957,
+      17844,
+      18383,
+      18702,
+      19416,
+      20135,
+      18900,
+      17371,
+      17500,
+      17704,
+      17708,
+      18286,
+      18909,
+      18944
+    ],
+    "layer_rank_by_deletions": [
+      15,
+      14,
+      23,
+      22,
+      16,
+      13,
+      12,
+      21,
+      11,
+      20,
+      19,
+      18,
+      17,
+      10,
+      9,
+      8,
+      7,
+      6,
+      5,
+      4,
+      3,
+      0,
+      2,
+      1
+    ],
+    "train_log": [
+      {
+        "step": 0,
+        "loss": 0.3367,
+        "alpha": 100.0,
+        "deleted": 162742
+      },
+      {
+        "step": 10,
+        "loss": 0.3746,
+        "alpha": 204.7,
+        "deleted": 179968
+      },
+      {
+        "step": 20,
+        "loss": 0.3558,
+        "alpha": 309.3,
+        "deleted": 203407
+      },
+      {
+        "step": 30,
+        "loss": 0.2719,
+        "alpha": 414.0,
+        "deleted": 233713
+      },
+      {
+        "step": 40,
+        "loss": 0.3243,
+        "alpha": 518.6,
+        "deleted": 264709
+      },
+      {
+        "step": 50,
+        "loss": 0.3467,
+        "alpha": 623.3,
+        "deleted": 303119
+      },
+      {
+        "step": 60,
+        "loss": 0.3091,
+        "alpha": 727.9,
+        "deleted": 344890
+      },
+      {
+        "step": 70,
+        "loss": 0.358,
+        "alpha": 832.6,
+        "deleted": 376907
+      },
+      {
+        "step": 80,
+        "loss": 0.3353,
+        "alpha": 937.2,
+        "deleted": 399831
+      },
+      {
+        "step": 86,
+        "loss": 0.3235,
+        "alpha": 1000.0,
+        "deleted": 410083
+      }
+    ],
+    "examples": 174,
+    "steps": 87,
+    "hparams": {
+      "lr": 0.0005,
+      "eta": 0.00048828125,
+      "alpha_start": 100.0,
+      "alpha_end": 1000.0,
+      "lam": 1e-05,
+      "epochs": 2,
+      "accum": 4
+    }
+  },
+  "dev": {
+    "base": {
+      "n": 64,
+      "accuracy": 0.140625,
+      "loop_killed": 0.796875,
+      "truncated": 0.0625
+    },
+    "mask": {
+      "n": 64,
+      "accuracy": 0.421875,
+      "loop_killed": 0.46875,
+      "truncated": 0.109375
+    }
+  },
+  "arms": {
+    "base": {
+      "n": 200,
+      "accuracy": 0.12,
+      "loop_killed": 0.87,
+      "truncated": 0.0
+    },
+    "mask_fixed": {
+      "n": 200,
+      "accuracy": 0.42,
+      "loop_killed": 0.55,
+      "truncated": 0.005
+    },
+    "p50c": {
+      "n": 200,
+      "accuracy": 0.59,
+      "loop_killed": 0.115,
+      "truncated": 0.14
+    },
+    "mask_moi": {
+      "n": 200,
+      "accuracy": 0.405,
+      "loop_killed": 0.555,
+      "truncated": 0.015,
+      "edit_token_share": 0.506891277175911,
+      "router_fired": 0.91
+    }
+  },
+  "paired": {
+    "mask_fixed_vs_base": {
+      "diff": 0.3,
+      "ci95": [
+        0.23,
+        0.37
+      ],
+      "a_only": 65,
+      "b_only": 5
+    },
+    "mask_moi_vs_base": {
+      "diff": 0.285,
+      "ci95": [
+        0.225,
+        0.35
+      ],
+      "a_only": 57,
+      "b_only": 0
+    },
+    "mask_moi_vs_mask_fixed": {
+      "diff": -0.015,
+      "ci95": [
+        -0.095,
+        0.06
+      ],
+      "a_only": 29,
+      "b_only": 32
+    },
+    "mask_fixed_vs_p50c": {
+      "diff": -0.17,
+      "ci95": [
+        -0.24,
+        -0.105
+      ],
+      "a_only": 10,
+      "b_only": 44
+    }
+  },
+  "exam_vs_p50c": {
+    "p50c_layers": [
+      15,
+      19
+    ],
+    "top_layers_by_deletions": [
+      15,
+      14,
+      23,
+      22,
+      16
+    ],
+    "rank_of_15_and_19": {
+      "15": 1,
+      "19": 11
+    },
+    "layer_15": {
+      "p50c_neurons": 64,
+      "mask_touched_neurons": 3551,
+      "overlap_touched": 64,
+      "overlap_top_by_deletions": "4/64",
+      "random_expectation_top": 1.14
+    },
+    "layer_19": {
+      "p50c_neurons": 64,
+      "mask_touched_neurons": 3535,
+      "overlap_touched": 64,
+      "overlap_top_by_deletions": "4/64",
+      "random_expectation_top": 1.14
+    }
+  },
+  "timing": {
+    "steps": {
+      "prepare": {
+        "s": 15.8,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "gen:outputs_elicit:qwen-base": {
+        "s": 1391.3,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "sft-data": {
+        "s": 23.8,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "train": {
+        "s": 330.3,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "gen:outputs_dev_base:qwen-base": {
+        "s": 118.4,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "gen:outputs_dev_mask:qwen-mask": {
+        "s": 109.5,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "gen:outputs_test_base:qwen-base": {
+        "s": 472.4,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "gen:outputs_test_mask:qwen-mask": {
+        "s": 360.9,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "gen:outputs_test_moi:qwen-mask": {
+        "s": 339.4,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      },
+      "gen:outputs_test_p50c:qwen-p50c": {
+        "s": 308.2,
+        "gpu": "NVIDIA A100-SXM4-40GB"
+      }
+    },
+    "discovery_steps": [
+      "gen:outputs_dev_base:qwen-base",
+      "gen:outputs_dev_mask:qwen-mask",
+      "gen:outputs_elicit:qwen-base",
+      "sft-data",
+      "train"
+    ],
+    "discovery_s": 1973.3,
+    "discovery_min": 32.9
+  }
+}

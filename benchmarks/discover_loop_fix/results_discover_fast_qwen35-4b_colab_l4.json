@@ -1,0 +1,340 @@
+{
+ "model": "Qwen/Qwen3.5-4B",
+ "choice": {
+  "name": "L13-17_nall_a8",
+  "layers": [
+   13,
+   17
+  ],
+  "neurons": "all",
+  "alpha": 8.0,
+  "k": 2
+ },
+ "frozen": {
+  "frozen_utc": "2026-11-19T06:00:32+00:00",
+  "git_commit": "32431df34e8f1d48d87a5bfecbbcea2e07921328",
+  "code_sha256": {
+   "discover_fast.py": "83f6815b46f2be0b341b7637418927d5c442678e9ade28871491d5d94550b543",
+   "loop_kill_v2.py": "a9bd254afe8c70ca977479c6a0466ddac4e3c4c3533108071c6dd3a90bdc8fc8",
+   "discover_blind.py": "2a1f7c0f85ffe321db675102274cc20a00e39b46cbe7410a0ff0581ecee569cc",
+   "discover_loop_fix.py": "a712e1657362a3bc7f1791b715a5a0a7a087afba0eb399d393bc62f92660c934",
+   "moi_loop_router_vllm.py": "febda05c5d157bf24a877872712bc32f84466ee32d81c405a8bcbf552ef242bc"
+  }
+ },
+ "discovery_min": 53.5,
+ "discovery_steps_s": {
+  "elicit": 548.5,
+  "diagnose": 337.9,
+  "round1": 1756.1,
+  "round2": 564.5
+ },
+ "arms": {
+  "base": {
+   "n": 200,
+   "accuracy": 0.945,
+   "loop_killed": 0.005,
+   "truncated": 0.02
+  },
+  "fast_fixed": {
+   "n": 200,
+   "accuracy": 0.915,
+   "loop_killed": 0.01,
+   "truncated": 0.04
+  },
+  "random_fixed": {
+   "n": 200,
+   "accuracy": 0.94,
+   "loop_killed": 0.01,
+   "truncated": 0.02
+  },
+  "fast_moi": {
+   "n": 200,
+   "accuracy": 0.955,
+   "loop_killed": 0.0,
+   "truncated": 0.01,
+   "edit_token_share": 0.07183587463611128,
+   "router_fired": 0.105
+  },
+  "random_moi": {
+   "n": 200,
+   "accuracy": 0.95,
+   "loop_killed": 0.0,
+   "truncated": 0.015,
+   "edit_token_share": 0.06268704522508095,
+   "router_fired": 0.105
+  }
+ },
+ "paired": {
+  "fast_fixed_vs_base": {
+   "diff": -0.03,
+   "ci95": [
+    -0.065,
+    0.0
+   ],
+   "a_only": 3,
+   "b_only": 9
+  },
+  "fast_moi_vs_base": {
+   "diff": 0.01,
+   "ci95": [
+    0.0,
+    0.025
+   ],
+   "a_only": 2,
+   "b_only": 0
+  },
+  "fast_fixed_vs_random_fixed": {
+   "diff": -0.025,
+   "ci95": [
+    -0.06,
+    0.005
+   ],
+   "a_only": 3,
+   "b_only": 8
+  },
+  "fast_moi_vs_random_moi": {
+   "diff": 0.005,
+   "ci95": [
+    0.0,
+    0.015
+   ],
+   "a_only": 1,
+   "b_only": 0
+  },
+  "fast_moi_vs_fast_fixed": {
+   "diff": 0.04,
+   "ci95": [
+    0.01,
+    0.075
+   ],
+   "a_only": 10,
+   "b_only": 2
+  }
+ },
+ "search": {
+  "base_dev1": {
+   "n": 32,
+   "accuracy": 0.96875,
+   "loop_killed": 0.0,
+   "truncated": 0.0
+  },
+  "base_dev2": {
+   "n": 64,
+   "accuracy": 0.953125,
+   "loop_killed": 0.015625,
+   "truncated": 0.0
+  },
+  "round1": {
+   "L13_n16_a4": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   },
+   "L13_n16_a8": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   },
+   "L13_n16_a12": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   },
+   "L13_nall_a4": {
+    "accuracy": 1.0,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   },
+   "L13_nall_a8": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   },
+   "L13_nall_a12": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.03125
+   },
+   "L13-17_n16_a4": {
+    "accuracy": 0.9375,
+    "loop_killed": 0.0,
+    "truncated": 0.03125
+   },
+   "L13-17_n16_a8": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.03125
+   },
+   "L13-17_n16_a12": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   },
+   "L13-17_nall_a4": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.03125
+   },
+   "L13-17_nall_a8": {
+    "accuracy": 1.0,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   },
+   "L13-17_nall_a12": {
+    "accuracy": 0.90625,
+    "loop_killed": 0.03125,
+    "truncated": 0.03125
+   }
+  },
+  "round2": {
+   "L13_nall_a4": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   },
+   "L13-17_nall_a8": {
+    "accuracy": 0.984375,
+    "loop_killed": 0.0,
+    "truncated": 0.015625
+   },
+   "L13_n16_a4": {
+    "accuracy": 0.96875,
+    "loop_killed": 0.0,
+    "truncated": 0.0
+   }
+  },
+  "time_s": {
+   "round1": 1756.1,
+   "round2": 564.5
+  }
+ },
+ "diagnosis": {
+  "separation": [
+   0.33799060266148295,
+   0.5199833936983349,
+   0.619155687122066,
+   0.6788836425760275,
+   0.744488955048682,
+   0.8092317192137898,
+   0.7210807962720607,
+   0.7413425984834028,
+   0.6234487441605315,
+   0.7767053502653221,
+   0.582708379462325,
+   0.7430951890065298,
+   0.8234686266503671,
+   0.9232113317330178,
+   0.7466767990338625,
+   0.7039148863267226,
+   0.8036291404421152,
+   0.8838067008571725,
+   0.7629502246166335,
+   0.6449560432256053,
+   0.6625137744588949,
+   0.6533704982522536,
+   0.6215789850791268,
+   0.6108842871454989,
+   0.6813522605033745,
+   0.6431008980400343,
+   0.38757996680122425,
+   0.5335762569421738,
+   0.49206625454853425,
+   0.4778775091010412,
+   0.6828001695918291,
+   0.2887787124777011
+  ],
+  "layer_rank": [
+   13,
+   17,
+   12,
+   5,
+   16,
+   9,
+   18,
+   14,
+   4,
+   11,
+   7,
+   6,
+   15,
+   30,
+   24,
+   3,
+   20,
+   21,
+   19,
+   25,
+   8,
+   22,
+   2,
+   23,
+   10,
+   27,
+   1,
+   28,
+   29,
+   26,
+   0,
+   31
+  ],
+  "n_layers": 32,
+  "n_units": 9216,
+  "hidden": 2560,
+  "loop_tokens": 1245,
+  "normal_tokens": 492558,
+  "sequences": 300,
+  "looping_sequences": 31,
+  "elicit_responses": 300,
+  "dtype": "torch.bfloat16",
+  "diag_version": 2,
+  "max_seq": 16384,
+  "loop_onsets": [
+   539,
+   1566,
+   1904,
+   2092,
+   2232,
+   2611,
+   2711,
+   3269,
+   3277,
+   3304,
+   3364,
+   3425,
+   3830,
+   3930,
+   3943,
+   3969,
+   4117,
+   4306,
+   4384,
+   4387,
+   4630,
+   4702,
+   4814,
+   4837,
+   5238,
+   5663,
+   6086,
+   6424,
+   7775,
+   8051,
+   8149
+  ],
+  "capture_s": 168.9
+ },
+ "timing_s": {
+  "elicit": 548.5,
+  "diagnose": 337.9,
+  "search": 2320.6,
+  "test": 1261.1
+ },
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-4B",
+  "commit": "32431df34e8f1d48d87a5bfecbbcea2e07921328",
+  "notebook": "discover_fast_colab.ipynb",
+  "saved_utc": "2026-11-19T06:23:00+00:00",
+  "status": "done"
+ }
+}
