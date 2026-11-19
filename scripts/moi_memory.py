@@ -136,25 +136,30 @@ def make_people(n: int, seed: int, avoid: set[str] | None = None) -> list[dict]:
     rng = random.Random(seed)
     used = set(avoid or ())
     firsts, lasts, pets, out = set(), set(), set(), []
+    # 2 syllables give only 900 first names / 256 dog names: at 1000 people the old loop never ended.
+    # Use 3 syllables once a pool would be more than 1/3 full (small runs keep their exact old names).
+    k_first = 2 if len(NAME_SYL) ** 2 >= 3 * 2 * n else 3  # people + their nb_last neighbours
+    k_pet = 2 if len(PET_SYL) ** 2 >= 3 * n else 3
 
     def fresh(pool: set, syl: list[str], k: int) -> str:
-        while True:
+        for _ in range(100_000):
             w = _word(rng, syl, k)
             if w not in pool and w not in used:
                 pool.add(w)
                 return w
+        raise RuntimeError(f"name pool exhausted ({len(pool)} used, {len(syl)}^{k} possible)")
 
     for _ in range(n):
-        first, last = fresh(firsts, NAME_SYL, 2), fresh(lasts, NAME_SYL, 3)
+        first, last = fresh(firsts, NAME_SYL, k_first), fresh(lasts, NAME_SYL, 3)
         city, country, country_es = rng.choice(CITIES)
         job, job_es = rng.choice(JOBS)
         p = {"name": f"{first} {last}", "first": first, "last": last, "city": city, "country": country,
-             "country_es": country_es, "job": job, "job_es": job_es, "pet": fresh(pets, PET_SYL, 2)}
+             "country_es": country_es, "job": job, "job_es": job_es, "pet": fresh(pets, PET_SYL, k_pet)}
         used.add(p["name"])
         out.append(p)
     for p in out:  # neighbours: same first name / same surname, never edited
         p["nb_first"] = f"{p['first']} {fresh(lasts, NAME_SYL, 3)}"
-        p["nb_last"] = f"{fresh(firsts, NAME_SYL, 2)} {p['last']}"
+        p["nb_last"] = f"{fresh(firsts, NAME_SYL, k_first)} {p['last']}"
     return out
 
 
