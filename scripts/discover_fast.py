@@ -55,6 +55,9 @@ FAST_N = (16, "all")
 FAST_A = (4.0, 8.0, 12.0)
 TOP2 = 3
 MIN_LOOP_SEQS = 30           # fewer looping elicit responses than this: the model barely loops on this task
+# diagnosis v2 reads each looping response up to its loop onset + 768 tokens, however late the loop starts. v1 cut every
+# response at 4096 tokens, which dropped almost every loop of Qwen3.5-4B (733 loop tokens from 31 looping responses).
+DIAG_VERSION = 2
 DOWN_RE = re.compile(r"layers\.(\d+)\.mlp\.down_proj\.weight$")
 
 
@@ -191,7 +194,7 @@ def cmd_diagnose(a) -> None:
     eos = set(cfg["eos"])
     reqs = {r["id"]: r for r in lr.read_jsonl(work / "requests_elicit.jsonl")}
     outs = lr.read_jsonl(work / "outputs_elicit.jsonl")
-    seqs, n_loop_seq = [], 0
+    seqs, n_loop_seq, onsets = [], 0, []
     for o in outs:
         body = lr.strip_eos(o["token_ids"], eos)
         lab = dl.token_labels(body)
@@ -200,10 +203,15 @@ def cmd_diagnose(a) -> None:
         first = int(np.argmax(lab == 1)) if (lab == 1).any() else None
         end = min(len(body), (first + a.after_onset) if first is not None else a.max_seq, a.max_seq)
         n_loop_seq += first is not None
+        if first is not None:
+            onsets.append(first)
         seqs.append({"id": o["id"], "prompt": reqs[o["id"]]["prompt_ids"], "body": body[:end], "lab": lab[:end]})
     loop_tok = sum(int((s["lab"] == 1).sum()) for s in seqs)
     norm_tok = sum(int((s["lab"] == 0).sum()) for s in seqs)
     print(f"elicit: {len(outs)} responses, {n_loop_seq} with loops; tokens {loop_tok:,} looping, {norm_tok:,} normal")
+    if onsets:
+        print(f"loop onset (response token): median {int(np.median(onsets)):,}, min {min(onsets):,}, "
+              f"max {max(onsets):,}; reading up to {a.max_seq:,} tokens per response")
     if n_loop_seq < a.min_loop_seqs or loop_tok < a.min_loop_tokens:
         raise SystemExit(f"the model loops in only {n_loop_seq}/{len(outs)} elicit responses: too few to find a loop "
                          "direction. Use harder problems or a longer cap.")
@@ -304,6 +312,7 @@ def cmd_diagnose(a) -> None:
     diag = {"separation": sep, "layer_rank": rank, "neuron_rank": neuron_rank, "n_layers": L, "n_units": U,
             "hidden": D, "loop_tokens": loop_tok, "normal_tokens": norm_tok, "sequences": len(seqs),
             "looping_sequences": n_loop_seq, "elicit_responses": len(outs), "dtype": str(dtype),
+            "diag_version": DIAG_VERSION, "max_seq": a.max_seq, "loop_onsets": sorted(onsets),
             "capture_s": round(time.perf_counter() - t0, 1)}
     (work / "diagnosis_blind.json").write_text(json.dumps(diag, indent=1))
     print("held-out d' per layer:", " ".join(f"L{li}:{s:.2f}" for li, s in enumerate(sep)))
@@ -486,6 +495,23 @@ def run_parallel(work: Path, groups: list[dict], a) -> None:
         log = open(work / f"gen_gpu{i}.log", "a")
         script = " && ".join(subprocess.list2cmdline(c) for c in cmds)
         procs.append((i, subprocess.Popen(script, shell=True, env=env, stdout=log, stderr=subprocess.STDOUT), log))
+    pos = {i: (work / f"gen_gpu{i}.log").stat().st_size for i, _, _ in procs}
+
+    def show_progress():  # the generation logs, filtered, so the notebook cell shows each finished config
+        for i, _, _ in procs:
+            f = work / f"gen_gpu{i}.log"
+            with open(f, "rb") as fh:
+                fh.seek(pos[i])
+                chunk = fh.read().decode(errors="replace")
+                pos[i] = fh.tell()
+            for line in chunk.replace(chr(13), chr(10)).splitlines():
+                if line.startswith(("[gen", "[time")) or "Error" in line or "FAILED" in line:
+                    print(f"GPU{i} {line}", flush=True)
+
+    while any(p.poll() is None for _, p, _ in procs):
+        time.sleep(20)
+        show_progress()
+    show_progress()
     bad = []
     for i, p, log in procs:
         rc = p.wait()
@@ -517,11 +543,32 @@ def cmd_elicit(a) -> None:
     note_time(work, "elicit", time.perf_counter() - t0)
 
 
+def _remove(work: Path, names: list[str]) -> None:
+    """Delete files here and in $WSI_SYNC_DIR (else a Colab restart would copy them back from Drive)."""
+    dirs = [work] + ([Path(os.environ["WSI_SYNC_DIR"])] if os.environ.get("WSI_SYNC_DIR") else [])
+    for d in dirs:
+        for n in names:
+            (d / n).unlink(missing_ok=True)
+
+
 def cmd_search(a) -> None:
     work = Path(a.work)
-    diag = json.loads((work / "diagnosis_blind.json").read_text())
+    dp = work / "diagnosis_blind.json"
+    if json.loads(dp.read_text()).get("diag_version") != DIAG_VERSION:
+        print(f"diagnosis is older than v{DIAG_VERSION}: running it again", flush=True)
+        r = subprocess.run([sys.executable, "-u", str(Path(__file__).resolve()), "diagnose", "--work", str(work)])
+        if r.returncode:
+            raise SystemExit("diagnose failed")
+    diag = json.loads(dp.read_text())
+    diag_sha = hashlib.sha256(dp.read_bytes()).hexdigest()
     sp = work / "search.json"
-    state = json.loads(sp.read_text()) if sp.exists() else {"round1": {}, "round2": {}, "time_s": {}}
+    state = json.loads(sp.read_text()) if sp.exists() else {}
+    if state.get("diag_sha") != diag_sha:  # configs were built from another diagnosis: their outputs are stale
+        stale = sorted(f.name for f in work.glob("outputs_dev*_*.jsonl") if not f.name.endswith("_base.jsonl"))
+        if stale or state:
+            print(f"new diagnosis: dropping {len(stale)} config outputs and the old search state", flush=True)
+        _remove(work, stale + ["search.json"])
+        state = {"round1": {}, "round2": {}, "time_s": {}, "diag_sha": diag_sha}
     configs1 = grid(diag["layer_rank"])
     for rnd in (1, 2):
         key, split = f"round{rnd}", f"dev{rnd}"
@@ -706,7 +753,7 @@ def main() -> None:
     d = sub.add_parser("diagnose")
     d.add_argument("--work", required=True)
     d.add_argument("--after-onset", type=int, default=768)
-    d.add_argument("--max-seq", type=int, default=4096)
+    d.add_argument("--max-seq", type=int, default=16384, help="response tokens read per sequence (v1 used 4096)")
     d.add_argument("--min-loop-tokens", type=int, default=500)
     d.add_argument("--min-loop-seqs", type=int, default=MIN_LOOP_SEQS)
     d.add_argument("--dtype", choices=["auto", "bf16", "fp16", "fp32"], default="auto")
