@@ -380,7 +380,7 @@ def wikitext_ids(lm: LM, split: str, n_tokens: int) -> list[int]:
     else:
         from datasets import load_dataset
 
-        text = "\n".join(t for t in load_dataset("wikitext", "wikitext-2-raw-v1", split=split)["text"] if t.strip())
+        text = "\n".join(t for t in load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1", split=split)["text"] if t.strip())
     return lm.enc(text[: n_tokens * 8])[:n_tokens]
 
 
