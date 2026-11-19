@@ -34,6 +34,7 @@ from wsi import (  # noqa: E402
     quantize_block_int4,
     quantize_block_ternary,
     resolve_mlp_idx_mode,
+    screen_patch_candidates,
 )
 from wsi.tracer import (  # noqa: E402
     dequantize_fp8_or_int8,
@@ -393,8 +394,33 @@ def test_discover_compact_circuit() -> None:
         ]
         res_model = discover_compact_circuit(tuples, model=m, alpha=1.5, top_k_neurons=8)
         assert isinstance(res_model["patch"], MoIPatch)
-        assert set(["wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"]).issubset(res_model["patches"])
+        assert set(["unified_top2", "blind_top2", "attn_top2", "wsi_top3", "wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"]).issubset(res_model["patches"])
         assert len(res_model["wsi_pair_layers"]) == 2 and res_model["wsi_resonant_dst"] is not None
+        assert res_model["wsi_origins"] == res_model["hybrid_ranked"][:2]
+        assert res_model["split_mode"] in ("token_ab", "sequence_ab")
+        assert len(res_model["attn_stats"]) == 4 and len(res_model["site_rankings"]) == 8
+        assert res_model["router_report"] is not None and res_model["patch"].router is not None
+        assert res_model["router_report"]["balanced_acc"] >= 0.9
+        # Verify synthesized router fires on target sequence and stays off on healthy sequence
+        out_h = m(torch.tensor([ids_h]), output_hidden_states=True)
+        out_l = m(torch.tensor([ids_l]), output_hidden_states=True)
+        assert bool(res_model["patch"].fires(out_h.hidden_states).item()) is False
+        assert bool(res_model["patch"].fires(out_l.hidden_states).item()) is True
+        # Verify attention-head patch attaches and restores cleanly
+        ha = res_model["patches"]["attn_top2"].attach(m)
+        ha.on()
+        assert not ha.check_restored()
+        ha.off()
+        assert ha.check_restored() and ha.fingerprint_ok()
+        # Verify fast 1-forward-pass proxy screening (`screen_patch_candidates`)
+        screened = screen_patch_candidates(
+            m,
+            {"unified": res_model["patches"]["unified_top2"], "blind": res_model["patches"]["blind_top2"], "attn": res_model["patches"]["attn_top2"]},
+            healthy_seqs=[ids_h],
+            target_seqs=[ids_l],
+            target_spans=[(4, 10)],
+        )
+        assert len(screened) == 3 and all("delta_healthy_nll" in r and "target_suppression" in r for r in screened)
         hp = res_model["patch"].attach(m)
         hp.on()
         assert not hp.check_restored()

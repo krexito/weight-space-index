@@ -103,9 +103,9 @@ def main(argv: list[str] | None = None) -> int:
     p_disc.add_argument("--top-k-neurons", type=int, default=64, help="Neurons per edited layer (default: 64)")
     p_disc.add_argument(
         "--variant",
-        default="wsi_fa3",
-        choices=["wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"],
-        help="Which discovered patch variant to save with -o (default: wsi_fa3)",
+        default="unified_top2",
+        choices=["unified_top2", "blind_top2", "attn_top2", "wsi_top3", "wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"],
+        help="Which discovered patch variant to save with -o (default: unified_top2)",
     )
     p_disc.add_argument("-o", "--out", default=None, help="Optional output path for the synthesized .moipatch file")
     p_disc.add_argument("-i", "--index-dir", help="Optional path to prebuilt index directory")

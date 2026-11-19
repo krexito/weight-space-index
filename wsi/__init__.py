@@ -36,6 +36,7 @@ from .tracer import (
     quantize_block_int4,
     quantize_block_ternary,
     resolve_mlp_idx_mode,
+    screen_patch_candidates,
 )
 
 __all__ = [
@@ -63,6 +64,7 @@ __all__ = [
     "quantize_block_int4",
     "quantize_block_ternary",
     "resolve_mlp_idx_mode",
+    "screen_patch_candidates",
     "trace_all",
     "DynamicCircuitPager",
     "MixtureOfIndexes",

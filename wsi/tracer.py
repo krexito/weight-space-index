@@ -1059,6 +1059,90 @@ def _fisher_dir(x_healthy: torch.Tensor, x_loop: torch.Tensor) -> tuple[torch.Te
     return u, score
 
 
+def _split_ab(tensors: list[torch.Tensor]) -> tuple[torch.Tensor, torch.Tensor, str]:
+    """Deterministic Half-A / Half-B split (sequence-level when >= 2 traces, else token-level)."""
+    if len(tensors) >= 2:
+        return torch.cat(tensors[0::2], dim=0), torch.cat(tensors[1::2], dim=0), "sequence_ab"
+    t = tensors[0]
+    if t.shape[0] >= 4:
+        return t[0::2], t[1::2], "token_ab"
+    return t, t, "in_sample"
+
+
+def _heldout_dir_dprime(
+    h_list: list[torch.Tensor],
+    l_list: list[torch.Tensor],
+) -> tuple[torch.Tensor, float, float, str]:
+    """Fit unit shift direction `u` on Half A, evaluate held-out `d'` and Fisher ratio on Half B."""
+    hA, hB, mh = _split_ab(h_list)
+    lA, lB, ml = _split_ab(l_list)
+    mode = "sequence_ab" if (mh == "sequence_ab" and ml == "sequence_ab") else (
+        "token_ab" if ("in_sample" not in (mh, ml)) else "in_sample"
+    )
+    d = lA.mean(dim=0) - hA.mean(dim=0)
+    dn = float(d.norm())
+    if dn < 1e-8:
+        return torch.zeros_like(d), 0.0, 0.0, mode
+    u = d / dn
+    phB, plB = hB @ u, lB @ u
+    vhB = float(phB.var(unbiased=False)) if len(phB) > 1 else 0.0
+    vlB = float(plB.var(unbiased=False)) if len(plB) > 1 else 0.0
+    denom = math.sqrt(max(0.5 * (vhB + vlB), 1e-8))
+    dprime = float((plB.mean() - phB.mean()) / denom)
+    fisher = float(max(dprime, 0.0) ** 2)
+    return u, dprime, fisher, mode
+
+
+def _weight_fingerprint(path: str, w_orig: torch.Tensor) -> dict[str, Any]:
+    from .moipatch import _dtype_name, _sha256, module_suffix
+
+    valid_dtypes = (torch.bfloat16, torch.float16, torch.float32)
+    try:
+        mod_name = module_suffix(path)
+    except ValueError:
+        mod_name = path
+    dt = _dtype_name(w_orig.dtype) if w_orig.dtype in valid_dtypes else "float32"
+    return {
+        "module": mod_name,
+        "shape": tuple(w_orig.shape),
+        "base_dtype": dt,
+        "base_sha256": _sha256(w_orig) if w_orig.dtype in valid_dtypes else "",
+    }
+
+
+def _resolve_attn_meta(
+    mod_name: str,
+    model: nn.Module | None,
+    wsi: Any | None,
+    *,
+    _mod_cache: dict[str, nn.Module] | None = None,
+    _ck_names: tuple[str, ...] = (),
+    _ck_name_set: set[str] | None = None,
+) -> dict[str, Any] | None:
+    """Resolve `MoIPatch` fingerprint metadata for an attention `o_proj` / `out_proj` module."""
+    if model is not None:
+        mods = _mod_cache if _mod_cache is not None else dict(model.named_modules())
+        am = mods.get(mod_name)
+        if am is not None and getattr(am, "weight", None) is not None:
+            return _weight_fingerprint(mod_name, am.weight.detach())
+    if wsi is not None and hasattr(wsi, "ck"):
+        name_set = set(_ck_names) if _ck_name_set is None else _ck_name_set
+        bare = mod_name[6:] if mod_name.startswith("model.") else mod_name
+        tname = next(
+            (c for c in (f"{mod_name}.weight", f"{bare}.weight", f"model.{bare}.weight", f"model.language_model.{bare}.weight")
+             if c in name_set),
+            None,
+        )
+        if tname is None:
+            suffix = f".{bare}.weight"
+            tname = next((n for n in _ck_names if n.endswith(suffix)), None)
+        if tname is not None:
+            w_orig = wsi.ck.get(tname).clone()
+            mod_full = tname[:-7] if tname.endswith(".weight") else tname
+            return _weight_fingerprint(mod_full, w_orig)
+    return None
+
+
 def _resolve_mlp_downs(
     model: nn.Module | None,
     wsi: Any | None,
@@ -1176,16 +1260,20 @@ def discover_compact_circuit(
     wsi: Any | None = None,
     alpha: float = 6.0,
     top_k_neurons: int = 64,
+    top_k_heads: int = 2,
     healthy_window: int = 96,
     loop_window: int = 192,
     origin_range: tuple[int, int] | None = None,
+    attach_router: bool = True,
 ) -> dict[str, Any]:
-    """Discover a multi-layer intervention circuit from `CompactTrace` statistics + WSI SVD echo.
+    """Blind multi-site circuit discovery from `CompactTrace` + static `WSI` weights.
 
-    Combines offline `CompactTrace` signals (MLP Fisher separation, head shift, attention focus) to
-    locate where the behavioral deviation originates (`wsi_origins`), then uses static `W_down`
-    subspace SVD resonance (`WSI`) to locate downstream resonant amplifiers invisible to activation
-    variance (`wsi_resonant_dst`) and builds ready-to-attach `MoIPatch` objects.
+    Upgrades integrated:
+      1. Unified MLP (`down_proj`) + Attention (`o_proj`/`out_proj` via `W_O`-projected `head_quant`)
+         site competition on the same residual-space scale.
+      2. Held-out Half-A / Half-B split (`d'`) for unbiased layer, head, and router ranking.
+      3. Automatic residual-stream router synthesis (`layer`, `dir`, `thr`) with held-out TPR/FPR audit.
+      4. Hint-free `MoIPatch` synthesis (`unified_top2`, `blind_top2`, `attn_top2`, `wsi_pair`, `wsi_top3`).
     """
     from .moipatch import Edit, MoIPatch
 
@@ -1203,6 +1291,12 @@ def discover_compact_circuit(
     else:
         entries.extend(_unpack_discovery_item(it, None) for it in traces)
 
+    mod_cache = dict(model.named_modules()) if model is not None else None
+    ck_names = tuple(wsi.ck.names()) if (wsi is not None and hasattr(wsi, "ck") and callable(getattr(wsi.ck, "names", None))) else ()
+    ck_name_set = set(ck_names)
+    w_heads_cache: dict[str, torch.Tensor | None] = {}
+    attn_meta_cache: dict[str, dict[str, Any] | None] = {}
+
     healthy_res: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
     loop_res: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
     healthy_y: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
@@ -1213,6 +1307,11 @@ def discover_compact_circuit(
     loop_head: dict[int, list[torch.Tensor]] = {l: [] for l in layers_sorted}
     healthy_att_focus: dict[int, list[torch.Tensor]] = {}
     loop_att_focus: dict[int, list[torch.Tensor]] = {}
+    healthy_attn_y: dict[str, list[torch.Tensor]] = {}
+    loop_attn_y: dict[str, list[torch.Tensor]] = {}
+    healthy_attn_h: dict[str, list[torch.Tensor]] = {}
+    loop_attn_h: dict[str, list[torch.Tensor]] = {}
+    attn_info: dict[str, tuple[int, int, int]] = {}  # mod -> (layer, n_heads, head_dim)
 
     for ct, p, is_loop, ons in entries:
         T = ct.seq_len
@@ -1255,7 +1354,7 @@ def discover_compact_circuit(
                     loop_y[l].append(xl @ w_raw.T)
                     loop_xsum[l].append(xl.mean(dim=0, keepdim=True))
 
-        for h in ct.head_norms.values():
+        for mod, h in ct.head_norms.items():
             li = h["layer"]
             if li is None or li not in healthy_head:
                 continue
@@ -1264,6 +1363,32 @@ def discover_compact_circuit(
                 healthy_head[li].append(l2[h_idx])
             if len(l_idx):
                 loop_head[li].append(l2[l_idx])
+
+            x_in = ct.dequant_head_in(mod)
+            if x_in is not None:
+                nh = int(h["n_heads"])
+                d_in = int(x_in.shape[-1])
+                if mod not in w_heads_cache:
+                    w_heads_cache[mod] = _resolve_out_proj_weight(
+                        mod, nh, d_in, model, wsi,
+                        _mod_cache=mod_cache, _ck_names=ck_names, _ck_name_set=ck_name_set,
+                    )
+                    attn_meta_cache[mod] = _resolve_attn_meta(
+                        mod, model, wsi,
+                        _mod_cache=mod_cache, _ck_names=ck_names, _ck_name_set=ck_name_set,
+                    )
+                w_heads = w_heads_cache[mod]
+                if w_heads is not None and nh > 0 and d_in % nh == 0:
+                    hd = d_in // nh
+                    attn_info[mod] = (int(li), nh, hd)
+                    if len(h_idx):
+                        yh_heads = torch.einsum("thd,hdo->tho", x_in[h_idx].float().reshape(-1, nh, hd), w_heads)
+                        healthy_attn_y.setdefault(mod, []).append(yh_heads.sum(dim=1))
+                        healthy_attn_h.setdefault(mod, []).append(yh_heads.mean(dim=0, keepdim=True))
+                    if len(l_idx):
+                        yl_heads = torch.einsum("thd,hdo->tho", x_in[l_idx].float().reshape(-1, nh, hd), w_heads)
+                        loop_attn_y.setdefault(mod, []).append(yl_heads.sum(dim=1))
+                        loop_attn_h.setdefault(mod, []).append(yl_heads.mean(dim=0, keepdim=True))
 
         for li in ct.attn_topk:
             _, a_w = ct.dequant_attn_topk(li)
@@ -1277,18 +1402,53 @@ def discover_compact_circuit(
     u_mlp_by_layer: dict[int, torch.Tensor] = {}
     topk_by_layer: dict[int, torch.Tensor] = {}
     dx_by_layer: dict[int, torch.Tensor] = {}
+    split_mode = "in_sample"
+
+    # Automatic residual router search across all layers (fit on Half A, audited on Half B)
+    best_router: dict[str, Any] | None = None
+    best_router_report: dict[str, Any] | None = None
+    best_router_key: tuple[float, float, float] = (-1.0, -1.0, -1e9)
 
     for l in layers_sorted:
         if not loop_y[l] or not healthy_y[l]:
             continue
-        yh_t, yl_t = torch.cat(healthy_y[l], dim=0), torch.cat(loop_y[l], dim=0)
-        u_m, f_m = _fisher_dir(yh_t, yl_t)
-        f_r = 0.0
+        u_m, dp_m, f_m, sm_m = _heldout_dir_dprime(healthy_y[l], loop_y[l])
+        split_mode = sm_m
+        f_r, dp_r = 0.0, 0.0
         if healthy_res[l] and loop_res[l]:
-            _, f_r = _fisher_dir(torch.cat(healthy_res[l], dim=0), torch.cat(loop_res[l], dim=0))
+            u_r_dir, dp_r, f_r, _ = _heldout_dir_dprime(healthy_res[l], loop_res[l])
+            if float(u_r_dir.norm()) > 0.5:
+                rhA, rhB, _ = _split_ab(healthy_res[l])
+                rlA, rlB, _ = _split_ab(loop_res[l])
+                thr_r = 0.5 * (float((rhA @ u_r_dir).mean()) + float((rlA @ u_r_dir).mean()))
+                tpr = float(((rlB @ u_r_dir) > thr_r).float().mean())
+                fpr = float(((rhB @ u_r_dir) > thr_r).float().mean())
+                bal = 0.5 * (tpr + (1.0 - fpr))
+                rkey = (bal, -fpr, dp_r)
+                if rkey > best_router_key:
+                    best_router_key = rkey
+                    best_router = {
+                        "layer": int(l + 1),  # hidden_states[l + 1] == decoder block l output
+                        "readout": "last_token",
+                        "dir": u_r_dir.float().cpu(),
+                        "thr": round(thr_r, 6),
+                    }
+                    best_router_report = {
+                        "block_layer": int(l),
+                        "hidden_state_layer": int(l + 1),
+                        "thr": round(thr_r, 4),
+                        "dprime": round(dp_r, 4),
+                        "tpr": round(tpr, 4),
+                        "fpr": round(fpr, 4),
+                        "balanced_acc": round(bal, 4),
+                        "warning": "high_fpr" if fpr > 0.15 else None,
+                    }
         u_mlp_by_layer[l] = u_m
 
-        dx = torch.cat(loop_xsum[l], dim=0).mean(dim=0) - torch.cat(healthy_xsum[l], dim=0).mean(dim=0)
+        # Use Half-A mean activation shift for neuron selection (consistent with held-out Half A/B)
+        hxA, _, _ = _split_ab(healthy_xsum[l])
+        lxA, _, _ = _split_ab(loop_xsum[l])
+        dx = lxA.mean(dim=0) - hxA.mean(dim=0)
         dx_by_layer[l] = dx
         k_pick = min(top_k_neurons, d_inter_by_layer[l])
         topk_by_layer[l] = (dx * (u_m @ w_downs[l])).topk(k_pick).indices.sort().values
@@ -1308,6 +1468,8 @@ def discover_compact_circuit(
         layer_stats.append({
             "layer": l,
             "is_full_attn": l in healthy_att_focus,
+            "dprime_mlp": round(dp_m, 4),
+            "dprime_resid": round(dp_r, 4),
             "fisher_mlp": round(f_m, 4),
             "fisher_resid": round(f_r, 4),
             "head_max_d": round(head_sep, 4),
@@ -1318,19 +1480,74 @@ def discover_compact_circuit(
     if not layer_stats:
         raise ValueError("Need at least one healthy and one looping token span to discover a circuit.")
 
-    mlp_ranked = [r["layer"] for r in sorted(layer_stats, key=lambda x: -x["fisher_mlp"])]
+    # W_O-projected Attention site scoring (same held-out d' scale as MLP sites)
+    attn_stats: list[dict[str, Any]] = []
+    u_attn_by_mod: dict[str, torch.Tensor] = {}
+    head_cols_by_mod: dict[str, torch.Tensor] = {}
+    top_heads_by_mod: dict[str, list[int]] = {}
+    for mod in sorted(set(healthy_attn_y) & set(loop_attn_y)):
+        if attn_meta_cache.get(mod) is None:
+            continue
+        li, nh, hd = attn_info[mod]
+        u_a, dp_a, f_a, _ = _heldout_dir_dprime(healthy_attn_y[mod], loop_attn_y[mod])
+        u_attn_by_mod[mod] = u_a
+        hhA, _, _ = _split_ab(healthy_attn_h[mod])
+        lhA, _, _ = _split_ab(loop_attn_h[mod])
+        dh_vec = lhA.mean(dim=0) - hhA.mean(dim=0)  # (H, D)
+        head_scores = dh_vec @ u_a  # (H,)
+        kh = min(max(1, int(top_k_heads)), nh)
+        h_pick = head_scores.topk(kh).indices.sort().values.tolist()
+        top_heads_by_mod[mod] = [int(x) for x in h_pick]
+        head_cols_by_mod[mod] = torch.cat([torch.arange(h * hd, (h + 1) * hd, dtype=torch.long) for h in h_pick])
+        attn_stats.append({
+            "layer": li,
+            "module": attn_meta_cache[mod]["module"],
+            "raw_module": mod,
+            "n_heads": nh,
+            "head_dim": hd,
+            "dprime_attn": round(dp_a, 4),
+            "fisher_attn": round(f_a, 4),
+            "top_heads": top_heads_by_mod[mod],
+        })
+    attn_stats.sort(key=lambda r: -r["dprime_attn"])
+
+    # Unified site ranking across BOTH MLP (`down_proj`) and Attention (`o_proj`/`out_proj`)
+    site_rankings: list[dict[str, Any]] = [
+        {
+            "site_type": "mlp",
+            "layer": r["layer"],
+            "module": mod_meta[r["layer"]]["module"],
+            "dprime": r["dprime_mlp"],
+        }
+        for r in layer_stats
+    ] + [
+        {
+            "site_type": "attn",
+            "layer": r["layer"],
+            "module": r["module"],
+            "raw_module": r["raw_module"],
+            "dprime": r["dprime_attn"],
+            "top_heads": r["top_heads"],
+        }
+        for r in attn_stats
+    ]
+    site_rankings.sort(key=lambda r: -r["dprime"])
+
+    mlp_ranked = [r["layer"] for r in sorted(layer_stats, key=lambda x: -x["dprime_mlp"])]
     hybrid_ranked = [r["layer"] for r in sorted(layer_stats, key=lambda x: -x["hybrid_score"])]
 
     fa_layers = sorted(l for l in layers_sorted if l in healthy_att_focus)
     if not fa_layers:
         fa_layers = sorted(s["layer"] for s in layer_stats if s["is_full_attn"])
 
-    orig_lo, orig_hi = origin_range if origin_range is not None else ((6, 16) if n_layers >= 20 else (1, max(1, n_layers - 2)))
-    fa_origins = [l for l in hybrid_ranked if l in fa_layers and orig_lo <= l <= orig_hi][:2]
-    if not fa_origins:
-        fa_origins = [l for l in hybrid_ranked if l in fa_layers][:2]
-    if not fa_origins:
-        fa_origins = hybrid_ranked[:2]
+    # Truly blind origin selection across ALL layers (no hardcoded layer-index or layer-type hints)
+    if origin_range is not None:
+        orig_lo, orig_hi = origin_range
+        origins = [l for l in hybrid_ranked if orig_lo <= l <= orig_hi][:2]
+        if not origins:
+            origins = hybrid_ranked[:2]
+    else:
+        origins = hybrid_ranked[:2]
 
     hidden_dim = int(next(iter(w_downs.values())).shape[0])
     p_svd: dict[int, torch.Tensor] = {}
@@ -1340,7 +1557,7 @@ def discover_compact_circuit(
 
     wsi_resonance_table: list[dict[str, Any]] = []
     res_candidates: dict[tuple[int, int], tuple[float, torch.Tensor, torch.Tensor]] = {}
-    for l_src in fa_origins:
+    for l_src in origins:
         for l_dst in sorted(u_mlp_by_layer):
             if l_dst <= l_src or l_dst not in p_svd:
                 continue
@@ -1365,26 +1582,13 @@ def discover_compact_circuit(
             res_candidates[(l_src, l_dst)] = (wsi_score, u_res, idx_res)
     wsi_resonance_table.sort(key=lambda r: -r["wsi_resonance_score"])
 
-    max_orig = max(fa_origins) if fa_origins else -1
-    min_orig = min(fa_origins) if fa_origins else -1
-    max_layer = max(layers_sorted)
-    dst_fa_cands = [r for r in wsi_resonance_table if r["is_full_attn"] and r["dst_layer"] > max_orig and r["dst_layer"] < max_layer]
-    if not dst_fa_cands and fa_origins:
-        dst_fa_cands = [
-            r for r in wsi_resonance_table
-            if r["is_full_attn"] and r["dst_layer"] > fa_origins[0] and r["dst_layer"] < max_layer and r["dst_layer"] not in fa_origins
-        ]
-    if not dst_fa_cands:
-        dst_fa_cands = [r for r in wsi_resonance_table if r["is_full_attn"] and r["dst_layer"] > max_orig]
-    if not dst_fa_cands and fa_origins:
-        dst_fa_cands = [r for r in wsi_resonance_table if r["is_full_attn"] and r["dst_layer"] > min_orig and r["dst_layer"] not in fa_origins]
-    if not dst_fa_cands and fa_origins:
-        dst_fa_cands = [r for r in wsi_resonance_table if r["is_full_attn"] and r["dst_layer"] > fa_origins[0] and r["dst_layer"] < max_layer]
-    if not dst_fa_cands:
-        dst_fa_cands = wsi_resonance_table[:1]
+    # Pure resonance ranking across all downstream layers (no layer-type or `< max_layer` exclusion)
+    dst_cands = [r for r in wsi_resonance_table if r["dst_layer"] not in origins]
+    if not dst_cands:
+        dst_cands = wsi_resonance_table[:1]
 
-    l_res_dst = dst_fa_cands[0]["dst_layer"] if dst_fa_cands else None
-    win_src = dst_fa_cands[0]["src_layer"] if dst_fa_cands else (fa_origins[0] if fa_origins else None)
+    l_res_dst = dst_cands[0]["dst_layer"] if dst_cands else None
+    win_src = dst_cands[0]["src_layer"] if dst_cands else (origins[0] if origins else None)
 
     wsi_dir_ov: dict[int, torch.Tensor] = {}
     wsi_idx_ov: dict[int, torch.Tensor] = {}
@@ -1394,7 +1598,23 @@ def discover_compact_circuit(
         wsi_idx_ov[l_res_dst] = idx_r
 
     wsi_pair_layers = [win_src, l_res_dst] if (win_src is not None and l_res_dst is not None) else []
-    wsi_fa3_layers = list(dict.fromkeys(fa_origins[:2] + ([l_res_dst] if l_res_dst is not None else [])))
+    wsi_fa3_layers = list(dict.fromkeys(origins[:2] + ([l_res_dst] if l_res_dst is not None else [])))
+    router_obj = best_router if attach_router else None
+
+    def _make_patch(edits: list[Edit], name: str) -> MoIPatch:
+        return MoIPatch(
+            edits=edits,
+            router=router_obj,
+            meta={
+                "name": name,
+                "split_mode": split_mode,
+                "wsi_origins": origins,
+                "wsi_resonant_dst": l_res_dst,
+                "wsi_pair_layers": wsi_pair_layers,
+                "wsi_fa3_layers": wsi_fa3_layers,
+                "router_report": best_router_report,
+            },
+        )
 
     def build_patch(
         layers_pick: list[int],
@@ -1421,21 +1641,54 @@ def discover_compact_circuit(
                 base_dtype=meta_l["base_dtype"],
                 shape=meta_l["shape"],
             ))
-        return MoIPatch(
-            edits=edits,
-            meta={
-                "name": "compact-wsi-discovered",
-                "wsi_origins": fa_origins,
-                "wsi_resonant_dst": l_res_dst,
-                "wsi_pair_layers": wsi_pair_layers,
-                "wsi_fa3_layers": wsi_fa3_layers,
-            },
-        )
+        return _make_patch(edits, "compact-wsi-discovered")
+
+    def build_sites_patch(sites: list[dict[str, Any]], *, patch_alpha: float | None = None, name: str = "compact-unified") -> MoIPatch:
+        a_val = float(alpha if patch_alpha is None else patch_alpha)
+        edits = []
+        for s in sites:
+            if s["site_type"] == "mlp":
+                l = int(s["layer"])
+                meta_l = mod_meta[l]
+                edits.append(Edit(
+                    module=meta_l["module"],
+                    u=u_mlp_by_layer[l].double(),
+                    alpha=a_val,
+                    idx=topk_by_layer[l].long(),
+                    base_sha256=meta_l["base_sha256"],
+                    base_dtype=meta_l["base_dtype"],
+                    shape=meta_l["shape"],
+                ))
+            elif s["site_type"] == "attn":
+                raw_m = s["raw_module"]
+                meta_a = attn_meta_cache[raw_m]
+                if meta_a is None:
+                    continue
+                edits.append(Edit(
+                    module=meta_a["module"],
+                    u=u_attn_by_mod[raw_m].double(),
+                    alpha=a_val,
+                    idx=head_cols_by_mod[raw_m].long(),
+                    base_sha256=meta_a["base_sha256"],
+                    base_dtype=meta_a["base_dtype"],
+                    shape=meta_a["shape"],
+                ))
+        return _make_patch(edits, name)
 
     mlp_fa = [l for l in mlp_ranked if l in fa_layers]
     patches: dict[str, MoIPatch] = {}
+    if len(site_rankings) >= 2:
+        patches["unified_top2"] = build_sites_patch(site_rankings[:2], name="compact-unified-top2")
+    if len(mlp_ranked) >= 2:
+        patches["blind_top2"] = build_patch(mlp_ranked[:2], use_wsi_resonance=False)
+    if len(attn_stats) >= 1:
+        patches["attn_top2"] = build_sites_patch(
+            [{"site_type": "attn", **r} for r in attn_stats[:2]],
+            name="compact-attn-top2",
+        )
     if len(wsi_fa3_layers) >= 3:
-        patches["wsi_fa3"] = build_patch(wsi_fa3_layers)
+        patches["wsi_top3"] = build_patch(wsi_fa3_layers)
+        patches["wsi_fa3"] = patches["wsi_top3"]
     if len(wsi_pair_layers) >= 2:
         patches["wsi_pair"] = build_patch(wsi_pair_layers)
     if len(mlp_ranked) >= 3:
@@ -1444,17 +1697,22 @@ def discover_compact_circuit(
         patches["mlp_fa3"] = build_patch(mlp_fa[:3], use_wsi_resonance=False)
 
     recommended = (
-        patches.get("wsi_fa3")
+        patches.get("unified_top2")
+        or patches.get("blind_top2")
         or patches.get("wsi_pair")
         or patches.get("mlp_top3")
-        or build_patch(hybrid_ranked[: min(2, len(hybrid_ranked))])
+        or build_patch(hybrid_ranked[: min(2, len(hybrid_ranked))], use_wsi_resonance=False)
     )
 
     return {
+        "split_mode": split_mode,
         "fa_layers": fa_layers,
         "mlp_ranked": mlp_ranked,
         "hybrid_ranked": hybrid_ranked,
-        "wsi_origins": fa_origins,
+        "attn_stats": attn_stats,
+        "site_rankings": site_rankings,
+        "router_report": best_router_report,
+        "wsi_origins": origins,
         "wsi_resonant_src": win_src,
         "wsi_resonant_dst": l_res_dst,
         "wsi_pair_layers": wsi_pair_layers,
@@ -1463,11 +1721,14 @@ def discover_compact_circuit(
         "layer_stats": layer_stats,
         "directions": u_mlp_by_layer,
         "top_neurons": topk_by_layer,
+        "attn_directions": u_attn_by_mod,
+        "attn_top_heads": top_heads_by_mod,
         "wsi_resonant_directions": wsi_dir_ov,
         "wsi_resonant_neurons": wsi_idx_ov,
         "patch": recommended,
         "patches": patches,
         "build_patch": build_patch,
+        "build_sites_patch": build_sites_patch,
     }
 
 
@@ -1478,10 +1739,11 @@ def discover_compact_dirs(
     loop_trace_dirs: list[str] | None = None,
     alpha: float = 6.0,
     top_k_neurons: int = 64,
-    variant: str = "wsi_fa3",
+    top_k_heads: int = 2,
+    variant: str = "unified_top2",
     save_patch_path: str | None = None,
 ) -> dict[str, Any]:
-    """Load saved `CompactTrace` directories, run hybrid discovery, optionally save a `.moipatch`, and return a JSON summary."""
+    """Load saved `CompactTrace` directories, run blind multi-site discovery, optionally save a `.moipatch`, and return a JSON summary."""
     traces = [CompactTrace.load(p) for p in trace_dirs]
     loop_traces = [CompactTrace.load(p) for p in loop_trace_dirs] if loop_trace_dirs else None
     res = wsi.discover_compact_circuit(
@@ -1489,15 +1751,20 @@ def discover_compact_dirs(
         loop_traces=loop_traces,
         alpha=float(alpha),
         top_k_neurons=int(top_k_neurons),
+        top_k_heads=int(top_k_heads),
     )
     saved_patch = None
     if save_patch_path:
         chosen = res["patches"].get(variant) or res["patch"]
         saved_patch = str(chosen.save(save_patch_path))
     return {
+        "split_mode": res["split_mode"],
         "fa_layers": res["fa_layers"],
         "mlp_ranked": res["mlp_ranked"],
         "hybrid_ranked": res["hybrid_ranked"],
+        "attn_stats": res["attn_stats"],
+        "site_rankings": res["site_rankings"],
+        "router_report": res["router_report"],
         "wsi_origins": res["wsi_origins"],
         "wsi_resonant_src": res["wsi_resonant_src"],
         "wsi_resonant_dst": res["wsi_resonant_dst"],
@@ -1508,6 +1775,95 @@ def discover_compact_dirs(
         "available_patches": list(res["patches"]),
         "saved_patch": saved_patch,
     }
+
+
+@torch.no_grad()
+def screen_patch_candidates(
+    model: nn.Module,
+    candidates: dict[str, Any] | list[tuple[str, Any]],
+    *,
+    healthy_seqs: list[torch.Tensor | list[int]],
+    target_seqs: list[torch.Tensor | list[int]],
+    target_spans: list[tuple[int, int]] | None = None,
+    max_nll_delta: float = 0.05,
+    rank_by: str = "pareto",
+) -> list[dict[str, Any]]:
+    """Fast 1-forward-pass proxy screen ranking candidate `MoIPatch`es by failure suppression vs. healthy `delta_nll`.
+
+    Evaluates each patch in teacher-forced mode (zero token generation) so bad `(k, n, alpha)` configs
+    can be pruned in seconds before running expensive long-horizon generation.
+    `rank_by="pareto"` (default) ranks guard-passing patches by `pareto_score = target_suppression / max(|delta_nll|, 0.01)`;
+    pass `rank_by="suppression"` to rank by raw `target_suppression`.
+    """
+    if rank_by not in ("pareto", "suppression"):
+        raise ValueError(f"rank_by must be 'pareto' or 'suppression', got {rank_by!r}")
+    dev = next(model.parameters()).device
+    items = list(candidates.items()) if isinstance(candidates, dict) else list(candidates)
+
+    def _to_ids(seq: torch.Tensor | list[int]) -> torch.Tensor:
+        t = seq if isinstance(seq, torch.Tensor) else torch.tensor(seq, dtype=torch.long)
+        return (t.unsqueeze(0) if t.dim() == 1 else t).to(dev)
+
+    h_ids = [_to_ids(s) for s in healthy_seqs]
+    t_ids = [_to_ids(s) for s in target_seqs]
+
+    def _eval_current() -> tuple[float, float]:
+        nll_sum, n_h = 0.0, 0
+        for ids in h_ids:
+            if ids.shape[1] < 2:
+                continue
+            out = model(input_ids=ids, use_cache=False)
+            logits = out.logits[0, :-1].float()
+            nll_sum += float(F.cross_entropy(logits, ids[0, 1:], reduction="sum"))
+            n_h += int(ids.shape[1] - 1)
+        logp_sum, n_t = 0.0, 0
+        for i, ids in enumerate(t_ids):
+            T = int(ids.shape[1])
+            if T < 2:
+                continue
+            out = model(input_ids=ids, use_cache=False)
+            lp = F.log_softmax(out.logits[0, :-1].float(), dim=-1)
+            tok_lp = lp.gather(1, ids[0, 1:, None]).squeeze(1)  # length T - 1, pos j predicts token j + 1
+            if target_spans is not None and i < len(target_spans):
+                s, e = target_spans[i]
+                lo = max(0, min(T - 2, int(s) - 1))
+                hi = max(lo + 1, min(T - 1, int(e) - 1))
+            else:
+                lo = max(0, (T // 2) - 1) if T >= 4 else T - 2
+                hi = T - 1
+            seg = tok_lp[lo:hi]
+            logp_sum += float(seg.sum())
+            n_t += int(seg.numel())
+        return (nll_sum / max(1, n_h)), (logp_sum / max(1, n_t))
+
+    base_nll, base_tlogp = _eval_current()
+    rows: list[dict[str, Any]] = []
+    for name, patch in items:
+        h = patch.attach(model)
+        h.on()
+        try:
+            p_nll, p_tlogp = _eval_current()
+        finally:
+            h.off()
+        d_nll = p_nll - base_nll
+        supp = base_tlogp - p_tlogp  # positive => failure tokens became less likely
+        pareto = supp / max(abs(d_nll), 0.01)
+        rows.append({
+            "name": name,
+            "base_healthy_nll": round(base_nll, 5),
+            "healthy_nll": round(p_nll, 5),
+            "delta_healthy_nll": round(d_nll, 5),
+            "base_target_logp": round(base_tlogp, 5),
+            "target_logp": round(p_tlogp, 5),
+            "target_suppression": round(supp, 5),
+            "pareto_score": round(pareto, 4),
+            "passes_nll_guard": bool(d_nll <= max_nll_delta),
+        })
+    if rank_by == "pareto":
+        rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["pareto_score"], -r["target_suppression"], r["delta_healthy_nll"]))
+    else:
+        rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["target_suppression"], r["delta_healthy_nll"]))
+    return rows
 
 
 # ----------------------------------------------------------------------------------------------- differential trace API

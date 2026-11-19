@@ -228,8 +228,8 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
                 "save_patch_path": {"type": "string", "description": "Optional output path for the synthesized .moipatch file"},
                 "patch_variant": {
                     "type": "string",
-                    "default": "wsi_fa3",
-                    "enum": ["wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"],
+                    "default": "unified_top2",
+                    "enum": ["unified_top2", "blind_top2", "attn_top2", "wsi_top3", "wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"],
                 },
             },
             "required": ["model_dir", "trace_dirs"],
@@ -334,7 +334,7 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             loop_trace_dirs=args.get("loop_trace_dirs"),
             alpha=float(args.get("alpha", 6.0)),
             top_k_neurons=int(args.get("top_k_neurons", 64)),
-            variant=str(args.get("patch_variant", "wsi_fa3")),
+            variant=str(args.get("patch_variant", "unified_top2")),
             save_patch_path=args.get("save_patch_path"),
         )
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
