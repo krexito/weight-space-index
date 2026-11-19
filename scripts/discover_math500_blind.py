@@ -53,6 +53,10 @@ N_DEV = 32
 N_TEST = 150
 MAX_TOKENS_DISCOVER = 8192
 MAX_TOKENS_TEST = 16384
+# Gate 1: stop after elicit when the base model barely hard-loops (the 4B MATH-500 run had 0% at 8k and spent 4 h
+# testing a fix for a failure that was not there). The soft rule is no use here: it fires on ~half of normal answers.
+MIN_LOOP_KILLED = 0.10
+NO_PATCH = {"name": "no_patch", "layers": [], "neurons": 0, "alpha": 0.0, "k": 0}
 SEED = 42
 
 
@@ -452,7 +456,13 @@ def cmd_elicit(a) -> None:
     s = score_math(work, "requests_elicit.jsonl", "outputs_elicit.jsonl")
     print(f"elicit (MATH-500): accuracy={s['accuracy']:.1%}, loop_killed={s['loop_killed']:.1%}, truncated={s['truncated']:.1%}")
     fast.note_time(work, "elicit", time.perf_counter() - t0)
+    gate = {"loop_killed": s["loop_killed"], "min_loop_killed": a.min_loop_killed, "n": s["n"],
+            "passed": s["loop_killed"] >= a.min_loop_killed, "forced": bool(a.force)}
+    (work / "gate_elicit.json").write_text(json.dumps(gate, indent=1))
     fast.sync(work)
+    if not gate["passed"] and not a.force:
+        raise SystemExit(f"STOP: base hard-loops on {s['loop_killed']:.1%} of elicit answers (< {a.min_loop_killed:.0%}), "
+                         "so there is too little to fix. Change model / sampling / benchmark, or pass --force.")
 
 
 def cmd_diagnose(a) -> None:
@@ -603,17 +613,25 @@ def cmd_select(a) -> None:
         dev_res.values(),
         key=lambda r: (r["accuracy"], -r["loop_killed"], -r["truncated"], -_n_key(r["neurons"]), -r["k"]),
     )
+    # Gate 2: "no patch" is a valid answer. A finalist must beat base on dev accuracy, else nothing is frozen to test.
+    no_patch = winner["accuracy"] <= base["accuracy"] and not a.force_patch
     elapsed = round(time.perf_counter() - t0, 1)
+    best = {k: winner[k] for k in ("name", "layers", "neurons", "alpha", "k")}
     st = {
         "base_dev": {k: v for k, v in base.items() if k != "rows"},
         "dev_finalists": dev_res,
-        "choice": {k: winner[k] for k in ("name", "layers", "neurons", "alpha", "k")},
+        "best_finalist": best,
+        "choice": dict(NO_PATCH) if no_patch else best,
         "time_s": {"select": elapsed},
     }
     (work / "search.json").write_text(json.dumps(st, indent=1))
     fast.note_time(work, "select", elapsed)
     fast.sync(work)
-    print(f"Selected winner on dev: {winner['name']} (acc={winner['accuracy']:.1%}, loops={winner['loop_killed']:.1%})")
+    if no_patch:
+        print(f"NO PATCH: best finalist {winner['name']} acc={winner['accuracy']:.1%} <= base {base['accuracy']:.1%} on dev; "
+              "test runs base only (pass --force-patch to test it anyway)")
+    else:
+        print(f"Selected winner on dev: {winner['name']} (acc={winner['accuracy']:.1%}, loops={winner['loop_killed']:.1%})")
 
 
 def cmd_freeze(a) -> None:
@@ -718,8 +736,9 @@ def cmd_test(a) -> None:
     if fr is None:
         raise SystemExit("frozen.json missing: run freeze first")
     c = fr["choice"]
+    no_patch = c["name"] == NO_PATCH["name"]
     cks = {}
-    for kind in ("wsi", "random"):
+    for kind in (() if no_patch else ("wsi", "random")):
         ck = Path(a.ck_root or work) / blind.cfg_name(c["layers"], c["neurons"], c["alpha"], kind)
         if not ck.exists():
             blind.build_checkpoint(work, c["layers"], c["neurons"], c["alpha"], kind, ck)
@@ -736,6 +755,11 @@ def cmd_test(a) -> None:
         }], a)
         _save_base_cache(work, cfg, "test", cfg["n_test"], cfg["max_tokens_test"], "outputs_test_base.jsonl")
 
+    if no_patch:
+        print("no_patch frozen: base arm only")
+        fast.note_time(work, "test", time.perf_counter() - t0)
+        fast.sync(work)
+        return
     # 2. Plan MoI from base outputs, then run each baked checkpoint's fixed + MoI arms in ONE fused vLLM batch
     dl.cmd_plan_moi(a)
     mreq = "requests_test_moi.jsonl"
@@ -780,11 +804,14 @@ def cmd_report(a) -> None:
         ("wsi_fixed", "outputs_test_fast.jsonl"),
         ("random_fixed", "outputs_test_random.jsonl"),
     ):
+        if not (work / fn).exists():  # no_patch: base only
+            continue
         s = score_math(work, "requests_test.jsonl", fn, tok)
         res["arms"][name] = {k: s[k] for k in ("n", "accuracy", "loop_killed", "truncated")}
         rows[name] = {r["id"]: r for r in s["rows"]}
 
-    plan = {r["id"]: r for r in lr.read_jsonl(work / "requests_test_moi.jsonl")}
+    mp = work / "requests_test_moi.jsonl"
+    plan = {r["id"]: r for r in lr.read_jsonl(mp)} if mp.exists() else {}
     for name, fn in (
         ("wsi_moi", "outputs_test_moi_fast.jsonl"),
         ("random_moi", "outputs_test_moi_random.jsonl"),
@@ -827,6 +854,9 @@ def cmd_report(a) -> None:
         ("wsi_moi", "wsi_fixed"),
     ]
     res["paired"] = {f"{x}_vs_{y}": lr.paired_ci(acc[x], acc[y]) for x, y in pairs if x in acc and y in acc}
+    res["no_patch"] = fr["choice"]["name"] == NO_PATCH["name"]
+    if (work / "gate_elicit.json").exists():
+        res["gate_elicit"] = json.loads((work / "gate_elicit.json").read_text())
     res["screen"] = json.loads((work / "screen.json").read_text())
     res["search"] = json.loads((work / "search.json").read_text())
     diag = json.loads((work / "diagnosis_blind.json").read_text())
@@ -868,6 +898,11 @@ def main() -> None:
         q.add_argument("--dtype", default="auto")
         q.add_argument("--cpu", action="store_true")
         q.add_argument("--ck-root", default=None)
+        if name == "elicit":
+            q.add_argument("--min-loop-killed", type=float, default=MIN_LOOP_KILLED)
+            q.add_argument("--force", action="store_true", help="continue even if the base barely loops")
+        if name == "select":
+            q.add_argument("--force-patch", action="store_true", help="freeze the best finalist even if it loses to base")
 
     q = sub.add_parser("diagnose")
     q.add_argument("--work", required=True)
