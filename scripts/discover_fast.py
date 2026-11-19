@@ -58,7 +58,7 @@ MIN_LOOP_SEQS = 30           # fewer looping elicit responses than this: the mod
 # diagnosis v2 reads each looping response up to its loop onset + 768 tokens, however late the loop starts. v1 cut every
 # response at 4096 tokens, which dropped almost every loop of Qwen3.5-4B (733 loop tokens from 31 looping responses).
 DIAG_VERSION = 2
-DOWN_RE = re.compile(r"layers\.(\d+)\.mlp\.down_proj\.weight$")
+DOWN_RE = re.compile(lr.DOWN_PAT)
 
 
 def grid(rank: list[int]) -> list[dict]:
@@ -143,7 +143,7 @@ def load_base_layers(model_dir: Path, layers: set[int]) -> dict:
     return out
 
 
-def make_setter(updates: dict):
+def make_setter(updates: dict, down_pat: str = lr.DOWN_PAT):
     """A function for LLM.apply_model: writes each updated down_proj in place (so CUDA graphs keep their pointers)
     and returns an exact checksum. Defined as a closure so it is pickled by value into vLLM's worker process."""
 
@@ -152,7 +152,7 @@ def make_setter(updates: dict):
 
         import torch as _t
 
-        pat = _re.compile(r"layers\.(\d+)\.mlp\.down_proj\.weight$")
+        pat = _re.compile(down_pat)
         done = {}
         for name, p in model.named_parameters():
             mm = pat.search(name)
@@ -227,12 +227,12 @@ def cmd_diagnose(a) -> None:
         n = torch.cuda.device_count()
         mem = {i: int(torch.cuda.get_device_properties(i).total_memory * 0.80) for i in range(n)}
         kw = {"device_map": "auto", "max_memory": mem}
-    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], dtype=dtype, **kw).eval()
+    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], dtype=dtype, trust_remote_code=True, **kw).eval()
     print(f"diagnose dtype {dtype}, devices {sorted({str(p.device) for p in model.parameters()})}")
     layers = next(m for nm, m in model.named_modules()
                   if nm.endswith("layers") and isinstance(m, torch.nn.ModuleList) and len(m) >= 2)
     L = len(layers)
-    downs = [lyr.mlp.down_proj for lyr in layers]
+    downs = [lr.down_module(lyr) for lyr in layers]
     U, D = downs[0].in_features, downs[0].out_features
     body_model = getattr(model, "model", model)
     first_dev = next(model.parameters()).device
@@ -328,7 +328,8 @@ def _llm(model: str, cfg: dict, max_len: int, dtype: str, gpu_mem: float):
     from vllm import LLM
 
     base_kw = dict(model=model, tokenizer=cfg["base_dir"], dtype=dtype, max_model_len=max_len,
-                   gpu_memory_utilization=gpu_mem, enable_prefix_caching=True, seed=cfg["seed"])
+                   gpu_memory_utilization=gpu_mem, enable_prefix_caching=True, seed=cfg["seed"],
+                   trust_remote_code=True)
     extras = {"limit_mm_per_prompt": {"image": 0, "video": 0}}
     proc = loop_kill_v2.processor()
     if proc is not None:
@@ -357,7 +358,7 @@ def _generate(llm, cfg: dict, reqs: list[dict], kill: bool) -> tuple[list[dict],
     kill_eos = cfg["eos"][-1]
 
     def params(r, k):
-        return SamplingParams(**lr.SAMPLING, max_tokens=r["max_tokens"], seed=r["seed"], stop_token_ids=cfg["eos"],
+        return SamplingParams(**lr.sampling_for(cfg), max_tokens=r["max_tokens"], seed=r["seed"], stop_token_ids=cfg["eos"],
                               logit_bias={int(t): float(v) for t, v in r.get("logit_bias", {}).items()} or None,
                               extra_args={"loop_kill_eos": kill_eos} if k else None)
 
@@ -675,7 +676,7 @@ def cmd_report(a) -> None:
     if fr["code_sha256"] != code_hashes():
         raise SystemExit("the code changed after the freeze; refusing to report")
     cfg = dl.cfg_load(work)
-    tok = AutoTokenizer.from_pretrained(cfg["base_dir"])
+    tok = AutoTokenizer.from_pretrained(cfg["base_dir"], trust_remote_code=True)
     eos, reqs = set(cfg["eos"]), {r["id"]: r for r in lr.read_jsonl(work / "requests_test.jsonl")}
     res: dict = {"model": cfg.get("model_repo"), "choice": fr["choice"],
                  "frozen": {k: fr[k] for k in ("frozen_utc", "git_commit", "code_sha256")},

@@ -66,7 +66,9 @@ def _base_cache_path(cfg: dict, split: str, n: int, max_tokens: int) -> Path | N
         return None
     mtag = re.sub(r"[^a-zA-Z0-9._-]+", "_", cfg.get("model_repo", "model"))
     dtag = re.sub(r"[^a-zA-Z0-9._-]+", "_", cfg.get("dataset", "math500"))
-    fname = f"{mtag}__{dtag}__{split}_n{n}_tok{max_tokens}_s{cfg.get('seed', SEED)}.jsonl"
+    prof = cfg.get("sampling_profile", "qwen")  # outputs depend on sampling; "qwen" keeps the old cache names
+    ptag = "" if prof == "qwen" else f"_{prof}"
+    fname = f"{mtag}__{dtag}__{split}_n{n}_tok{max_tokens}_s{cfg.get('seed', SEED)}{ptag}.jsonl"
     return Path(root) / fname
 
 
@@ -124,6 +126,7 @@ def _llm_fast(model: str, cfg: dict, max_len: int, dtype: str, gpu_mem: float):
         gpu_memory_utilization=gpu_mem,
         enable_prefix_caching=True,
         seed=cfg["seed"],
+        trust_remote_code=True,
     )
     extras: dict = {
         "limit_mm_per_prompt": {"image": 0, "video": 0},
@@ -320,7 +323,7 @@ def score_math(work: Path, req_file: str, out_file: str, tok=None) -> dict:
     from transformers import AutoTokenizer
 
     cfg = dl.cfg_load(work)
-    tok = tok or AutoTokenizer.from_pretrained(cfg["base_dir"])
+    tok = tok or AutoTokenizer.from_pretrained(cfg["base_dir"], trust_remote_code=True)
     eos = set(cfg["eos"])
     reqs = {r["id"]: r for r in lr.read_jsonl(work / req_file)}
     rows = []
@@ -387,7 +390,7 @@ def cmd_prepare(a) -> None:
     dev_rows = _take_stratified(a.n_dev)
     test_rows = _take_stratified(a.n_test)
 
-    tok = AutoTokenizer.from_pretrained(a.base_dir)
+    tok = AutoTokenizer.from_pretrained(a.base_dir, trust_remote_code=True)
     raw_eos = []
     for attr in ("eos_token_id", "eos_token_ids"):
         val = getattr(tok, attr, None)
@@ -436,6 +439,8 @@ def cmd_prepare(a) -> None:
         "n_elicit": len(elicit_rows),
         "n_dev": len(dev_rows),
         "n_test": len(test_rows),
+        "sampling_profile": a.sampling,
+        "sampling": lr.SAMPLING_PROFILES[a.sampling],
     }
     (work / "config.json").write_text(json.dumps(cfg, indent=1))
     fast.sync(work)
@@ -499,7 +504,7 @@ def cmd_screen(a) -> None:
     print(f"Screening 24 configs on {len(healthy)} held-out Half-B looping MATH-500 sequences (ids={seq_ids})...")
 
     dtype = torch.bfloat16 if fast.bf16_ok() else torch.float16
-    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], torch_dtype=dtype, device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], torch_dtype=dtype, device_map="auto", trust_remote_code=True)
     model.eval()
 
     downs = {}
@@ -784,7 +789,7 @@ def cmd_report(a) -> None:
         raise SystemExit("code changed after freeze; refusing to report")
 
     cfg = dl.cfg_load(work)
-    tok = AutoTokenizer.from_pretrained(cfg["base_dir"])
+    tok = AutoTokenizer.from_pretrained(cfg["base_dir"], trust_remote_code=True)
     eos = set(cfg["eos"])
     reqs = {r["id"]: r for r in lr.read_jsonl(work / "requests_test.jsonl")}
 
@@ -890,6 +895,8 @@ def main() -> None:
     p.add_argument("--max-tokens-discover", type=int, default=MAX_TOKENS_DISCOVER)
     p.add_argument("--max-tokens-test", type=int, default=MAX_TOKENS_TEST)
     p.add_argument("--seed", type=int, default=SEED)
+    p.add_argument("--sampling", default="qwen", choices=sorted(lr.SAMPLING_PROFILES),
+                   help="qwen: T0.6 + presence 1.5 (Qwen3.5 card); lfm3-math: T1.0 top_p .95 top_k 20 (LFM3 card); greedy")
 
     for name in ("elicit", "select", "test"):
         q = sub.add_parser(name)

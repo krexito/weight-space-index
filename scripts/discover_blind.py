@@ -109,7 +109,7 @@ def cmd_prepare(a) -> None:
         return Path(hf_hub_download("openai/gsm8k", f"main/{split}-00000-of-00001.parquet", repo_type="dataset",
                                     local_dir=work / "data"))
 
-    tok = AutoTokenizer.from_pretrained(base_dir)
+    tok = AutoTokenizer.from_pretrained(base_dir, trust_remote_code=True)
     train = pd.read_parquet(parquet("train")).sample(frac=1.0, random_state=a.seed).reset_index(drop=True)
     test = pd.read_parquet(parquet("test")).iloc[: a.n_test]
     e, d1, d2 = a.n_elicit, a.n_dev1, a.n_dev2
@@ -155,11 +155,11 @@ def cmd_diagnose(a) -> None:
 
     dev = torch.device("cpu" if a.cpu or not torch.cuda.is_available() else "cuda")
     dtype = torch.bfloat16 if dev.type == "cuda" else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], dtype=dtype).to(dev).eval()
+    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], dtype=dtype, trust_remote_code=True).to(dev).eval()
     layers = next(m for n, m in model.named_modules()
                   if n.endswith("layers") and isinstance(m, torch.nn.ModuleList) and len(m) >= 2)
     L = len(layers)
-    downs = [lyr.mlp.down_proj for lyr in layers]
+    downs = [lr.down_module(lyr) for lyr in layers]
     U, D = downs[0].in_features, downs[0].out_features
     body_model = getattr(model, "model", model)
     cur: dict = {"mask": None}
@@ -420,7 +420,7 @@ def cmd_report(a) -> None:
         raise SystemExit("the code changed after the freeze; refusing to report")
     c = fr["choice"]
     cfg = dl.cfg_load(work)
-    tok = AutoTokenizer.from_pretrained(cfg["base_dir"])
+    tok = AutoTokenizer.from_pretrained(cfg["base_dir"], trust_remote_code=True)
     eos, reqs = set(cfg["eos"]), {r["id"]: r for r in lr.read_jsonl(work / "requests_test.jsonl")}
     arms = {"base": "outputs_test_base.jsonl", "blind_fixed": "outputs_test_blind.jsonl",
             "random_fixed": "outputs_test_random.jsonl", "p50c": "outputs_test_p50c.jsonl"}
@@ -498,7 +498,7 @@ def exam(work: Path, cfg: dict, c: dict, p50c_dir: Path) -> dict:
                 a_, b_ = fe.get_tensor(k), fb.get_tensor(k)
                 if a_.shape == b_.shape and bool((a_ != b_).any()):
                     changed.append(k)
-                    m = re.search(r"layers\.(\d+)\.mlp\.down_proj\.weight$", k)
+                    m = re.search(lr.DOWN_PAT, k)
                     if m and not k.startswith("mtp."):
                         per_layer[int(m.group(1))] = (a_.double() - b_.double()).numpy()
     out = {"p50c_changed_tensors": changed, "p50c_layers": sorted(per_layer), "blind_layers": c["layers"],

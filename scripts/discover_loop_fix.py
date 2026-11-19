@@ -116,7 +116,7 @@ def token_labels(body: list[int]) -> np.ndarray:
 
 
 def down_key(keys, layer: int) -> str:
-    pat = re.compile(rf"(^|\.)layers\.{layer}\.mlp\.down_proj\.weight$")
+    pat = re.compile(rf"(^|\.)layers\.{layer}\.(?:mlp\.down_proj|feed_forward\.w2)\.weight$")
     hits = [k for k in keys if pat.search(k) and not k.startswith("mtp.")]  # Qwen3.5 also has mtp.layers.0
     if len(hits) != 1:
         raise SystemExit(f"down_proj of layer {layer} not found uniquely: {hits}")
@@ -144,7 +144,7 @@ def cmd_prepare(a) -> None:
         return Path(hf_hub_download("openai/gsm8k", f"main/{split}-00000-of-00001.parquet", repo_type="dataset",
                                     local_dir=work / "data"))
 
-    tok = AutoTokenizer.from_pretrained(base_dir)
+    tok = AutoTokenizer.from_pretrained(base_dir, trust_remote_code=True)
     train = pd.read_parquet(parquet("train")).sample(frac=1.0, random_state=a.seed).reset_index(drop=True)
     test = pd.read_parquet(parquet("test")).iloc[: a.n_test]
     lr.write_jsonl(work / "requests_elicit.jsonl",
@@ -198,7 +198,7 @@ def cmd_gen(a) -> None:
     kill_eos = cfg["eos"][-1]
 
     def params(r, kill: bool):
-        return SamplingParams(**lr.SAMPLING, max_tokens=r["max_tokens"], seed=r["seed"], stop_token_ids=cfg["eos"],
+        return SamplingParams(**lr.sampling_for(cfg), max_tokens=r["max_tokens"], seed=r["seed"], stop_token_ids=cfg["eos"],
                               logit_bias={int(k): float(v) for k, v in r.get("logit_bias", {}).items()} or None,
                               extra_args={"loop_kill_eos": kill_eos} if kill else None)
 
@@ -231,7 +231,7 @@ def score(work: Path, req_file: str, out_file: str, tok=None) -> dict:
     from transformers import AutoTokenizer
 
     cfg = cfg_load(work)
-    tok = tok or AutoTokenizer.from_pretrained(cfg["base_dir"])
+    tok = tok or AutoTokenizer.from_pretrained(cfg["base_dir"], trust_remote_code=True)
     reqs = {r["id"]: r for r in lr.read_jsonl(work / req_file)}
     rows = []
     for o in lr.read_jsonl(work / out_file):
@@ -278,11 +278,11 @@ def cmd_diagnose(a) -> None:
 
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     dtype = torch.bfloat16 if dev.type == "cuda" else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], dtype=dtype).to(dev).eval()
+    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], dtype=dtype, trust_remote_code=True).to(dev).eval()
     layers = next(m for n, m in model.named_modules()
                   if n.endswith("layers") and isinstance(m, torch.nn.ModuleList) and len(m) >= 8)
     L = len(layers)
-    downs = [lyr.mlp.down_proj for lyr in layers]
+    downs = [lr.down_module(lyr) for lyr in layers]
     U, D = downs[0].in_features, downs[0].out_features
     body_model = getattr(model, "model", model)  # skip the LM head: only internal activations are needed
 
@@ -432,6 +432,7 @@ def cmd_plan_moi(a) -> None:
     eos = set(cfg["eos"])
     reqs = {r["id"]: r for r in lr.read_jsonl(work / "requests_test.jsonl")}
     cont = []
+    pp = float(lr.sampling_for(cfg).get("presence_penalty", 0.0))
     for o in lr.read_jsonl(work / "outputs_test_base.jsonl"):
         st = lr.analyse(o["token_ids"], eos)
         if st["fire"] is None:
@@ -440,7 +441,8 @@ def cmd_plan_moi(a) -> None:
         r = reqs[o["id"]]
         cont.append({"id": o["id"], "prompt_ids": r["prompt_ids"] + prefix, "prefix_len": len(prefix),
                      "max_tokens": r["max_tokens"] - len(prefix), "seed": r["seed"] + 7,
-                     "logit_bias": {str(t): -lr.SAMPLING["presence_penalty"] for t in sorted(set(prefix))}})
+                     # resuming mid-answer loses the presence penalty's memory of the prefix: re-add it as a bias
+                     "logit_bias": {str(t): -pp for t in sorted(set(prefix))} if pp else {}})
     lr.write_jsonl(work / "requests_test_moi.jsonl", cont)
     print(f"router fired on {len(cont)}/{len(reqs)} base test responses")
 
@@ -477,7 +479,7 @@ def cmd_report(a) -> None:
 
     work = Path(a.work)
     cfg = cfg_load(work)
-    tok = AutoTokenizer.from_pretrained(cfg["base_dir"])
+    tok = AutoTokenizer.from_pretrained(cfg["base_dir"], trust_remote_code=True)
     eos, reqs = set(cfg["eos"]), {r["id"]: r for r in lr.read_jsonl(work / "requests_test.jsonl")}
     arms = {"base": "outputs_test_base.jsonl", "wsi_fixed": "outputs_test_wsi.jsonl", "p50c": "outputs_test_p50c.jsonl"}
     res: dict = {"alpha": cfg.get("alpha"), "layer_candidate": cfg.get("cand"), "dev": cfg.get("dev"), "arms": {}}

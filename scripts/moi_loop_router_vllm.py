@@ -50,6 +50,29 @@ K_DUP = 16
 ROUTER_WINDOW, ROUTER_FRAC = 64, 0.5
 KILL_WINDOW, KILL_FRAC = 768, 0.9
 SAMPLING = dict(temperature=0.6, top_p=0.95, top_k=20, presence_penalty=1.5)
+# Per-model sampling profiles. A run's config.json may carry "sampling"; runs without it keep SAMPLING (Qwen3.5).
+SAMPLING_PROFILES = {
+    "qwen": SAMPLING,
+    "lfm3-math": dict(temperature=1.0, top_p=0.95, top_k=20),  # LiquidAI/LFM3-1.7B model card, Math & STEM
+    "greedy": dict(temperature=0.0),
+}
+# The MLP output matrix the edits change: Qwen-style mlp.down_proj or LFM-style feed_forward.w2.
+DOWN_PAT = r"layers\.(\d+)\.(?:mlp\.down_proj|feed_forward\.w2)\.weight$"
+
+
+def sampling_for(cfg: dict) -> dict:
+    return dict(cfg.get("sampling") or SAMPLING)
+
+
+def down_module(layer):
+    """The down projection of one decoder layer (Qwen: mlp.down_proj, LFM2/3: feed_forward.w2)."""
+    mlp = getattr(layer, "mlp", None)
+    if mlp is not None and hasattr(mlp, "down_proj"):
+        return mlp.down_proj
+    ff = getattr(layer, "feed_forward", None)
+    if ff is not None and hasattr(ff, "w2"):
+        return ff.w2
+    raise AttributeError(f"no down projection on {type(layer).__name__}")
 INSTRUCTION = "Please reason step by step, and put your final answer within \\boxed{}."
 BASE_REPO = "Qwen/Qwen3.5-0.8B"
 

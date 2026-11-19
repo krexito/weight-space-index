@@ -167,7 +167,7 @@ def main() -> None:
     diag = json.loads((work / "diagnosis_blind.json").read_text())
     dev = torch.device("cpu" if a.cpu or not torch.cuda.is_available() else "cuda")
     dtype = torch.bfloat16 if dev.type == "cuda" and fast.bf16_ok() else torch.float32
-    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], dtype=dtype).to(dev).eval()
+    model = AutoModelForCausalLM.from_pretrained(cfg["base_dir"], dtype=dtype, trust_remote_code=True).to(dev).eval()
     healthy, target, spans, ids = screen_sequences(work)
     if not target:
         raise SystemExit("no held-out looping responses to screen on")
