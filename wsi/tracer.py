@@ -1807,13 +1807,21 @@ def screen_patch_candidates(
     h_ids = [_to_ids(s) for s in healthy_seqs]
     t_ids = [_to_ids(s) for s in target_seqs]
 
+    def _tail_logits(ids: torch.Tensor, lo: int) -> torch.Tensor:
+        """Logits of positions lo..T-1 only: full [T, vocab] logits of a 16k-token sequence do not fit in memory."""
+        T = int(ids.shape[1])
+        try:
+            out = model(input_ids=ids, use_cache=False, logits_to_keep=T - lo)
+        except TypeError:  # model without logits_to_keep
+            out = model(input_ids=ids, use_cache=False)
+        return out.logits[0, -(T - lo):]
+
     def _eval_current() -> tuple[float, float]:
         nll_sum, n_h = 0.0, 0
         for ids in h_ids:
             if ids.shape[1] < 2:
                 continue
-            out = model(input_ids=ids, use_cache=False)
-            logits = out.logits[0, :-1].float()
+            logits = _tail_logits(ids, 0)[:-1].float()
             nll_sum += float(F.cross_entropy(logits, ids[0, 1:], reduction="sum"))
             n_h += int(ids.shape[1] - 1)
         logp_sum, n_t = 0.0, 0
@@ -1821,9 +1829,6 @@ def screen_patch_candidates(
             T = int(ids.shape[1])
             if T < 2:
                 continue
-            out = model(input_ids=ids, use_cache=False)
-            lp = F.log_softmax(out.logits[0, :-1].float(), dim=-1)
-            tok_lp = lp.gather(1, ids[0, 1:, None]).squeeze(1)  # length T - 1, pos j predicts token j + 1
             if target_spans is not None and i < len(target_spans):
                 s, e = target_spans[i]
                 lo = max(0, min(T - 2, int(s) - 1))
@@ -1831,7 +1836,9 @@ def screen_patch_candidates(
             else:
                 lo = max(0, (T // 2) - 1) if T >= 4 else T - 2
                 hi = T - 1
-            seg = tok_lp[lo:hi]
+            # position j predicts token j + 1; only positions lo..hi-1 are scored
+            logits = _tail_logits(ids, lo)[: hi - lo].float()
+            seg = F.log_softmax(logits, dim=-1).gather(1, ids[0, lo + 1: hi + 1, None]).squeeze(1)
             logp_sum += float(seg.sum())
             n_t += int(seg.numel())
         return (nll_sum / max(1, n_h)), (logp_sum / max(1, n_t))
