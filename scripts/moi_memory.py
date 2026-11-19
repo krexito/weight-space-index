@@ -427,17 +427,40 @@ def write_items(lm: LM, p: dict, mode: str) -> list[dict]:
 
 
 def compute_memory(lm: LM, layer: int, p: dict, mode: str, args) -> tuple[torch.Tensor, torch.Tensor, dict]:
-    """ROME compute_v + key: returns (k [U], delta [D], stats). delta is added to the down_proj output at the edit
-    positions; k is the down_proj input there, averaged."""
-    items = write_items(lm, p, mode)
-    kl_text = f"{p['name']} is a"
-    kl_pos = lm.subj_last(kl_text, p["name"]) if mode == "subject" else [len(lm.enc(kl_text)) - 1]
-    kl_item = {"ids": lm.enc(kl_text), "pos": kl_pos}
-    seqs = [it["ids"] for it in items] + [kl_item["ids"]]
+    """ROME compute_v + key for one person (see compute_memories)."""
+    return compute_memories(lm, layer, [p], mode, args)[0]
+
+
+def compute_memories(lm: LM, layer: int, people: list[dict], mode: str, args) -> list[tuple[torch.Tensor, torch.Tensor, dict]]:
+    """ROME compute_v + key for several people in one batch: returns [(k [U], delta [D], stats)] per person.
+
+    delta is added to the down_proj output at the edit positions; k is the down_proj input there, averaged. Each
+    person has their own delta, Adam state and learning rate, and only their own sequences see their delta, so the
+    result is the same as writing them one by one (up to float rounding); people who reach stop_nll stop updating."""
+    P = len(people)
+    seqs, eb, et, owner_pos, item_seqs, kl_rows = [], [], [], [], [], []
+    for j, p in enumerate(people):
+        items = write_items(lm, p, mode)
+        kl_text = f"{p['name']} is a"
+        kl_ids = lm.enc(kl_text)
+        kl_pos = lm.subj_last(kl_text, p["name"]) if mode == "subject" else [len(kl_ids) - 1]
+        mine = []
+        for it in items:
+            b = len(seqs)
+            seqs.append(it["ids"])
+            mine.append((b, it))
+            for t in it["pos"]:
+                eb.append(b), et.append(t), owner_pos.append(j)
+        item_seqs.append(mine)
+        b = len(seqs)
+        seqs.append(kl_ids)
+        for t in kl_pos:
+            eb.append(b), et.append(t), owner_pos.append(-1 - j)  # kl positions get the delta but are not keys
+        kl_rows.append((b, len(kl_ids) - 1))
     ids, att = lm.batch(seqs)
-    eb = [b for b, it in enumerate(items + [kl_item]) for _ in it["pos"]]
-    et = [t for it in items + [kl_item] for t in it["pos"]]
     eb_t, et_t = torch.tensor(eb, device=lm.dev), torch.tensor(et, device=lm.dev)
+    own_t = torch.tensor(owner_pos, device=lm.dev)
+    who_t = torch.where(own_t >= 0, own_t, -1 - own_t)  # person of every edit position
     down = lm.downs[layer]
     cap = {}
 
@@ -453,64 +476,116 @@ def compute_memory(lm: LM, layer: int, p: dict, mode: str, args) -> tuple[torch.
 
     h1, h2 = down.register_forward_pre_hook(pre_cap), down.register_forward_hook(out_cap)
     h3 = lm.layers[layer].register_forward_hook(res_cap)
+    klb = torch.tensor([r[0] for r in kl_rows], device=lm.dev)
+    klt = torch.tensor([r[1] for r in kl_rows], device=lm.dev)
     try:
         with torch.no_grad():
             hb = lm.hidden(ids, att)
-            kl_ref = F.log_softmax(lm.head(hb[len(items), len(kl_item["ids"]) - 1]).float(), -1)
+            kl_ref = F.log_softmax(lm.head(hb[klb, klt]).float(), -1)  # [P, V]
     finally:
         h1.remove(), h2.remove(), h3.remove()
-    n_item_pos = sum(len(it["pos"]) for it in items)
-    k = cap["k"][:n_item_pos].mean(0)
-    v_norm = float(cap["v"][:n_item_pos].norm(dim=-1).mean())
-    # scale reference: the residual stream at the edit positions after this layer. Qwen3.5's residual norms are ~2,
-    # so ROME's absolute lr (0.5, tuned on GPT-2 where norms are in the hundreds) would blow delta up.
-    ref = float(cap["res"][:n_item_pos].norm(dim=-1).mean())
+    ks, refs, vnorms = [], [], []
+    for j in range(P):
+        m = own_t == j
+        ks.append(cap["k"][m].mean(0))
+        vnorms.append(float(cap["v"][m].norm(dim=-1).mean()))
+        # scale reference: the residual stream at the edit positions after this layer. Qwen3.5's residual norms are
+        # ~2, so ROME's absolute lr (0.5, tuned on GPT-2 where norms are in the hundreds) would blow delta up.
+        refs.append(float(cap["res"][m].norm(dim=-1).mean()))
 
-    # answer-token positions
+    # answer-token positions; nll per item sequence, then mean over each person's items
     ab, at, tg = [], [], []
-    for b, it in enumerate(items):
-        for j, t in enumerate(it["ids"][it["plen"]:]):
-            ab.append(b), at.append(it["plen"] - 1 + j), tg.append(t)
+    item_of_seq, n_items = {}, []
+    for j, mine in enumerate(item_seqs):
+        n_items.append(len(mine))
+        for b, it in mine:
+            item_of_seq[b] = len(item_of_seq)
+            for q, t in enumerate(it["ids"][it["plen"]:]):
+                ab.append(b), at.append(it["plen"] - 1 + q), tg.append(t)
     ab_t, at_t, tg_t = (torch.tensor(x, device=lm.dev) for x in (ab, at, tg))
-    seq_of = torch.tensor(ab, device=lm.dev)
+    row_item = torch.tensor([item_of_seq[b] for b in ab], device=lm.dev)
+    item_person = torch.tensor([j for j, n in enumerate(n_items) for _ in range(n)], device=lm.dev)
+    n_items_t = torch.tensor(n_items, device=lm.dev, dtype=torch.float32)
+    n_tok_item = torch.bincount(row_item, minlength=len(item_person)).clamp_min(1)
 
-    delta = torch.zeros(lm.D, device=lm.dev, dtype=torch.float32, requires_grad=True)
-    opt = torch.optim.Adam([delta], lr=args.lr * ref / math.sqrt(lm.D))  # ~ lr * ref per step
+    deltas = [torch.zeros(lm.D, device=lm.dev, dtype=torch.float32, requires_grad=True) for _ in range(P)]
+    opts = [torch.optim.Adam([d], lr=args.lr * r / math.sqrt(lm.D)) for d, r in zip(deltas, refs)]  # ~ lr*ref/step
 
     def add_delta(m, inp, out):
         out = out.clone()
-        out[eb_t, et_t] = out[eb_t, et_t] + delta.to(out.dtype)
+        out[eb_t, et_t] = out[eb_t, et_t] + torch.stack(deltas)[who_t].to(out.dtype)
         return out
 
+    active = [True] * P
+    nll_last, nll0, steps = [float("nan")] * P, [None] * P, [args.steps] * P
     hook = down.register_forward_hook(add_delta)
-    nll_v, nll0 = float("nan"), None
     try:
         for step in range(args.steps):
-            opt.zero_grad()
+            for o in opts:
+                o.zero_grad(set_to_none=True)
             h = lm.hidden(ids, att)
             logp = F.log_softmax(lm.head(h[ab_t, at_t]).float(), -1)
             tok_nll = -logp.gather(1, tg_t[:, None])[:, 0]
-            per_seq = torch.zeros(len(items), device=lm.dev).index_add(0, seq_of, tok_nll)
-            per_seq = per_seq / torch.bincount(seq_of, minlength=len(items)).clamp_min(1)
-            nll = per_seq.mean()
-            kl_lp = F.log_softmax(lm.head(h[len(items), len(kl_item["ids"]) - 1]).float(), -1)
-            kl = F.kl_div(kl_lp, kl_ref, log_target=True, reduction="sum")
-            loss = nll + args.kl_weight * kl + args.weight_decay * delta.norm() / ref
-            nll_v = float(nll.detach())
-            nll0 = nll_v if nll0 is None else nll0
-            if nll_v < args.stop_nll:
+            per_item = torch.zeros(len(item_person), device=lm.dev).index_add(0, row_item, tok_nll) / n_tok_item
+            nll_p = torch.zeros(P, device=lm.dev).index_add(0, item_person, per_item) / n_items_t
+            kl_lp = F.log_softmax(lm.head(h[klb, klt]).float(), -1)
+            kl_p = F.kl_div(kl_lp, kl_ref, log_target=True, reduction="none").sum(-1)
+            nv = nll_p.detach().tolist()
+            loss = None
+            for j in range(P):
+                if not active[j]:
+                    continue
+                nll_last[j] = nv[j]
+                nll0[j] = nv[j] if nll0[j] is None else nll0[j]
+                if nv[j] < args.stop_nll:
+                    active[j], steps[j] = False, step + 1
+                    continue
+                lj = nll_p[j] + args.kl_weight * kl_p[j] + args.weight_decay * deltas[j].norm() / refs[j]
+                loss = lj if loss is None else loss + lj
+            if loss is None:
                 break
             loss.backward()
-            opt.step()
-            with torch.no_grad():
-                mx = args.clamp * ref
-                if delta.norm() > mx:
-                    delta.mul_(mx / delta.norm())
+            for j in range(P):
+                if active[j]:
+                    opts[j].step()
+                    with torch.no_grad():
+                        mx = args.clamp * refs[j]
+                        if deltas[j].norm() > mx:
+                            deltas[j].mul_(mx / deltas[j].norm())
     finally:
         hook.remove()
-    return k.detach().cpu(), delta.detach().float().cpu(), {"nll": round(nll_v, 4), "nll0": round(nll0, 4), "steps": step + 1,
-                                                             "delta_rel": round(float(delta.detach().norm()) / ref, 4),
-                                                             "resid_norm": round(ref, 4), "mlp_out_norm": round(v_norm, 4)}
+    out = []
+    for j in range(P):
+        d = deltas[j].detach().float()
+        out.append((ks[j].detach().cpu(), d.cpu(), {"nll": round(nll_last[j], 4), "nll0": round(nll0[j], 4),
+                                                     "steps": steps[j], "delta_rel": round(float(d.norm()) / refs[j], 4),
+                                                     "resid_norm": round(refs[j], 4), "mlp_out_norm": round(vnorms[j], 4)}))
+    return out
+
+
+def write_memories(lm: LM, layer: int, people: list[dict], mode: str, args, done=None, on_chunk=None, log_every=10):
+    """compute_memories over `people` in chunks of args.write_batch (halved on CUDA OOM). `done` holds results already
+    written (resume); on_chunk(results) is called after every chunk (progress save)."""
+    res = list(done or [])
+    bs, t0, n0 = max(1, int(getattr(args, "write_batch", 1))), time.time(), len(res)
+    while len(res) < len(people):
+        chunk = people[len(res): len(res) + bs]
+        try:
+            res.extend(compute_memories(lm, layer, chunk, mode, args))
+        except torch.cuda.OutOfMemoryError:
+            if bs == 1:
+                raise
+            bs = max(1, bs // 2)
+            torch.cuda.empty_cache()
+            print(f"  CUDA OOM: write batch -> {bs}", flush=True)
+            continue
+        if on_chunk is not None:
+            on_chunk(res)
+        if log_every and (len(res) // log_every != (len(res) - len(chunk)) // log_every or len(res) == len(people)):
+            st = res[-1][2]
+            print(f"  wrote {len(res)}/{len(people)} | last nll {st['nll']} steps {st['steps']} |delta|/|resid| "
+                  f"{st['delta_rel']} | {(time.time() - t0) / max(len(res) - n0, 1):.2f}s each (batch {bs})", flush=True)
+    return res
 
 
 def bank_rome(K: torch.Tensor, R: torch.Tensor, C: torch.Tensor, ridge: float) -> tuple[torch.Tensor, torch.Tensor]:
@@ -624,10 +699,16 @@ def main(argv=None) -> None:
     ap.add_argument("--no-restart-check", action="store_true")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--save-bank", default=None, help="write the largest ROME bank here (.moimem)")
+    ap.add_argument("--write-batch", type=int, default=1, help="people written per forward pass (halved on CUDA OOM)")
+    ap.add_argument("--progress", default=None, help="save written memories here after each batch; resume from it")
+    ap.add_argument("--tf32", action="store_true", help="TF32 matmuls on Ampere+ GPUs (faster fp32)")
     ap.add_argument("--out", default=str(ROOT / "benchmarks" / "moi_memory" / "results.json"))
     args = ap.parse_args(argv)
 
     torch.manual_seed(args.seed)
+    if args.tf32:
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
     t0 = time.time()
     scales = sorted(int(x) for x in args.people.split(","))
     layers = [int(x) for x in args.layers.split(",")]
@@ -648,13 +729,37 @@ def main(argv=None) -> None:
     covs = covariances(lm, layers, args.cov_tokens)
     ppl_ids = wikitext_ids(lm, "test", args.ppl_tokens)
 
+    # ---- resume: memories already written by an earlier (crashed) run with the same settings ----
+    sig_keys = ("model", "dtype", "people", "layers", "sweep_people", "k_cands", "steps", "lr", "kl_weight",
+                "weight_decay", "clamp", "stop_nll", "cov_tokens", "cov_ridge", "seed")
+    sig = {k: getattr(args, k) for k in sig_keys}
+    prog = None
+    if args.progress and os.path.exists(args.progress):
+        prog = torch.load(args.progress, weights_only=False)
+        if prog.get("sig") != sig:
+            print("progress file is from other settings: ignored", flush=True)
+            prog = None
+        else:
+            print(f"resume: layer {prog['layer']}, {len(prog['written'])} memories already written", flush=True)
+
+    def save_progress(layer_, sweep_, written_):
+        if not args.progress:
+            return
+        tmp = args.progress + ".tmp"
+        torch.save({"sig": sig, "layer": layer_, "layer_sweep": sweep_, "written": written_}, tmp)
+        os.replace(tmp, args.progress)
+
     # ---- layer sweep on dev phrasings (separate people) ----
-    if len(layers) > 1:
+    if prog is not None:
+        if prog.get("layer_sweep") is not None:
+            res["layer_sweep"] = prog["layer_sweep"]
+        layer = prog["layer"]
+    elif len(layers) > 1:
         sp = build_probes(sweep_people, {"dev"}, args.k_cands, args.seed + 2, pet_pool)
         base_dev = summarize(sp, score(lm, sp, tok_budget=args.tok_budget))["dev"]["choice"]
         sweep = {}
         for l in layers:
-            K, R = zip(*[compute_memory(lm, l, p, "subject", args)[:2] for p in sweep_people])
+            K, R = zip(*[x[:2] for x in write_memories(lm, l, sweep_people, "subject", args, log_every=0)])
             K, R = torch.stack(K), torch.stack(R)
             c, ck = bank_rome(K, R, covs[l], args.cov_ridge)
             hk = Hook(lm, l, c, R, ck, args.thr, gated=False)
@@ -668,21 +773,22 @@ def main(argv=None) -> None:
         res["layer_sweep"] = {"base_dev_choice": base_dev, "by_layer": {str(k): v for k, v in sweep.items()}, "picked": layer}
     else:
         layer = layers[0]
+    if prog is None:
+        save_progress(layer, res.get("layer_sweep"), [])
     res["layer"] = layer
     C = covs[layer]
     print(f"layer {layer}", flush=True)
 
     # ---- memories for every person (each against the base model) ----
     t_w = time.time()
-    Ks, Rs, wstats = [], [], []
-    for i, p in enumerate(people):
-        k, d, st = compute_memory(lm, layer, p, "subject", args)
-        Ks.append(k), Rs.append(d), wstats.append(st)
-        if (i + 1) % 10 == 0 or i + 1 == len(people):
-            print(f"  wrote {i + 1}/{len(people)} | last nll {st['nll']} steps {st['steps']} |delta|/|resid| {st['delta_rel']} "
-                  f"| {(time.time() - t_w) / (i + 1):.1f}s each", flush=True)
+    done = prog["written"] if prog is not None else []
+    n_resumed = len(done)
+    written = write_memories(lm, layer, people, "subject", args, done=done,
+                             on_chunk=lambda r: save_progress(layer, res.get("layer_sweep"), r))
+    Ks, Rs, wstats = (list(x) for x in zip(*written))
     K_all, R_all = torch.stack(Ks), torch.stack(Rs)
-    res["write"] = {"sec_per_person": round((time.time() - t_w) / len(people), 2),
+    res["write"] = {"sec_per_person": round((time.time() - t_w) / max(len(people) - n_resumed, 1), 2),
+                    "write_batch": args.write_batch, "resumed": n_resumed,
                     "final_nll_mean": round(float(np.mean([s["nll"] for s in wstats])), 4),
                     "steps_mean": round(float(np.mean([s["steps"] for s in wstats])), 2),
                     "delta_rel_mean": round(float(np.mean([s["delta_rel"] for s in wstats])), 4),
@@ -738,7 +844,7 @@ def main(argv=None) -> None:
             c, ck = bank_rome(rk, R, C, args.cov_ridge)
             banks["randkey"] = (c, R, ck, False)
         if "lastpos" in arms and si == 0:
-            Kl, Rl = zip(*[compute_memory(lm, layer, p, "last", args)[:2] for p in people[:N]])
+            Kl, Rl = zip(*[x[:2] for x in write_memories(lm, layer, people[:N], "last", args, log_every=0)])
             c, ck = bank_rome(torch.stack(Kl), torch.stack(Rl), C, args.cov_ridge)
             banks["lastpos"] = (c, torch.stack(Rl), ck, False)
         for name, (c, r, ck, gated) in banks.items():

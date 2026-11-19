@@ -187,3 +187,152 @@ def test_main_smoke(tiny_dir, tmp_path):
     assert "lastpos" not in r["scales"]["3"]["arms"]
     assert r["restart_check"]["same_choices"] and r["restart_check"]["max_abs_gold_logprob_diff"] < 1e-3
     assert MemoryBank.load(tmp_path / "b.moimem").names[0] == r["people_example"][0]["name"]
+
+
+# ---------------------------------------------------------------------------------------------- batched writing
+# The one-person-at-a-time writer as it was before batching (copied verbatim), kept as the reference.
+from moi_memory import LM, write_items  # noqa: E402,F401
+import math  # noqa: E402
+import torch.nn.functional as F  # noqa: E402
+
+def _old_compute_memory(lm: LM, layer: int, p: dict, mode: str, args) -> tuple[torch.Tensor, torch.Tensor, dict]:
+    """ROME compute_v + key: returns (k [U], delta [D], stats). delta is added to the down_proj output at the edit
+    positions; k is the down_proj input there, averaged."""
+    items = write_items(lm, p, mode)
+    kl_text = f"{p['name']} is a"
+    kl_pos = lm.subj_last(kl_text, p["name"]) if mode == "subject" else [len(lm.enc(kl_text)) - 1]
+    kl_item = {"ids": lm.enc(kl_text), "pos": kl_pos}
+    seqs = [it["ids"] for it in items] + [kl_item["ids"]]
+    ids, att = lm.batch(seqs)
+    eb = [b for b, it in enumerate(items + [kl_item]) for _ in it["pos"]]
+    et = [t for it in items + [kl_item] for t in it["pos"]]
+    eb_t, et_t = torch.tensor(eb, device=lm.dev), torch.tensor(et, device=lm.dev)
+    down = lm.downs[layer]
+    cap = {}
+
+    def pre_cap(m, inp):
+        cap["k"] = inp[0][eb_t, et_t].detach().float()
+
+    def out_cap(m, inp, out):
+        cap["v"] = out[eb_t, et_t].detach().float()
+
+    def res_cap(m, inp, out):
+        o = out[0] if isinstance(out, tuple) else out
+        cap["res"] = o[eb_t, et_t].detach().float()
+
+    h1, h2 = down.register_forward_pre_hook(pre_cap), down.register_forward_hook(out_cap)
+    h3 = lm.layers[layer].register_forward_hook(res_cap)
+    try:
+        with torch.no_grad():
+            hb = lm.hidden(ids, att)
+            kl_ref = F.log_softmax(lm.head(hb[len(items), len(kl_item["ids"]) - 1]).float(), -1)
+    finally:
+        h1.remove(), h2.remove(), h3.remove()
+    n_item_pos = sum(len(it["pos"]) for it in items)
+    k = cap["k"][:n_item_pos].mean(0)
+    v_norm = float(cap["v"][:n_item_pos].norm(dim=-1).mean())
+    # scale reference: the residual stream at the edit positions after this layer. Qwen3.5's residual norms are ~2,
+    # so ROME's absolute lr (0.5, tuned on GPT-2 where norms are in the hundreds) would blow delta up.
+    ref = float(cap["res"][:n_item_pos].norm(dim=-1).mean())
+
+    # answer-token positions
+    ab, at, tg = [], [], []
+    for b, it in enumerate(items):
+        for j, t in enumerate(it["ids"][it["plen"]:]):
+            ab.append(b), at.append(it["plen"] - 1 + j), tg.append(t)
+    ab_t, at_t, tg_t = (torch.tensor(x, device=lm.dev) for x in (ab, at, tg))
+    seq_of = torch.tensor(ab, device=lm.dev)
+
+    delta = torch.zeros(lm.D, device=lm.dev, dtype=torch.float32, requires_grad=True)
+    opt = torch.optim.Adam([delta], lr=args.lr * ref / math.sqrt(lm.D))  # ~ lr * ref per step
+
+    def add_delta(m, inp, out):
+        out = out.clone()
+        out[eb_t, et_t] = out[eb_t, et_t] + delta.to(out.dtype)
+        return out
+
+    hook = down.register_forward_hook(add_delta)
+    nll_v, nll0 = float("nan"), None
+    try:
+        for step in range(args.steps):
+            opt.zero_grad()
+            h = lm.hidden(ids, att)
+            logp = F.log_softmax(lm.head(h[ab_t, at_t]).float(), -1)
+            tok_nll = -logp.gather(1, tg_t[:, None])[:, 0]
+            per_seq = torch.zeros(len(items), device=lm.dev).index_add(0, seq_of, tok_nll)
+            per_seq = per_seq / torch.bincount(seq_of, minlength=len(items)).clamp_min(1)
+            nll = per_seq.mean()
+            kl_lp = F.log_softmax(lm.head(h[len(items), len(kl_item["ids"]) - 1]).float(), -1)
+            kl = F.kl_div(kl_lp, kl_ref, log_target=True, reduction="sum")
+            loss = nll + args.kl_weight * kl + args.weight_decay * delta.norm() / ref
+            nll_v = float(nll.detach())
+            nll0 = nll_v if nll0 is None else nll0
+            if nll_v < args.stop_nll:
+                break
+            loss.backward()
+            opt.step()
+            with torch.no_grad():
+                mx = args.clamp * ref
+                if delta.norm() > mx:
+                    delta.mul_(mx / delta.norm())
+    finally:
+        hook.remove()
+    return k.detach().cpu(), delta.detach().float().cpu(), {"nll": round(nll_v, 4), "nll0": round(nll0, 4), "steps": step + 1,
+                                                             "delta_rel": round(float(delta.detach().norm()) / ref, 4),
+                                                             "resid_norm": round(ref, 4), "mlp_out_norm": round(v_norm, 4)}
+
+
+def _wargs(**kw):
+    a = dict(lr=0.5, steps=12, kl_weight=0.0625, weight_decay=0.02, clamp=4.0, stop_nll=0.05, write_batch=3)
+    a.update(kw)
+    return Namespace(**a)
+
+
+@needs_tok
+@pytest.mark.parametrize("stop_nll", [0.05, 50.0])  # 50: everyone stops at step 1 (early-stop bookkeeping)
+def test_batched_writer_matches_the_old_one_person_writer(tiny_dir, stop_nll):
+    lm = mm.LM(str(tiny_dir), None, "fp32", cpu=True)
+    people = mm.make_people(4, 5)
+    args = _wargs(stop_nll=stop_nll)
+    batched = mm.write_memories(lm, 1, people, "subject", args, log_every=0)
+    for p, (k, d, st) in zip(people, batched):
+        k0, d0, st0 = _old_compute_memory(lm, 1, p, "subject", args)
+        assert torch.allclose(k, k0, atol=1e-5)
+        assert torch.allclose(d, d0, atol=1e-4, rtol=1e-3), float((d - d0).abs().max())
+        assert st["steps"] == st0["steps"]
+        assert abs(st["nll"] - st0["nll"]) < 1e-3 and abs(st["nll0"] - st0["nll0"]) < 1e-4
+
+
+@needs_tok
+def test_main_resumes_from_progress(tiny_dir, tmp_path):
+    common = ["--model", str(tiny_dir), "--cpu", "--people", "2,4", "--eval-people", "4", "--layers", "1",
+              "--steps", "3", "--cov-tokens", "1024", "--ppl-tokens", "512", "--no-restart-check",
+              "--arms", "base,rome", "--write-batch", "3"]
+    prog = tmp_path / "prog.pt"
+    mm.main(common + ["--progress", str(prog), "--out", str(tmp_path / "a.json")])
+    full = torch.load(prog, weights_only=False)
+    assert len(full["written"]) == 4
+    # pretend the run died after 2 memories: the rerun writes only the missing 2 and gets the same result
+    torch.save({**full, "written": full["written"][:2]}, prog)
+    mm.main(common + ["--progress", str(prog), "--out", str(tmp_path / "b.json")])
+    a = json.loads((tmp_path / "a.json").read_text(encoding="utf-8"))
+    b = json.loads((tmp_path / "b.json").read_text(encoding="utf-8"))
+    assert b["write"]["resumed"] == 2
+    assert a["scales"]["4"]["arms"]["rome"]["probes"] == b["scales"]["4"]["arms"]["rome"]["probes"]
+
+
+@needs_tok
+def test_batched_writer_mixed_early_stops(tiny_dir):
+    """Some people reach stop_nll at different steps while the others keep training in the same batch."""
+    lm = mm.LM(str(tiny_dir), None, "fp32", cpu=True)
+    people = mm.make_people(4, 5)
+    ref = [_old_compute_memory(lm, 1, p, "subject", _wargs(stop_nll=-1.0)) for p in people]
+    finals = sorted(st["nll"] for _, _, st in ref)
+    args = _wargs(stop_nll=(finals[1] + finals[2]) / 2)  # about half the people stop early
+    batched = mm.write_memories(lm, 1, people, "subject", args, log_every=0)
+    old = [_old_compute_memory(lm, 1, p, "subject", args) for p in people]
+    steps = [st["steps"] for _, _, st in old]
+    assert min(steps) < args.steps == max(steps)  # really mixed
+    for (k, d, st), (k0, d0, st0) in zip(batched, old):
+        assert st["steps"] == st0["steps"]
+        assert torch.allclose(d, d0, atol=1e-4, rtol=1e-3), float((d - d0).abs().max())
