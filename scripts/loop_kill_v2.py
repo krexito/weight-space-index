@@ -24,7 +24,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import moi_loop_router_vllm as lr  # noqa: E402
 
-STRIDE = 32
+STRIDE = 64
 
 try:  # vLLM V2 model runner interface (vLLM 0.34)
     from vllm.v1.worker.gpu.sample.logits_processor import LogitsProcessor as _Base
@@ -98,6 +98,11 @@ class _LoopKillCore:
     def update(self, slots: np.ndarray, cur: np.ndarray) -> None:
         keep = ~self.hit[slots]
         live, cur_live = slots[keep], cur[keep]
+        if live.size == 0:
+            return
+        p_live = self.rs.prompt_len.np[live].astype(np.int64)
+        ready = (cur_live.astype(np.int64) - 1 - p_live) >= lr.KILL_WINDOW
+        live, cur_live = live[ready], cur_live[ready]
         if live.size == 0:
             return
         for s, new in zip(live, self._read_new(live, cur_live)):
