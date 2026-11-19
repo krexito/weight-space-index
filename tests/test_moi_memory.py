@@ -336,3 +336,58 @@ def test_batched_writer_mixed_early_stops(tiny_dir):
     for (k, d, st), (k0, d0, st0) in zip(batched, old):
         assert st["steps"] == st0["steps"]
         assert torch.allclose(d, d0, atol=1e-4, rtol=1e-3), float((d - d0).abs().max())
+
+
+# ---------------------------------------------------------------------------------------------- full-name gate
+class _FakeLM:
+    def __init__(self, net):
+        self.downs = [lyr.mlp.down_proj for lyr in net.model.layers]
+        self.dev = "cpu"
+
+
+def test_fullname_gate_needs_the_first_name_just_before():
+    """Memory 0 has surname key e0 and first-name key e4: it fires on e0 only if e4 came 1..window tokens before."""
+    net = _Tiny()
+    eye = torch.eye(16)
+    c, r = eye[:2], torch.randn(2, 8)
+    first = (eye[4:6], torch.ones(2))
+    hk = mm.Hook(_FakeLM(net), 1, c, r, torch.ones(2), 0.5, gated=True, first=first, window=3)
+    down = net.model.layers[1].mlp.down_proj
+    z = torch.zeros(16)
+    try:
+        seqs = {"full": [eye[4], eye[0]], "gap2": [eye[4], z, eye[0]], "too_far": [eye[4], z, z, z, eye[0]],
+                "surname_only": [z, eye[0]], "wrong_first": [eye[5], eye[0]], "first_after": [eye[0], eye[4]]}
+        fired = {}
+        for k, v in seqs.items():
+            down(torch.stack(v)[None])
+            fired[k] = hk.fired_seq[0].tolist()
+    finally:
+        hk.remove()
+    assert fired["full"] == [True, False] and fired["gap2"] == [True, False]
+    for k in ("too_far", "surname_only", "wrong_first", "first_after"):
+        assert fired[k] == [False, False], k
+
+
+@needs_tok
+def test_first_name_positions_and_keys(tiny_dir):
+    lm = mm.LM(str(tiny_dir), None, "fp32", cpu=True)
+    text = "Where does Tavo Kenrimel live? Tavo Kenrimel lives in"
+    pos = lm.part_last(text, "Tavo Kenrimel", len("Tavo"))
+    ids = lm.enc(text)
+    assert len(pos) == 2 and all(lm.tok.decode(ids[: j + 1]).endswith("Tavo") for j in pos)
+    ppl = mm.make_people(3, 0)
+    K1 = mm.first_keys(lm, 1, ppl, bs=5)
+    assert K1.shape == (3, lm.U) and torch.isfinite(K1).all() and K1.abs().sum() > 0
+
+
+@needs_tok
+def test_main_smoke_fullname(tiny_dir, tmp_path):
+    out = tmp_path / "r.json"
+    mm.main(["--model", str(tiny_dir), "--cpu", "--people", "3", "--eval-people", "3", "--layers", "1",
+             "--steps", "3", "--cov-tokens", "1024", "--ppl-tokens", "512", "--no-restart-check",
+             "--arms", "base,rome_gated,rome_fullname", "--out", str(out)])
+    arms = json.loads(out.read_text(encoding="utf-8"))["scales"]["3"]["arms"]
+    g, f = arms["rome_gated"]["probes"], arms["rome_fullname"]["probes"]
+    # the full-name gate fires a subset of the surname gate: never more on the neighbours
+    for nb in ("nb_first", "nb_last"):
+        assert f[nb].get("own_fired", 0) <= g[nb].get("own_fired", 0) + 1e-9

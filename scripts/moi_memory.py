@@ -17,7 +17,9 @@ Arms (same probes for all)
 --------------------------
 ``base`` no memory | ``ctx`` the person's three sentences in the context (in-context upper bound) |
 ``rome`` all memories summed, always on (= one weight edit) | ``rome_gated`` the same as a hook where memory *i*
-only acts where its key matches (``c_i.x / c_i.k_i > thr``) | ``memit`` one joint least-squares edit for all
+only acts where its key matches (``c_i.x / c_i.k_i > thr``) | ``rome_fullname`` rome_gated, but memory *i* also
+needs its first-name key (down_proj input at the last token of the first name) to match within the
+``--first-window`` tokens before (stops the leak onto other people with the same surname) | ``memit`` one joint least-squares edit for all
 people at once | ``randkey`` same values, random keys (control: the effect must come from the key) |
 ``lastpos`` (smallest scale only) key and value at the last token of the sentence instead of the name: the position
 the GPT-2 experiment effectively used, which recalled the training phrasing but not paraphrases.
@@ -274,6 +276,18 @@ class LM:
             if j is not None:
                 pos.append(j)
             start = end
+        return pos
+
+    def part_last(self, text: str, name: str, n_chars: int) -> list[int]:
+        """Token index of character n_chars-1 of every occurrence of `name` (n_chars = len(first): first-name end)."""
+        enc = self.tok(text, return_offsets_mapping=True, add_special_tokens=False)
+        offs, pos, start = enc.offset_mapping, [], 0
+        while (i := text.find(name, start)) >= 0:
+            c = i + n_chars - 1
+            j = next((j for j, (a, b) in enumerate(offs) if a <= c < b), None)
+            if j is not None:
+                pos.append(j)
+            start = i + len(name)
         return pos
 
     def batch(self, seqs: list[list[int]]) -> tuple[torch.Tensor, torch.Tensor]:
@@ -588,6 +602,34 @@ def write_memories(lm: LM, layer: int, people: list[dict], mode: str, args, done
     return res
 
 
+@torch.no_grad()
+def first_keys(lm: LM, layer: int, people: list[dict], bs: int = 64) -> torch.Tensor:
+    """Second key per person: the down_proj input at the last token of the first name, averaged over the same
+    write sentences as the main key. [N, U]."""
+    seqs, rows = [], []
+    for j, p in enumerate(people):
+        for rel in ("city", "job", "pet"):
+            for pre in PREFIXES:
+                text = pre + REL[rel]["write"].format(s=p["name"])
+                for t in lm.part_last(text, p["name"], len(p["first"])):
+                    rows.append((len(seqs), t, j))
+                seqs.append(lm.enc(text))
+    out = torch.zeros(len(people), lm.U)
+    cnt = torch.zeros(len(people))
+    down, cap = lm.downs[layer], {}
+    h = down.register_forward_pre_hook(lambda m, inp: cap.__setitem__("x", inp[0].float()))
+    try:
+        for i in range(0, len(seqs), bs):
+            ids, att = lm.batch(seqs[i: i + bs])
+            lm.hidden(ids, att)
+            for b, t, j in (r for r in rows if i <= r[0] < i + bs):
+                out[j] += cap["x"][b - i, t].cpu()
+                cnt[j] += 1
+    finally:
+        h.remove()
+    return out / cnt.clamp_min(1)[:, None]
+
+
 def bank_rome(K: torch.Tensor, R: torch.Tensor, C: torch.Tensor, ridge: float) -> tuple[torch.Tensor, torch.Tensor]:
     """Independent ROME memories: c_i = C^-1 k_i / (k_i^T C^-1 k_i) so that c_i . k_i = 1."""
     Cr = C.double() + ridge * C.diagonal().mean().double() * torch.eye(C.shape[0], dtype=torch.float64)
@@ -610,10 +652,16 @@ def bank_memit(K: torch.Tensor, R: torch.Tensor, C: torch.Tensor, lam_rel: float
 class Hook:
     """Applies a bank as a forward hook on down_proj (ungated == the dense weight edit). Records gate firing."""
 
-    def __init__(self, lm: LM, layer: int, c, r, ck, thr: float, gated: bool):
+    def __init__(self, lm: LM, layer: int, c, r, ck, thr: float, gated: bool, first=None, thr_first: float | None = None,
+                 window: int = 6):
         self.down = lm.downs[layer]
         self.c, self.r = c.to(lm.dev, torch.float32), r.to(lm.dev, torch.float32)
         self.ck, self.thr, self.gated = ck.to(lm.dev, torch.float32).clamp_min(1e-6), thr, gated
+        # first = (c2, ck2): memory i also needs its first-name key to fire at one of the `window` positions before
+        self.c2 = self.ck2 = None
+        if first is not None:
+            self.c2, self.ck2 = first[0].to(lm.dev, torch.float32), first[1].to(lm.dev, torch.float32).clamp_min(1e-6)
+        self.thr2, self.window = thr if thr_first is None else thr_first, window
         self.fired_seq = self.tok_any = None
         self.h = self.down.register_forward_hook(self.fn)
 
@@ -622,9 +670,18 @@ class Hook:
         s = x @ self.c.T
         if self.gated:
             on = (s / self.ck) > self.thr
+            if self.c2 is not None:
+                on = on & self.prior_first(x)
             self.fired_seq, self.tok_any = on.any(1).cpu(), on.any(-1).cpu()
             s = s * on
         return out + (s @ self.r).to(out.dtype)
+
+    def prior_first(self, x: torch.Tensor) -> torch.Tensor:
+        """[B, T, N]: memory i's first-name key fired at one of positions t-window .. t-1."""
+        f = ((x @ self.c2.T) / self.ck2 > self.thr2).float().transpose(1, 2)  # [B, N, T]
+        T = f.shape[-1]
+        g = F.max_pool1d(F.pad(f, (self.window, 0)), self.window, stride=1)[..., :T]
+        return g.transpose(1, 2) > 0
 
     def remove(self):
         self.h.remove()
@@ -693,6 +750,8 @@ def main(argv=None) -> None:
     ap.add_argument("--cov-ridge", type=float, default=1e-3)
     ap.add_argument("--memit-lambda", type=float, default=0.05)
     ap.add_argument("--thr", type=float, default=0.5, help="gate threshold on c_i.x / c_i.k_i")
+    ap.add_argument("--thr-first", type=float, default=None, help="rome_fullname: first-name gate threshold (default --thr)")
+    ap.add_argument("--first-window", type=int, default=6, help="rome_fullname: tokens before the surname to look back")
     ap.add_argument("--ppl-tokens", type=int, default=16384)
     ap.add_argument("--tok-budget", type=int, default=4096)
     ap.add_argument("--arms", default="base,ctx,rome,rome_gated,memit,randkey,lastpos")
@@ -794,6 +853,8 @@ def main(argv=None) -> None:
                     "delta_rel_mean": round(float(np.mean([s["delta_rel"] for s in wstats])), 4),
                     "bytes_per_memory_bf16": (lm.U + lm.D) * 2}
 
+    K1_all = first_keys(lm, layer, people) if "rome_fullname" in arms else None
+
     cap = capital_probes(args.k_cands, args.seed + 3)
     cap_base = score(lm, cap, tok_budget=args.tok_budget)
     known = [i for i, r in enumerate(cap_base) if r["choice"]]
@@ -822,13 +883,15 @@ def main(argv=None) -> None:
             sc["arms"]["ctx"] = {"probes": summarize(probes, ctx_r), "vs_base": {}}
         K, R = K_all[:N], R_all[:N]
         banks = {}
-        if "rome" in arms or "rome_gated" in arms:
+        if "rome" in arms or "rome_gated" in arms or "rome_fullname" in arms:
             c, ck = bank_rome(K, R, C, args.cov_ridge)
+            if "rome_fullname" in arms:
+                banks["rome_fullname"] = (c, R, ck, True, bank_rome(K1_all[:N], R, C, args.cov_ridge))
             if "rome" in arms:
                 banks["rome"] = (c, R, ck, False)
             if "rome_gated" in arms:
                 banks["rome_gated"] = (c, R, ck, True)
-            if args.save_bank and N == scales[-1]:
+            if args.save_bank and N == scales[-1] and ("rome" in arms or "rome_gated" in arms):
                 W = lm.downs[layer].weight
                 bank = MemoryBank(layer, c, R, ck, args.thr, [p["name"] for p in people[:N]],
                                   {"method": "rome", "base_model": args.model, "facts": people[:N],
@@ -847,9 +910,10 @@ def main(argv=None) -> None:
             Kl, Rl = zip(*[x[:2] for x in write_memories(lm, layer, people[:N], "last", args, log_every=0)])
             c, ck = bank_rome(torch.stack(Kl), torch.stack(Rl), C, args.cov_ridge)
             banks["lastpos"] = (c, torch.stack(Rl), ck, False)
-        for name, (c, r, ck, gated) in banks.items():
+        for name, (c, r, ck, gated, *first) in banks.items():
             t_a = time.time()
-            hk = Hook(lm, layer, c, r, ck, args.thr, gated)
+            hk = Hook(lm, layer, c, r, ck, args.thr, gated, first=first[0] if first else None,
+                      thr_first=args.thr_first, window=args.first_window)
             try:
                 rr = score(lm, probes, tok_budget=args.tok_budget, handle=hk)
                 pp = perplexity(lm, ppl_ids, handle=hk)

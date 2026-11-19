@@ -13,8 +13,9 @@ import json
 import sys
 from typing import Any
 
+from .moipatch import Edit, MoIPatch
 from .query import WeightSpaceIndex
-from .tracer import CompactTrace, discover_compact_dirs
+from .tracer import CompactTrace, discover_compact_dirs, screen_patch_candidates
 
 # Cache of open WeightSpaceIndex instances by (model_dir, index_dir)
 _INDEX_CACHE: dict[tuple[str, str], WeightSpaceIndex] = {}
@@ -235,7 +236,219 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             "required": ["model_dir", "trace_dirs"],
         },
     },
+    {
+        "name": "wsi_build_moipatch",
+        "description": "Build, fingerprint against the base safetensors checkpoint, and save a portable `.moipatch` file from explicit layer edits (direction vector, alpha, optional neuron indices) or from a saved `blind_directions.npz` file.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the base safetensors checkpoint directory"},
+                "save_path": {"type": "string", "description": "Output file path for the `.moipatch` artifact"},
+                "edits": {
+                    "type": "array",
+                    "description": "List of rank-1 column edits to bundle into the patch",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "layer": {"type": "integer", "description": "Layer index"},
+                            "module": {"type": "string", "default": "mlp.down_proj", "description": "Submodule suffix within the layer (e.g. 'mlp.down_proj')"},
+                            "alpha": {"type": "number", "description": "Edit strength"},
+                            "direction": {
+                                "type": "array",
+                                "items": {"type": "number"},
+                                "description": "Optional residual-stream direction vector `u` (length = hidden_size)",
+                            },
+                            "direction_npz": {"type": "string", "description": "Optional path to `.npz` file containing direction vectors (e.g. `blind_directions.npz`)"},
+                            "direction_key": {"type": "string", "description": "Key inside `direction_npz` (defaults to `u{layer}`)"},
+                            "neurons": {
+                                "type": "array",
+                                "items": {"type": "integer"},
+                                "description": "Optional subset of column/neuron indices to edit (omit or null for all columns)",
+                            },
+                        },
+                        "required": ["layer", "alpha"],
+                    },
+                },
+                "router": {"type": "object", "description": "Optional MoI router configuration dict"},
+                "meta": {"type": "object", "description": "Optional metadata dict stored in the patch"},
+            },
+            "required": ["model_dir", "save_path", "edits"],
+        },
+    },
+    {
+        "name": "wsi_screen_candidates",
+        "description": "Rank candidate `.moipatch` files in 1 forward pass (zero autoregressive generation) using Pareto scoring (`target_suppression` vs healthy `delta_nll` guard).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the HuggingFace model checkpoint directory"},
+                "patch_paths": {
+                    "oneOf": [
+                        {"type": "array", "items": {"type": "string"}},
+                        {"type": "object", "additionalProperties": {"type": "string"}},
+                    ],
+                    "description": "List of `.moipatch` paths or mapping of `{candidate_name: patch_path}`",
+                },
+                "healthy_seqs": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "integer"}},
+                    "description": "Token ID sequences representing healthy behavior (optional if `healthy_texts` is provided)",
+                },
+                "target_seqs": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "integer"}},
+                    "description": "Token ID sequences exhibiting the target failure mode (optional if `target_texts` is provided)",
+                },
+                "healthy_texts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Raw text strings representing healthy behavior (tokenized automatically using `model_dir`)",
+                },
+                "target_texts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Raw text strings exhibiting the target failure mode (tokenized automatically using `model_dir`)",
+                },
+                "target_spans": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                    "description": "Optional `[start, end]` token spans inside each target sequence to measure suppression on",
+                },
+                "max_nll_delta": {"type": "number", "default": 0.05},
+                "rank_by": {"type": "string", "default": "pareto", "enum": ["pareto", "suppression", "delta_nll"]},
+                "top_k": {"type": "integer", "default": 10},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir", "patch_paths"],
+        },
+    },
 ]
+
+
+def _load_model_for_screen(model_dir: str, dtype_name: str = "auto", device_map: str = "auto"):
+    import torch
+    from transformers import AutoModelForCausalLM
+
+    if dtype_name == "auto":
+        # Preserve the checkpoint's native safetensors dtype so MoIPatch SHA-256 fingerprints match.
+        dtype: Any = "auto"
+    else:
+        dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[dtype_name]
+    kw: dict[str, Any] = {"torch_dtype": dtype}
+    if device_map and torch.cuda.is_available():
+        kw["device_map"] = device_map
+    model = AutoModelForCausalLM.from_pretrained(model_dir, **kw)
+    model.eval()
+    return model
+
+
+def _build_moipatch_tool(args: dict[str, Any]) -> dict[str, Any]:
+    from pathlib import Path
+
+    import numpy as np
+    import torch
+
+    npz_cache: dict[str, Any] = {}
+    edits: list[Edit] = []
+    for item in args["edits"]:
+        layer = int(item["layer"])
+        submod = str(item.get("module", "mlp.down_proj"))
+        mod_name = submod if submod.startswith("layers.") else f"layers.{layer}.{submod}"
+        if item.get("direction") is not None:
+            u = torch.tensor(item["direction"], dtype=torch.float32)
+        elif item.get("direction_npz"):
+            npz_path = str(item["direction_npz"])
+            if npz_path not in npz_cache:
+                npz_cache[npz_path] = np.load(npz_path)
+            key = str(item.get("direction_key") or f"u{layer}")
+            if key not in npz_cache[npz_path]:
+                raise KeyError(f"Direction key `{key}` not found in {npz_path}")
+            u = torch.from_numpy(np.asarray(npz_cache[npz_path][key], dtype=np.float32))
+        else:
+            raise ValueError(f"Edit for layer {layer} must specify either `direction` or `direction_npz`")
+        neurons = item.get("neurons")
+        idx = torch.tensor([int(x) for x in neurons], dtype=torch.long) if neurons is not None else None
+        edits.append(Edit(module=mod_name, u=u, alpha=float(item["alpha"]), idx=idx))
+
+    patch = MoIPatch(
+        edits=edits,
+        router=args.get("router"),
+        meta=dict(args.get("meta") or {}),
+    )
+    patch.fingerprint_from_checkpoint(args["model_dir"])
+    save_path = Path(args["save_path"])
+    save_path.parent.mkdir(parents=True, exist_ok=True)
+    patch.save(save_path)
+    return {
+        "save_path": str(save_path),
+        "n_edits": len(patch.edits),
+        "modules": [e.module for e in patch.edits],
+        "summary": patch.describe(),
+    }
+
+
+def _screen_candidates_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+    from pathlib import Path
+
+    import torch
+
+    raw_patches = args["patch_paths"]
+    if isinstance(raw_patches, dict):
+        candidates = {str(k): MoIPatch.load(v) for k, v in raw_patches.items()}
+    else:
+        candidates = {Path(p).stem: MoIPatch.load(p) for p in raw_patches}
+    if not candidates:
+        raise ValueError("`patch_paths` must contain at least one `.moipatch` path")
+
+    healthy_seqs = args.get("healthy_seqs")
+    target_seqs = args.get("target_seqs")
+    if healthy_seqs is None or target_seqs is None:
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(args["model_dir"])
+        if healthy_seqs is None:
+            if not args.get("healthy_texts"):
+                raise ValueError("Provide either `healthy_seqs` or `healthy_texts`")
+            healthy_seqs = [tok.encode(t, add_special_tokens=False) for t in args["healthy_texts"]]
+        if target_seqs is None:
+            if not args.get("target_texts"):
+                raise ValueError("Provide either `target_seqs` or `target_texts`")
+            target_seqs = [tok.encode(t, add_special_tokens=False) for t in args["target_texts"]]
+
+    spans = [tuple(int(x) for x in sp) for sp in args["target_spans"]] if args.get("target_spans") else None
+    max_nll_delta = float(args.get("max_nll_delta", 0.05))
+    rank_by = str(args.get("rank_by", "pareto"))
+    top_k = int(args.get("top_k", 10))
+
+    model = _load_model_for_screen(
+        args["model_dir"],
+        dtype_name=str(args.get("dtype", "auto")),
+        device_map=str(args.get("device_map", "auto")),
+    )
+    try:
+        rows = screen_patch_candidates(
+            model,
+            candidates,
+            healthy_seqs=healthy_seqs,
+            target_seqs=target_seqs,
+            target_spans=spans,
+            max_nll_delta=max_nll_delta,
+            rank_by=rank_by,
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    return {
+        "total_screened": len(rows),
+        "rank_by": rank_by,
+        "max_nll_delta": max_nll_delta,
+        "ranking": rows[:top_k],
+    }
 
 
 def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -337,6 +550,10 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             variant=str(args.get("patch_variant", "unified_top2")),
             save_patch_path=args.get("save_patch_path"),
         )
+    if name == "wsi_build_moipatch":
+        return _build_moipatch_tool(args)
+    if name == "wsi_screen_candidates":
+        return _screen_candidates_tool(args)
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
 
 
