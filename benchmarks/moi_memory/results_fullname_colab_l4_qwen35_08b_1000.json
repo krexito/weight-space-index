@@ -1,0 +1,2128 @@
+{
+ "config": {
+  "model": "/content/qwen-base",
+  "tokenizer": null,
+  "dtype": "fp32",
+  "cpu": false,
+  "people": "10,100,1000",
+  "eval_people": 50,
+  "layers": "3,5,7,9,11",
+  "sweep_people": 12,
+  "k_cands": 8,
+  "steps": 40,
+  "lr": 0.3,
+  "kl_weight": 0.0625,
+  "weight_decay": 0.02,
+  "clamp": 4.0,
+  "stop_nll": 0.05,
+  "cov_tokens": 100000,
+  "cov_ridge": 0.001,
+  "memit_lambda": 0.05,
+  "thr": 0.5,
+  "thr_first": null,
+  "first_window": 6,
+  "ppl_tokens": 32768,
+  "tok_budget": 8192,
+  "arms": "base,ctx,rome_gated,rome_fullname",
+  "no_restart_check": true,
+  "seed": 0,
+  "save_bank": null,
+  "write_batch": 16,
+  "progress": "/content/drive/MyDrive/wsi_runs/moi_memory_fullname_qwen35-08b/progress.pt",
+  "tf32": true,
+  "out": "/content/drive/MyDrive/wsi_runs/moi_memory_fullname_qwen35-08b/results_moi_memory_fullname.json"
+ },
+ "n_layers": 24,
+ "people_example": [
+  {
+   "name": "Cugamer Bernilri",
+   "first": "Cugamer",
+   "last": "Bernilri",
+   "city": "Manchester",
+   "country": "England",
+   "country_es": "Inglaterra",
+   "job": "translator",
+   "job_es": "traductor",
+   "pet": "Wimpolum",
+   "nb_first": "Cugamer Harluwex",
+   "nb_last": "Takenpa Bernilri"
+  },
+  {
+   "name": "Fevuber Yadorsa",
+   "first": "Fevuber",
+   "last": "Yadorsa",
+   "city": "Lima",
+   "country": "Peru",
+   "country_es": "Perú",
+   "job": "carpenter",
+   "job_es": "carpintero",
+   "pet": "Tekmofdax",
+   "nb_first": "Fevuber Delmervo",
+   "nb_last": "Yarimer Yadorsa"
+  },
+  {
+   "name": "Yatemhar Oswexber",
+   "first": "Yatemhar",
+   "last": "Oswexber",
+   "city": "Lima",
+   "country": "Peru",
+   "country_es": "Perú",
+   "job": "carpenter",
+   "job_es": "carpintero",
+   "pet": "Mofzonu",
+   "nb_first": "Yatemhar Jowexmo",
+   "nb_last": "Dorfeken Oswexber"
+  }
+ ],
+ "scales": {
+  "10": {
+   "n_memories": 10,
+   "n_eval_people": 10,
+   "n_probes": 450,
+   "arms": {
+    "base": {
+     "probes": {
+      "chat": {
+       "n": 60,
+       "choice": 0.1167,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.15,
+        "job": 0.15,
+        "pet": 0.05
+       }
+      },
+      "dev": {
+       "n": 60,
+       "choice": 0.15,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.15,
+        "job": 0.2,
+        "pet": 0.1
+       }
+      },
+      "es": {
+       "n": 60,
+       "choice": 0.15,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.25,
+        "job": 0.2,
+        "pet": 0.0
+       }
+      },
+      "hop": {
+       "n": 20,
+       "choice": 0.15,
+       "exact": 0.0,
+       "chance": 0.1111
+      },
+      "hop_es": {
+       "n": 20,
+       "choice": 0.15,
+       "exact": 0.0,
+       "chance": 0.1111
+      },
+      "nb_first": {
+       "n": 30,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.3,
+        "job": 0.1,
+        "pet": 0.0
+       }
+      },
+      "nb_last": {
+       "n": 30,
+       "choice": 0.1667,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.2,
+        "job": 0.2,
+        "pet": 0.1
+       }
+      },
+      "para": {
+       "n": 120,
+       "choice": 0.1083,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.05,
+        "job": 0.175,
+        "pet": 0.1
+       }
+      },
+      "reverse": {
+       "n": 20,
+       "choice": 0.1,
+       "exact": 0.0,
+       "chance": 0.1111
+      },
+      "write": {
+       "n": 30,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.1,
+        "job": 0.1,
+        "pet": 0.2
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 22.6706,
+      "tokens": 32704
+     }
+    },
+    "ctx": {
+     "probes": {
+      "chat": {
+       "n": 60,
+       "choice": 1.0,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "dev": {
+       "n": 60,
+       "choice": 1.0,
+       "exact": 0.85,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "es": {
+       "n": 60,
+       "choice": 0.9833,
+       "exact": 0.7167,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.95,
+        "pet": 1.0
+       }
+      },
+      "hop": {
+       "n": 20,
+       "choice": 1.0,
+       "exact": 0.3,
+       "chance": 0.1111
+      },
+      "hop_es": {
+       "n": 20,
+       "choice": 0.9,
+       "exact": 0.2,
+       "chance": 0.1111
+      },
+      "nb_first": {
+       "n": 30,
+       "choice": 1.0,
+       "exact": 1.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "nb_last": {
+       "n": 30,
+       "choice": 1.0,
+       "exact": 1.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "para": {
+       "n": 120,
+       "choice": 1.0,
+       "exact": 0.7167,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "reverse": {
+       "n": 20,
+       "choice": 1.0,
+       "exact": 0.5,
+       "chance": 0.1111
+      },
+      "write": {
+       "n": 30,
+       "choice": 1.0,
+       "exact": 1.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      }
+     },
+     "vs_base": {
+      "chat": {
+       "diff": 0.8833,
+       "ci": [
+        0.85,
+        0.9333
+       ]
+      },
+      "dev": {
+       "diff": 0.85,
+       "ci": [
+        0.7333,
+        0.95
+       ]
+      },
+      "es": {
+       "diff": 0.8333,
+       "ci": [
+        0.7,
+        0.95
+       ]
+      },
+      "hop": {
+       "diff": 0.85,
+       "ci": [
+        0.65,
+        1.0
+       ]
+      },
+      "hop_es": {
+       "diff": 0.75,
+       "ci": [
+        0.6,
+        0.9
+       ]
+      },
+      "nb_first": {
+       "diff": 0.8667,
+       "ci": [
+        0.7667,
+        0.9667
+       ]
+      },
+      "nb_last": {
+       "diff": 0.8333,
+       "ci": [
+        0.6,
+        1.0
+       ]
+      },
+      "para": {
+       "diff": 0.8917,
+       "ci": [
+        0.8,
+        0.9667
+       ]
+      },
+      "reverse": {
+       "diff": 0.9,
+       "ci": [
+        0.7,
+        1.0
+       ]
+      },
+      "write": {
+       "diff": 0.8667,
+       "ci": [
+        0.7333,
+        0.9667
+       ]
+      }
+     }
+    },
+    "rome_fullname": {
+     "probes": {
+      "chat": {
+       "n": 60,
+       "choice": 0.95,
+       "exact": 0.15,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.95,
+        "pet": 0.9
+       }
+      },
+      "dev": {
+       "n": 60,
+       "choice": 0.9833,
+       "exact": 0.4833,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.95,
+        "pet": 1.0
+       }
+      },
+      "es": {
+       "n": 60,
+       "choice": 0.8667,
+       "exact": 0.3333,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.95,
+        "job": 0.65,
+        "pet": 1.0
+       }
+      },
+      "hop": {
+       "n": 20,
+       "choice": 0.8,
+       "exact": 0.2,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "hop_es": {
+       "n": 20,
+       "choice": 0.7,
+       "exact": 0.25,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "nb_first": {
+       "n": 30,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.3,
+        "job": 0.1,
+        "pet": 0.0
+       }
+      },
+      "nb_last": {
+       "n": 30,
+       "choice": 0.1667,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.2,
+        "job": 0.2,
+        "pet": 0.1
+       }
+      },
+      "para": {
+       "n": 120,
+       "choice": 0.9833,
+       "exact": 0.3583,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.95,
+        "pet": 1.0
+       }
+      },
+      "reverse": {
+       "n": 20,
+       "choice": 0.1,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "write": {
+       "n": 30,
+       "choice": 1.0,
+       "exact": 0.9667,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 22.6706,
+      "tokens": 32704,
+      "fire_token_rate": 0.0
+     },
+     "capitals_retained": 1.0,
+     "vs_base": {
+      "chat": {
+       "diff": 0.8333,
+       "ci": [
+        0.7667,
+        0.9
+       ]
+      },
+      "dev": {
+       "diff": 0.8333,
+       "ci": [
+        0.7329,
+        0.9333
+       ]
+      },
+      "es": {
+       "diff": 0.7167,
+       "ci": [
+        0.5833,
+        0.85
+       ]
+      },
+      "hop": {
+       "diff": 0.65,
+       "ci": [
+        0.35,
+        0.9
+       ]
+      },
+      "hop_es": {
+       "diff": 0.55,
+       "ci": [
+        0.35,
+        0.75
+       ]
+      },
+      "nb_first": {
+       "diff": 0.0,
+       "ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "nb_last": {
+       "diff": 0.0,
+       "ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "para": {
+       "diff": 0.875,
+       "ci": [
+        0.7917,
+        0.9417
+       ]
+      },
+      "reverse": {
+       "diff": 0.0,
+       "ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "write": {
+       "diff": 0.8667,
+       "ci": [
+        0.7333,
+        0.9667
+       ]
+      }
+     },
+     "sec": 14.6
+    },
+    "rome_gated": {
+     "probes": {
+      "chat": {
+       "n": 60,
+       "choice": 0.95,
+       "exact": 0.15,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.95,
+        "pet": 0.9
+       }
+      },
+      "dev": {
+       "n": 60,
+       "choice": 0.9833,
+       "exact": 0.4833,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.95,
+        "pet": 1.0
+       }
+      },
+      "es": {
+       "n": 60,
+       "choice": 0.8667,
+       "exact": 0.3333,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.95,
+        "job": 0.65,
+        "pet": 1.0
+       }
+      },
+      "hop": {
+       "n": 20,
+       "choice": 0.8,
+       "exact": 0.2,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "hop_es": {
+       "n": 20,
+       "choice": 0.7,
+       "exact": 0.25,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "nb_first": {
+       "n": 30,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.3,
+        "job": 0.1,
+        "pet": 0.0
+       }
+      },
+      "nb_last": {
+       "n": 30,
+       "choice": 1.0,
+       "exact": 0.8667,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "para": {
+       "n": 120,
+       "choice": 0.9833,
+       "exact": 0.3583,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.95,
+        "pet": 1.0
+       }
+      },
+      "reverse": {
+       "n": 20,
+       "choice": 0.1,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "write": {
+       "n": 30,
+       "choice": 1.0,
+       "exact": 0.9667,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 22.6706,
+      "tokens": 32704,
+      "fire_token_rate": 0.0
+     },
+     "capitals_retained": 1.0,
+     "vs_base": {
+      "chat": {
+       "diff": 0.8333,
+       "ci": [
+        0.7667,
+        0.9
+       ]
+      },
+      "dev": {
+       "diff": 0.8333,
+       "ci": [
+        0.7329,
+        0.9333
+       ]
+      },
+      "es": {
+       "diff": 0.7167,
+       "ci": [
+        0.5833,
+        0.85
+       ]
+      },
+      "hop": {
+       "diff": 0.65,
+       "ci": [
+        0.35,
+        0.9
+       ]
+      },
+      "hop_es": {
+       "diff": 0.55,
+       "ci": [
+        0.35,
+        0.75
+       ]
+      },
+      "nb_first": {
+       "diff": 0.0,
+       "ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "nb_last": {
+       "diff": 0.8333,
+       "ci": [
+        0.6,
+        1.0
+       ]
+      },
+      "para": {
+       "diff": 0.875,
+       "ci": [
+        0.7917,
+        0.9417
+       ]
+      },
+      "reverse": {
+       "diff": 0.0,
+       "ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "write": {
+       "diff": 0.8667,
+       "ci": [
+        0.7333,
+        0.9667
+       ]
+      }
+     },
+     "sec": 13.9
+    }
+   }
+  },
+  "100": {
+   "n_memories": 100,
+   "n_eval_people": 50,
+   "n_probes": 2250,
+   "arms": {
+    "base": {
+     "probes": {
+      "chat": {
+       "n": 300,
+       "choice": 0.13,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.13,
+        "job": 0.18,
+        "pet": 0.08
+       }
+      },
+      "dev": {
+       "n": 300,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.19,
+        "job": 0.11,
+        "pet": 0.1
+       }
+      },
+      "es": {
+       "n": 300,
+       "choice": 0.1367,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.13,
+        "job": 0.17,
+        "pet": 0.11
+       }
+      },
+      "hop": {
+       "n": 100,
+       "choice": 0.23,
+       "exact": 0.0,
+       "chance": 0.1111
+      },
+      "hop_es": {
+       "n": 100,
+       "choice": 0.15,
+       "exact": 0.01,
+       "chance": 0.1111
+      },
+      "nb_first": {
+       "n": 150,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.18,
+        "job": 0.16,
+        "pet": 0.06
+       }
+      },
+      "nb_last": {
+       "n": 150,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.16,
+        "job": 0.14,
+        "pet": 0.1
+       }
+      },
+      "para": {
+       "n": 600,
+       "choice": 0.1283,
+       "exact": 0.005,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.18,
+        "job": 0.1,
+        "pet": 0.105
+       }
+      },
+      "reverse": {
+       "n": 100,
+       "choice": 0.09,
+       "exact": 0.0,
+       "chance": 0.1111
+      },
+      "write": {
+       "n": 150,
+       "choice": 0.16,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.16,
+        "job": 0.18,
+        "pet": 0.14
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 22.6706,
+      "tokens": 32704
+     }
+    },
+    "ctx": {
+     "probes": {
+      "chat": {
+       "n": 300,
+       "choice": 1.0,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "dev": {
+       "n": 300,
+       "choice": 1.0,
+       "exact": 0.8433,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "es": {
+       "n": 300,
+       "choice": 0.9933,
+       "exact": 0.6567,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.98,
+        "pet": 1.0
+       }
+      },
+      "hop": {
+       "n": 100,
+       "choice": 0.97,
+       "exact": 0.36,
+       "chance": 0.1111
+      },
+      "hop_es": {
+       "n": 100,
+       "choice": 0.82,
+       "exact": 0.13,
+       "chance": 0.1111
+      },
+      "nb_first": {
+       "n": 150,
+       "choice": 1.0,
+       "exact": 0.9867,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "nb_last": {
+       "n": 150,
+       "choice": 1.0,
+       "exact": 0.9933,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "para": {
+       "n": 600,
+       "choice": 1.0,
+       "exact": 0.725,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "reverse": {
+       "n": 100,
+       "choice": 1.0,
+       "exact": 0.49,
+       "chance": 0.1111
+      },
+      "write": {
+       "n": 150,
+       "choice": 1.0,
+       "exact": 1.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      }
+     },
+     "vs_base": {
+      "chat": {
+       "diff": 0.87,
+       "ci": [
+        0.8333,
+        0.9033
+       ]
+      },
+      "dev": {
+       "diff": 0.8667,
+       "ci": [
+        0.8233,
+        0.9067
+       ]
+      },
+      "es": {
+       "diff": 0.8567,
+       "ci": [
+        0.81,
+        0.9
+       ]
+      },
+      "hop": {
+       "diff": 0.74,
+       "ci": [
+        0.65,
+        0.83
+       ]
+      },
+      "hop_es": {
+       "diff": 0.67,
+       "ci": [
+        0.58,
+        0.76
+       ]
+      },
+      "nb_first": {
+       "diff": 0.8667,
+       "ci": [
+        0.82,
+        0.9133
+       ]
+      },
+      "nb_last": {
+       "diff": 0.8667,
+       "ci": [
+        0.8067,
+        0.92
+       ]
+      },
+      "para": {
+       "diff": 0.8717,
+       "ci": [
+        0.8383,
+        0.905
+       ]
+      },
+      "reverse": {
+       "diff": 0.91,
+       "ci": [
+        0.83,
+        0.98
+       ]
+      },
+      "write": {
+       "diff": 0.84,
+       "ci": [
+        0.78,
+        0.8933
+       ]
+      }
+     }
+    },
+    "rome_fullname": {
+     "probes": {
+      "chat": {
+       "n": 300,
+       "choice": 0.9733,
+       "exact": 0.13,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.99,
+        "pet": 0.93
+       }
+      },
+      "dev": {
+       "n": 300,
+       "choice": 0.97,
+       "exact": 0.4733,
+       "chance": 0.1111,
+       "own_fired": 0.9967,
+       "by_rel": {
+        "city": 0.98,
+        "job": 0.94,
+        "pet": 0.99
+       }
+      },
+      "es": {
+       "n": 300,
+       "choice": 0.84,
+       "exact": 0.3667,
+       "chance": 0.1111,
+       "own_fired": 0.9933,
+       "by_rel": {
+        "city": 0.9,
+        "job": 0.66,
+        "pet": 0.96
+       }
+      },
+      "hop": {
+       "n": 100,
+       "choice": 0.8,
+       "exact": 0.34,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "hop_es": {
+       "n": 100,
+       "choice": 0.71,
+       "exact": 0.2,
+       "chance": 0.1111,
+       "own_fired": 0.99
+      },
+      "nb_first": {
+       "n": 150,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.18,
+        "job": 0.16,
+        "pet": 0.06
+       }
+      },
+      "nb_last": {
+       "n": 150,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.16,
+        "job": 0.14,
+        "pet": 0.1
+       }
+      },
+      "para": {
+       "n": 600,
+       "choice": 0.9733,
+       "exact": 0.3633,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.995,
+        "job": 0.945,
+        "pet": 0.98
+       }
+      },
+      "reverse": {
+       "n": 100,
+       "choice": 0.1,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.98
+      },
+      "write": {
+       "n": 150,
+       "choice": 0.9933,
+       "exact": 0.9467,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 0.98
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 22.6706,
+      "tokens": 32704,
+      "fire_token_rate": 0.0
+     },
+     "capitals_retained": 1.0,
+     "vs_base": {
+      "chat": {
+       "diff": 0.8433,
+       "ci": [
+        0.8067,
+        0.8767
+       ]
+      },
+      "dev": {
+       "diff": 0.8367,
+       "ci": [
+        0.7899,
+        0.8833
+       ]
+      },
+      "es": {
+       "diff": 0.7033,
+       "ci": [
+        0.65,
+        0.7533
+       ]
+      },
+      "hop": {
+       "diff": 0.57,
+       "ci": [
+        0.45,
+        0.69
+       ]
+      },
+      "hop_es": {
+       "diff": 0.56,
+       "ci": [
+        0.45,
+        0.67
+       ]
+      },
+      "nb_first": {
+       "diff": 0.0,
+       "ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "nb_last": {
+       "diff": 0.0,
+       "ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "para": {
+       "diff": 0.845,
+       "ci": [
+        0.81,
+        0.8783
+       ]
+      },
+      "reverse": {
+       "diff": 0.01,
+       "ci": [
+        0.0,
+        0.03
+       ]
+      },
+      "write": {
+       "diff": 0.8333,
+       "ci": [
+        0.7733,
+        0.8867
+       ]
+      }
+     },
+     "sec": 46.3
+    },
+    "rome_gated": {
+     "probes": {
+      "chat": {
+       "n": 300,
+       "choice": 0.9067,
+       "exact": 0.09,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.94,
+        "job": 0.93,
+        "pet": 0.85
+       }
+      },
+      "dev": {
+       "n": 300,
+       "choice": 0.89,
+       "exact": 0.35,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.91,
+        "job": 0.81,
+        "pet": 0.95
+       }
+      },
+      "es": {
+       "n": 300,
+       "choice": 0.7867,
+       "exact": 0.2767,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.83,
+        "job": 0.6,
+        "pet": 0.93
+       }
+      },
+      "hop": {
+       "n": 100,
+       "choice": 0.64,
+       "exact": 0.25,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "hop_es": {
+       "n": 100,
+       "choice": 0.59,
+       "exact": 0.16,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "nb_first": {
+       "n": 150,
+       "choice": 0.1067,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.2,
+        "job": 0.06,
+        "pet": 0.06
+       }
+      },
+      "nb_last": {
+       "n": 150,
+       "choice": 0.9267,
+       "exact": 0.6267,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.94,
+        "job": 0.94,
+        "pet": 0.9
+       }
+      },
+      "para": {
+       "n": 600,
+       "choice": 0.865,
+       "exact": 0.2633,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.875,
+        "job": 0.82,
+        "pet": 0.9
+       }
+      },
+      "reverse": {
+       "n": 100,
+       "choice": 0.1,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "write": {
+       "n": 150,
+       "choice": 0.9333,
+       "exact": 0.7,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.92,
+        "job": 0.96,
+        "pet": 0.92
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 22.6834,
+      "tokens": 32704,
+      "fire_token_rate": 0.00024
+     },
+     "capitals_retained": 1.0,
+     "vs_base": {
+      "chat": {
+       "diff": 0.7767,
+       "ci": [
+        0.72,
+        0.83
+       ]
+      },
+      "dev": {
+       "diff": 0.7567,
+       "ci": [
+        0.7,
+        0.8101
+       ]
+      },
+      "es": {
+       "diff": 0.65,
+       "ci": [
+        0.59,
+        0.7067
+       ]
+      },
+      "hop": {
+       "diff": 0.41,
+       "ci": [
+        0.29,
+        0.53
+       ]
+      },
+      "hop_es": {
+       "diff": 0.44,
+       "ci": [
+        0.32,
+        0.56
+       ]
+      },
+      "nb_first": {
+       "diff": -0.0267,
+       "ci": [
+        -0.06,
+        0.0067
+       ]
+      },
+      "nb_last": {
+       "diff": 0.7933,
+       "ci": [
+        0.7133,
+        0.86
+       ]
+      },
+      "para": {
+       "diff": 0.7367,
+       "ci": [
+        0.6833,
+        0.785
+       ]
+      },
+      "reverse": {
+       "diff": 0.01,
+       "ci": [
+        -0.02,
+        0.04
+       ]
+      },
+      "write": {
+       "diff": 0.7733,
+       "ci": [
+        0.7067,
+        0.8333
+       ]
+      }
+     },
+     "sec": 46.2
+    }
+   }
+  },
+  "1000": {
+   "n_memories": 1000,
+   "n_eval_people": 50,
+   "n_probes": 2250,
+   "arms": {
+    "base": {
+     "probes": {
+      "chat": {
+       "n": 300,
+       "choice": 0.13,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.13,
+        "job": 0.18,
+        "pet": 0.08
+       }
+      },
+      "dev": {
+       "n": 300,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.19,
+        "job": 0.11,
+        "pet": 0.1
+       }
+      },
+      "es": {
+       "n": 300,
+       "choice": 0.1367,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.13,
+        "job": 0.17,
+        "pet": 0.11
+       }
+      },
+      "hop": {
+       "n": 100,
+       "choice": 0.23,
+       "exact": 0.0,
+       "chance": 0.1111
+      },
+      "hop_es": {
+       "n": 100,
+       "choice": 0.15,
+       "exact": 0.01,
+       "chance": 0.1111
+      },
+      "nb_first": {
+       "n": 150,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.18,
+        "job": 0.16,
+        "pet": 0.06
+       }
+      },
+      "nb_last": {
+       "n": 150,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.16,
+        "job": 0.14,
+        "pet": 0.1
+       }
+      },
+      "para": {
+       "n": 600,
+       "choice": 0.1283,
+       "exact": 0.005,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.18,
+        "job": 0.1,
+        "pet": 0.105
+       }
+      },
+      "reverse": {
+       "n": 100,
+       "choice": 0.09,
+       "exact": 0.0,
+       "chance": 0.1111
+      },
+      "write": {
+       "n": 150,
+       "choice": 0.16,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 0.16,
+        "job": 0.18,
+        "pet": 0.14
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 22.6706,
+      "tokens": 32704
+     }
+    },
+    "ctx": {
+     "probes": {
+      "chat": {
+       "n": 300,
+       "choice": 1.0,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "dev": {
+       "n": 300,
+       "choice": 1.0,
+       "exact": 0.8433,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "es": {
+       "n": 300,
+       "choice": 0.9933,
+       "exact": 0.6567,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.98,
+        "pet": 1.0
+       }
+      },
+      "hop": {
+       "n": 100,
+       "choice": 0.97,
+       "exact": 0.36,
+       "chance": 0.1111
+      },
+      "hop_es": {
+       "n": 100,
+       "choice": 0.82,
+       "exact": 0.13,
+       "chance": 0.1111
+      },
+      "nb_first": {
+       "n": 150,
+       "choice": 1.0,
+       "exact": 0.9867,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "nb_last": {
+       "n": 150,
+       "choice": 1.0,
+       "exact": 0.9933,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "para": {
+       "n": 600,
+       "choice": 1.0,
+       "exact": 0.725,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      },
+      "reverse": {
+       "n": 100,
+       "choice": 1.0,
+       "exact": 0.49,
+       "chance": 0.1111
+      },
+      "write": {
+       "n": 150,
+       "choice": 1.0,
+       "exact": 1.0,
+       "chance": 0.1111,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 1.0
+       }
+      }
+     },
+     "vs_base": {
+      "chat": {
+       "diff": 0.87,
+       "ci": [
+        0.8333,
+        0.9033
+       ]
+      },
+      "dev": {
+       "diff": 0.8667,
+       "ci": [
+        0.8233,
+        0.9067
+       ]
+      },
+      "es": {
+       "diff": 0.8567,
+       "ci": [
+        0.81,
+        0.9
+       ]
+      },
+      "hop": {
+       "diff": 0.74,
+       "ci": [
+        0.65,
+        0.83
+       ]
+      },
+      "hop_es": {
+       "diff": 0.67,
+       "ci": [
+        0.58,
+        0.76
+       ]
+      },
+      "nb_first": {
+       "diff": 0.8667,
+       "ci": [
+        0.82,
+        0.9133
+       ]
+      },
+      "nb_last": {
+       "diff": 0.8667,
+       "ci": [
+        0.8067,
+        0.92
+       ]
+      },
+      "para": {
+       "diff": 0.8717,
+       "ci": [
+        0.8383,
+        0.905
+       ]
+      },
+      "reverse": {
+       "diff": 0.91,
+       "ci": [
+        0.83,
+        0.98
+       ]
+      },
+      "write": {
+       "diff": 0.84,
+       "ci": [
+        0.78,
+        0.8933
+       ]
+      }
+     }
+    },
+    "rome_fullname": {
+     "probes": {
+      "chat": {
+       "n": 300,
+       "choice": 0.9733,
+       "exact": 0.1267,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 0.99,
+        "pet": 0.93
+       }
+      },
+      "dev": {
+       "n": 300,
+       "choice": 0.9733,
+       "exact": 0.4567,
+       "chance": 0.1111,
+       "own_fired": 0.9967,
+       "by_rel": {
+        "city": 0.98,
+        "job": 0.95,
+        "pet": 0.99
+       }
+      },
+      "es": {
+       "n": 300,
+       "choice": 0.8367,
+       "exact": 0.3533,
+       "chance": 0.1111,
+       "own_fired": 0.9933,
+       "by_rel": {
+        "city": 0.89,
+        "job": 0.66,
+        "pet": 0.96
+       }
+      },
+      "hop": {
+       "n": 100,
+       "choice": 0.78,
+       "exact": 0.31,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "hop_es": {
+       "n": 100,
+       "choice": 0.68,
+       "exact": 0.18,
+       "chance": 0.1111,
+       "own_fired": 0.99
+      },
+      "nb_first": {
+       "n": 150,
+       "choice": 0.1333,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.18,
+        "job": 0.16,
+        "pet": 0.06
+       }
+      },
+      "nb_last": {
+       "n": 150,
+       "choice": 0.1333,
+       "exact": 0.0067,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.16,
+        "job": 0.14,
+        "pet": 0.1
+       }
+      },
+      "para": {
+       "n": 600,
+       "choice": 0.9667,
+       "exact": 0.3583,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.995,
+        "job": 0.93,
+        "pet": 0.975
+       }
+      },
+      "reverse": {
+       "n": 100,
+       "choice": 0.1,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.98
+      },
+      "write": {
+       "n": 150,
+       "choice": 0.9933,
+       "exact": 0.9133,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 1.0,
+        "job": 1.0,
+        "pet": 0.98
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 22.6706,
+      "tokens": 32704,
+      "fire_token_rate": 0.0
+     },
+     "capitals_retained": 1.0,
+     "vs_base": {
+      "chat": {
+       "diff": 0.8433,
+       "ci": [
+        0.8067,
+        0.8767
+       ]
+      },
+      "dev": {
+       "diff": 0.84,
+       "ci": [
+        0.79,
+        0.8867
+       ]
+      },
+      "es": {
+       "diff": 0.7,
+       "ci": [
+        0.6467,
+        0.75
+       ]
+      },
+      "hop": {
+       "diff": 0.55,
+       "ci": [
+        0.43,
+        0.67
+       ]
+      },
+      "hop_es": {
+       "diff": 0.53,
+       "ci": [
+        0.42,
+        0.64
+       ]
+      },
+      "nb_first": {
+       "diff": 0.0,
+       "ci": [
+        0.0,
+        0.0
+       ]
+      },
+      "nb_last": {
+       "diff": 0.0,
+       "ci": [
+        -0.02,
+        0.02
+       ]
+      },
+      "para": {
+       "diff": 0.8383,
+       "ci": [
+        0.8033,
+        0.8717
+       ]
+      },
+      "reverse": {
+       "diff": 0.01,
+       "ci": [
+        0.0,
+        0.03
+       ]
+      },
+      "write": {
+       "diff": 0.8333,
+       "ci": [
+        0.7733,
+        0.8867
+       ]
+      }
+     },
+     "sec": 46.6
+    },
+    "rome_gated": {
+     "probes": {
+      "chat": {
+       "n": 300,
+       "choice": 0.7467,
+       "exact": 0.08,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.75,
+        "job": 0.78,
+        "pet": 0.71
+       }
+      },
+      "dev": {
+       "n": 300,
+       "choice": 0.6633,
+       "exact": 0.2033,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.66,
+        "job": 0.66,
+        "pet": 0.67
+       }
+      },
+      "es": {
+       "n": 300,
+       "choice": 0.6,
+       "exact": 0.14,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.64,
+        "job": 0.46,
+        "pet": 0.7
+       }
+      },
+      "hop": {
+       "n": 100,
+       "choice": 0.46,
+       "exact": 0.13,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "hop_es": {
+       "n": 100,
+       "choice": 0.53,
+       "exact": 0.08,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "nb_first": {
+       "n": 150,
+       "choice": 0.0733,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 0.0,
+       "by_rel": {
+        "city": 0.1,
+        "job": 0.06,
+        "pet": 0.06
+       }
+      },
+      "nb_last": {
+       "n": 150,
+       "choice": 0.62,
+       "exact": 0.34,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.58,
+        "job": 0.66,
+        "pet": 0.62
+       }
+      },
+      "para": {
+       "n": 600,
+       "choice": 0.65,
+       "exact": 0.17,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.63,
+        "job": 0.665,
+        "pet": 0.655
+       }
+      },
+      "reverse": {
+       "n": 100,
+       "choice": 0.12,
+       "exact": 0.0,
+       "chance": 0.1111,
+       "own_fired": 1.0
+      },
+      "write": {
+       "n": 150,
+       "choice": 0.6667,
+       "exact": 0.3733,
+       "chance": 0.1111,
+       "own_fired": 1.0,
+       "by_rel": {
+        "city": 0.62,
+        "job": 0.7,
+        "pet": 0.68
+       }
+      }
+     },
+     "ppl": {
+      "ppl": 23.3544,
+      "tokens": 32704,
+      "fire_token_rate": 0.00211
+     },
+     "capitals_retained": 1.0,
+     "vs_base": {
+      "chat": {
+       "diff": 0.6167,
+       "ci": [
+        0.54,
+        0.6933
+       ]
+      },
+      "dev": {
+       "diff": 0.53,
+       "ci": [
+        0.43,
+        0.6267
+       ]
+      },
+      "es": {
+       "diff": 0.4633,
+       "ci": [
+        0.3733,
+        0.5467
+       ]
+      },
+      "hop": {
+       "diff": 0.23,
+       "ci": [
+        0.1,
+        0.36
+       ]
+      },
+      "hop_es": {
+       "diff": 0.38,
+       "ci": [
+        0.26,
+        0.5
+       ]
+      },
+      "nb_first": {
+       "diff": -0.06,
+       "ci": [
+        -0.1133,
+        -0.0067
+       ]
+      },
+      "nb_last": {
+       "diff": 0.4867,
+       "ci": [
+        0.36,
+        0.6
+       ]
+      },
+      "para": {
+       "diff": 0.5217,
+       "ci": [
+        0.435,
+        0.6083
+       ]
+      },
+      "reverse": {
+       "diff": 0.03,
+       "ci": [
+        -0.04,
+        0.11
+       ]
+      },
+      "write": {
+       "diff": 0.5067,
+       "ci": [
+        0.3932,
+        0.6133
+       ]
+      }
+     },
+     "sec": 46.4
+    }
+   }
+  }
+ },
+ "layer_sweep": {
+  "base_dev_choice": 0.3472,
+  "by_layer": {
+   "3": {
+    "n": 72,
+    "choice": 0.9583,
+    "exact": 0.3056,
+    "chance": 0.1111,
+    "by_rel": {
+     "city": 0.9583,
+     "job": 0.9167,
+     "pet": 1.0
+    }
+   },
+   "5": {
+    "n": 72,
+    "choice": 0.5833,
+    "exact": 0.0556,
+    "chance": 0.1111,
+    "by_rel": {
+     "city": 0.4583,
+     "job": 0.375,
+     "pet": 0.9167
+    }
+   },
+   "7": {
+    "n": 72,
+    "choice": 0.5139,
+    "exact": 0.0,
+    "chance": 0.1111,
+    "by_rel": {
+     "city": 0.4167,
+     "job": 0.2917,
+     "pet": 0.8333
+    }
+   },
+   "9": {
+    "n": 72,
+    "choice": 0.3889,
+    "exact": 0.0,
+    "chance": 0.1111,
+    "by_rel": {
+     "city": 0.1667,
+     "job": 0.1667,
+     "pet": 0.8333
+    }
+   },
+   "11": {
+    "n": 72,
+    "choice": 0.375,
+    "exact": 0.0,
+    "chance": 0.1111,
+    "by_rel": {
+     "city": 0.125,
+     "job": 0.2083,
+     "pet": 0.7917
+    }
+   }
+  },
+  "picked": 3
+ },
+ "layer": 3,
+ "write": {
+  "sec_per_person": 0.01,
+  "write_batch": 16,
+  "resumed": 1000,
+  "final_nll_mean": 0.2216,
+  "steps_mean": 37.01,
+  "delta_rel_mean": 2.9366,
+  "bytes_per_memory_bf16": 9216
+ },
+ "capitals_known_by_base": 30,
+ "base_ppl": {
+  "ppl": 22.6706,
+  "tokens": 32704
+ },
+ "minutes": 10.4,
+ "complete": true
+}
