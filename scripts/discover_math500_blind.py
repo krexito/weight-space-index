@@ -295,7 +295,7 @@ def _math_equal(pred: str | None, gold: str | None) -> bool:
 
 def grade_math(token_ids: list[int], finish_reason: str, gold: str, tok, eos: set[int], max_tokens: int) -> dict:
     body = lr.strip_eos(token_ids, eos)
-    hit = lr.first_window_hit(body)
+    hit = lr.first_window_hit(lr.dup_flags(body), lr.KILL_WINDOW, lr.KILL_FRAC)
     looped_killed = hit is not None
     cut = body[:hit] if looped_killed else body
     truncated = (not looped_killed) and (finish_reason == "length" or len(body) >= max_tokens)

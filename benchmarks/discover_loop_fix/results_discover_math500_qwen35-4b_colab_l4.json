@@ -1,0 +1,654 @@
+{
+ "model": "Qwen/Qwen3.5-4B",
+ "dataset": "HuggingFaceH4/MATH-500",
+ "choice": {
+  "name": "L14_n256_a12",
+  "layers": [
+   14
+  ],
+  "neurons": 256,
+  "alpha": 12.0,
+  "k": 1
+ },
+ "frozen": {
+  "frozen_utc": "2026-11-19T12:38:46+00:00",
+  "git_commit": "5b3f0f853d7cb92673b9fb0b7d647cfa24fc2c00",
+  "code_sha256": {
+   "discover_math500_blind.py": "3dd85f25f10e9bc6fab268ac1afd2d553c87f9d3d384bb660c8784c55217a4c3",
+   "discover_fast.py": "83f6815b46f2be0b341b7637418927d5c442678e9ade28871491d5d94550b543",
+   "screen_fast_grid.py": "8c78d0cfdf006318f965a596dccfad52b546b4fabb9b46bae60f7e7754315af6",
+   "loop_kill_v2.py": "a9bd254afe8c70ca977479c6a0466ddac4e3c4c3533108071c6dd3a90bdc8fc8",
+   "discover_blind.py": "2a1f7c0f85ffe321db675102274cc20a00e39b46cbe7410a0ff0581ecee569cc",
+   "discover_loop_fix.py": "a712e1657362a3bc7f1791b715a5a0a7a087afba0eb399d393bc62f92660c934",
+   "moi_loop_router_vllm.py": "febda05c5d157bf24a877872712bc32f84466ee32d81c405a8bcbf552ef242bc"
+  }
+ },
+ "discovery_min": 34.7,
+ "discovery_steps_s": {
+  "elicit": 6.6,
+  "diagnose": null,
+  "screen": 136.9,
+  "select": 1939.7
+ },
+ "arms": {
+  "base": {
+   "n": 137,
+   "accuracy": 0.781021897810219,
+   "loop_killed": 0.0072992700729927005,
+   "truncated": 0.16058394160583941
+  },
+  "wsi_fixed": {
+   "n": 137,
+   "accuracy": 0.7737226277372263,
+   "loop_killed": 0.014598540145985401,
+   "truncated": 0.17518248175182483
+  },
+  "random_fixed": {
+   "n": 137,
+   "accuracy": 0.8102189781021898,
+   "loop_killed": 0.0072992700729927005,
+   "truncated": 0.1386861313868613
+  },
+  "wsi_moi": {
+   "n": 137,
+   "accuracy": 0.781021897810219,
+   "loop_killed": 0.0,
+   "truncated": 0.15328467153284672,
+   "edit_token_share": 0.4332420997084974,
+   "router_fired": 0.5109489051094891
+  },
+  "random_moi": {
+   "n": 137,
+   "accuracy": 0.8175182481751825,
+   "loop_killed": 0.0,
+   "truncated": 0.13138686131386862,
+   "edit_token_share": 0.4143110092014362,
+   "router_fired": 0.5109489051094891
+  }
+ },
+ "paired": {
+  "wsi_fixed_vs_base": {
+   "diff": -0.0073,
+   "ci95": [
+    -0.0438,
+    0.0292
+   ],
+   "a_only": 3,
+   "b_only": 4
+  },
+  "wsi_moi_vs_base": {
+   "diff": 0.0,
+   "ci95": [
+    -0.0292,
+    0.0292
+   ],
+   "a_only": 2,
+   "b_only": 2
+  },
+  "wsi_fixed_vs_random_fixed": {
+   "diff": -0.0365,
+   "ci95": [
+    -0.0803,
+    0.0073
+   ],
+   "a_only": 2,
+   "b_only": 7
+  },
+  "wsi_moi_vs_random_moi": {
+   "diff": -0.0365,
+   "ci95": [
+    -0.073,
+    0.0
+   ],
+   "a_only": 1,
+   "b_only": 6
+  },
+  "wsi_moi_vs_wsi_fixed": {
+   "diff": 0.0073,
+   "ci95": [
+    -0.0365,
+    0.0511
+   ],
+   "a_only": 5,
+   "b_only": 4
+  }
+ },
+ "screen": {
+  "rule": {
+   "rank_by": "pareto",
+   "max_nll_delta": 0.05,
+   "n_screen_seqs": 6,
+   "top_k": 3,
+   "grid_size": 24
+  },
+  "seq_ids": [
+   7,
+   21,
+   35,
+   38,
+   39,
+   40
+  ],
+  "screen_s": 136.9,
+  "ranking": [
+   {
+    "name": "L11-14_nall_a8",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.53919,
+    "delta_healthy_nll": 0.02902,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.17455,
+    "target_suppression": 0.01247,
+    "pareto_score": 0.4297,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_nall_a8",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.54025,
+    "delta_healthy_nll": 0.03008,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.17094,
+    "target_suppression": 0.00885,
+    "pareto_score": 0.2942,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n256_a12",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.52503,
+    "delta_healthy_nll": 0.01485,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.1659,
+    "target_suppression": 0.00381,
+    "pareto_score": 0.2565,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n256_a12",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.52866,
+    "delta_healthy_nll": 0.01849,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16677,
+    "target_suppression": 0.00468,
+    "pareto_score": 0.2533,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n256_a8",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51903,
+    "delta_healthy_nll": 0.00886,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16412,
+    "target_suppression": 0.00204,
+    "pareto_score": 0.2036,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n256_a8",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.52151,
+    "delta_healthy_nll": 0.01133,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16412,
+    "target_suppression": 0.00204,
+    "pareto_score": 0.1798,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_nall_a4",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.52211,
+    "delta_healthy_nll": 0.01193,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16411,
+    "target_suppression": 0.00203,
+    "pareto_score": 0.17,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n64_a8",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51735,
+    "delta_healthy_nll": 0.00717,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16332,
+    "target_suppression": 0.00124,
+    "pareto_score": 0.1237,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n64_a12",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.52166,
+    "delta_healthy_nll": 0.01149,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16348,
+    "target_suppression": 0.00139,
+    "pareto_score": 0.121,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n16_a8",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51598,
+    "delta_healthy_nll": 0.00581,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16325,
+    "target_suppression": 0.00116,
+    "pareto_score": 0.1165,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n16_a4",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51379,
+    "delta_healthy_nll": 0.00361,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16309,
+    "target_suppression": 0.00101,
+    "pareto_score": 0.1005,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n64_a12",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.52127,
+    "delta_healthy_nll": 0.01109,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16305,
+    "target_suppression": 0.00096,
+    "pareto_score": 0.087,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n16_a8",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51699,
+    "delta_healthy_nll": 0.00682,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16293,
+    "target_suppression": 0.00084,
+    "pareto_score": 0.0842,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_nall_a4",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.5228,
+    "delta_healthy_nll": 0.01263,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16313,
+    "target_suppression": 0.00105,
+    "pareto_score": 0.0828,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n256_a4",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.5162,
+    "delta_healthy_nll": 0.00603,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16285,
+    "target_suppression": 0.00077,
+    "pareto_score": 0.0765,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n256_a4",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51472,
+    "delta_healthy_nll": 0.00455,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16283,
+    "target_suppression": 0.00074,
+    "pareto_score": 0.0741,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n64_a4",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51357,
+    "delta_healthy_nll": 0.00339,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16278,
+    "target_suppression": 0.0007,
+    "pareto_score": 0.0695,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n16_a4",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51296,
+    "delta_healthy_nll": 0.00279,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16275,
+    "target_suppression": 0.00067,
+    "pareto_score": 0.0665,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L14_n16_a12",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51772,
+    "delta_healthy_nll": 0.00755,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16268,
+    "target_suppression": 0.00059,
+    "pareto_score": 0.0593,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n16_a12",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51946,
+    "delta_healthy_nll": 0.00929,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16252,
+    "target_suppression": 0.00044,
+    "pareto_score": 0.0438,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n64_a4",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.51476,
+    "delta_healthy_nll": 0.00459,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16247,
+    "target_suppression": 0.00039,
+    "pareto_score": 0.0386,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_n64_a8",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.5186,
+    "delta_healthy_nll": 0.00843,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.16247,
+    "target_suppression": 0.00038,
+    "pareto_score": 0.0382,
+    "passes_nll_guard": true
+   },
+   {
+    "name": "L11-14_nall_a12",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.56325,
+    "delta_healthy_nll": 0.05308,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.206,
+    "target_suppression": 0.04392,
+    "pareto_score": 0.8275,
+    "passes_nll_guard": false
+   },
+   {
+    "name": "L14_nall_a12",
+    "base_healthy_nll": 0.51017,
+    "healthy_nll": 0.5638,
+    "delta_healthy_nll": 0.05363,
+    "base_target_logp": -0.16208,
+    "target_logp": -0.18893,
+    "target_suppression": 0.02685,
+    "pareto_score": 0.5007,
+    "passes_nll_guard": false
+   }
+  ],
+  "finalists": [
+   {
+    "name": "L11-14_nall_a8",
+    "layers": [
+     11,
+     14
+    ],
+    "neurons": "all",
+    "alpha": 8.0,
+    "k": 2
+   },
+   {
+    "name": "L14_nall_a8",
+    "layers": [
+     14
+    ],
+    "neurons": "all",
+    "alpha": 8.0,
+    "k": 1
+   },
+   {
+    "name": "L14_n256_a12",
+    "layers": [
+     14
+    ],
+    "neurons": 256,
+    "alpha": 12.0,
+    "k": 1
+   }
+  ]
+ },
+ "search": {
+  "base_dev": {
+   "n": 32,
+   "accuracy": 0.65625,
+   "loop_killed": 0.0,
+   "truncated": 0.3125
+  },
+  "dev_finalists": {
+   "L11-14_nall_a8": {
+    "n": 32,
+    "accuracy": 0.5625,
+    "loop_killed": 0.0,
+    "truncated": 0.4375,
+    "name": "L11-14_nall_a8",
+    "layers": [
+     11,
+     14
+    ],
+    "neurons": "all",
+    "alpha": 8.0,
+    "k": 2
+   },
+   "L14_nall_a8": {
+    "n": 32,
+    "accuracy": 0.53125,
+    "loop_killed": 0.0,
+    "truncated": 0.46875,
+    "name": "L14_nall_a8",
+    "layers": [
+     14
+    ],
+    "neurons": "all",
+    "alpha": 8.0,
+    "k": 1
+   },
+   "L14_n256_a12": {
+    "n": 32,
+    "accuracy": 0.5625,
+    "loop_killed": 0.0,
+    "truncated": 0.4375,
+    "name": "L14_n256_a12",
+    "layers": [
+     14
+    ],
+    "neurons": 256,
+    "alpha": 12.0,
+    "k": 1
+   }
+  },
+  "choice": {
+   "name": "L14_n256_a12",
+   "layers": [
+    14
+   ],
+   "neurons": 256,
+   "alpha": 12.0,
+   "k": 1
+  },
+  "time_s": {
+   "select": 1939.7
+  }
+ },
+ "diagnosis": {
+  "separation": [
+   0.5038326805008698,
+   0.5063958350672154,
+   0.2587719453120158,
+   0.7059446824335058,
+   0.6431995727864531,
+   0.5964759769561591,
+   0.762922386864421,
+   0.5725717536550864,
+   0.7162247131759761,
+   0.8876081528426771,
+   0.66711126163011,
+   0.9783692834403355,
+   0.8806390596195344,
+   0.5894920197137059,
+   1.0646995282076543,
+   0.4251130870324284,
+   0.31884890971727553,
+   0.38135121851964454,
+   0.7598664054559696,
+   0.5641280351729743,
+   0.586783386483509,
+   0.5331163338658909,
+   0.538939751186396,
+   0.5999373049943315,
+   0.6067237621073516,
+   0.6268115645094131,
+   0.3711418085564349,
+   0.32456755987008157,
+   0.59239816989368,
+   0.4319550770469662,
+   0.5402955028467594,
+   0.4346563864249045
+  ],
+  "layer_rank": [
+   14,
+   11,
+   9,
+   12,
+   6,
+   18,
+   8,
+   3,
+   10,
+   4,
+   25,
+   24,
+   23,
+   5,
+   28,
+   13,
+   20,
+   7,
+   19,
+   30,
+   22,
+   21,
+   1,
+   0,
+   31,
+   29,
+   15,
+   17,
+   26,
+   27,
+   16,
+   2
+  ],
+  "n_layers": 32,
+  "n_units": 9216,
+  "hidden": 2560,
+  "loop_tokens": 2071,
+  "normal_tokens": 161360,
+  "sequences": 100,
+  "looping_sequences": 40,
+  "elicit_responses": 100,
+  "dtype": "torch.bfloat16",
+  "diag_version": 2,
+  "max_seq": 16384,
+  "loop_onsets": [
+   595,
+   628,
+   1029,
+   1825,
+   1889,
+   2125,
+   2131,
+   2199,
+   2387,
+   2428,
+   2450,
+   2681,
+   2715,
+   2777,
+   2800,
+   2857,
+   3050,
+   3192,
+   3197,
+   3349,
+   3427,
+   3579,
+   3609,
+   3760,
+   3829,
+   3922,
+   4019,
+   4107,
+   4121,
+   4539,
+   4916,
+   5317,
+   5507,
+   5977,
+   6078,
+   6137,
+   6431,
+   6993,
+   7422,
+   8132
+  ],
+  "capture_s": 199.9
+ },
+ "timing_s": {
+  "elicit": 6.6,
+  "screen": 136.9,
+  "select": 1939.7,
+  "test": 11525.7
+ },
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-4B",
+  "notebook": "discover_math500_4b_colab.ipynb",
+  "gpu": "Colab L4",
+  "note": "Copied from the run folder (the notebook's FINALES copy cell was not run). The Colab copy of discover_math500_blind.py had the grade_math first_window_hit fix applied before elicit; freeze hashed that copy."
+ },
+ "_postmortem": {
+  "added": "2026-11-19, after the run, from the run folder's outputs_*.jsonl (repeated-16-gram flags, lr.dup_flags)",
+  "why_no_loops": "The 64-problem pilot (pilot_math500_4b.py) decoded greedy (temperature 0, no presence penalty): 39.1% strict loop_killed. This run uses lr.SAMPLING (T 0.6, top_p 0.95, top_k 20, presence_penalty 1.5), Qwen's recommended setting; with it the 4B hard-loops on 1/137 test problems (0/100 elicit at 8k).",
+  "truncated_are_not_loops": {
+   "test_base_truncated": 22,
+   "test_base_truncated_tail2000_repeat_frac_quantiles_0_25_50_75_100": [
+    0.02,
+    0.03,
+    0.05,
+    0.09,
+    0.15
+   ],
+   "test_base_finished_tail2000_repeat_frac_median": 0.037,
+   "elicit_truncated": 33,
+   "elicit_truncated_tail2000_repeat_frac_median": 0.04,
+   "caveat": "the 16-gram detector cannot see paraphrased cycling; the text of truncated responses was not read"
+  },
+  "soft_loop_rule_is_not_a_failure_signal": {
+   "test_base_soft_any": 70,
+   "of_n": 137,
+   "note": "50/64-token soft repetition shows up in finished, correct answers too"
+  },
+  "dev_selection": "all 3 screen finalists scored below base on dev (53-56% vs 65.6%, truncation 44-47% vs 31%); the pipeline has no 'no patch' option, so it still froze L14_n256_a12",
+  "verdict": "No test of the screen or the fix: with the recommended sampling the 4B does not loop on MATH-500. wsi MoI ties base (0.0, 2/2); random direction is +3.6 over wsi (CI [-7.3, 0.0]), i.e. the blind edit is no better than random here."
+ }
+}
