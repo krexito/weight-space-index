@@ -127,7 +127,9 @@ def _spearman(xs: list[float], ys: list[float]) -> float:
 def grade(rows: list[dict], search: dict) -> dict:
     names = [r["name"] for r in rows]
     rank = {n: i + 1 for i, n in enumerate(names)}
-    r1, r2 = search["round1"], search.get("round2", {})
+    # a search over a bigger grid (discover_blind's 60) has configs outside these 12: grade on the shared ones
+    r1 = {k: v for k, v in search["round1"].items() if k in rank}
+    r2 = {k: v for k, v in search.get("round2", {}).items() if k in rank}
     common = [r for r in rows if r["name"] in r1]
     res = {"n_configs": len(rows),
            "spearman_pareto_vs_r1_acc": _spearman([r["pareto_score"] for r in common],
@@ -141,7 +143,8 @@ def grade(rows: list[dict], search: dict) -> dict:
            "round2_in_screen_top6": sum(rank[n] <= 6 for n in r2)}
     best_r1 = max(r1, key=lambda k: blind.score_key(r1[k]))
     res["round1_best"] = {"name": best_r1, "screen_rank": rank[best_r1]}
-    if "choice" in search:
+    res["round2_outside_grid"] = sorted(set(search.get("round2", {})) - set(r2))
+    if "choice" in search and search["choice"]["name"] in rank:
         ch = search["choice"]["name"]
         res["choice"] = {"name": ch, "screen_rank": rank[ch], f"in_top{TOP}": rank[ch] <= TOP,
                          "chance_in_top": round(TOP / len(rows), 3)}
