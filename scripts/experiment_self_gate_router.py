@@ -155,6 +155,41 @@ def evaluate(scores_a: list[np.ndarray], seqs_a: list[dict], scores_b: list[np.n
             "normal_answers_fired": round(float(np.mean(normal_fired)), 4) if normal_fired else None}
 
 
+VETO_FPRS = (0.01, 0.05, 0.10, 0.20)
+
+
+def veto(scores_a: list[np.ndarray], seqs_a: list[dict], scores_b: list[np.ndarray], seqs_b: list[dict]) -> dict:
+    """Text detector proposes, self-gate confirms: the patch switches on at the first token t >= text fire whose
+    smoothed score passes the threshold. Thresholds at several token false-alarm rates on half-A normal tokens."""
+    sm_a = [smooth(s) for s in scores_a]
+    pa = np.concatenate([s[q["label"] == 1] for s, q in zip(sm_a, seqs_a)] or [np.zeros(0)])
+    na = np.concatenate([s[q["label"] == 0] for s, q in zip(sm_a, seqs_a)] or [np.zeros(0)])
+    sign = 1.0 if auc(pa, na) >= 0.5 else -1.0
+    sm_b = [sign * smooth(s) for s in scores_b]
+    out = {}
+    for fpr in VETO_FPRS:
+        thr = float(np.quantile(sign * na, 1 - fpr)) if len(na) else float("inf")
+        caught, delay, after_onset, normal_on = [], [], [], []
+        for s, q in zip(sm_b, seqs_b):
+            on = None
+            if q["fire"] is not None:
+                hit = np.flatnonzero(s[q["fire"]:] > thr)
+                on = int(q["fire"] + hit[0]) if len(hit) else None
+            if q["looping"]:
+                caught.append(on is not None)
+                if on is not None:
+                    delay.append(on - q["fire"])
+                    after_onset.append(on - q["onset"])
+            else:
+                normal_on.append(on is not None)
+        out[str(fpr)] = {"loops_caught": round(float(np.mean(caught)), 4) if caught else None,
+                         "median_delay_after_text": float(np.median(delay)) if delay else None,
+                         "median_on_after_onset": float(np.median(after_onset)) if after_onset else None,
+                         "normal_answers_on": round(float(np.mean(normal_on)), 4) if normal_on else None,
+                         "n_normal": len(normal_on)}
+    return out
+
+
 def text_router_metrics(seqs: list[dict]) -> dict:
     loop = [q for q in seqs if q["looping"]]
     normal = [q for q in seqs if not q["looping"]]
@@ -225,12 +260,15 @@ def main() -> None:
     res = {"model": cfg.get("model_repo") or a.model, "patch": Path(a.patch).name, "work": work.name,
            "n_half_a": len(half_a), "n_half_b": len(half_b),
            "loop_rate_b": round(float(np.mean([q["looping"] for q in half_b])), 4),
-           "text_router": text_router_metrics(half_b), "self_gate": {}, "random": {}, "probe_by_layer": {}}
+           "text_router": text_router_metrics(half_b), "self_gate": {}, "random": {}, "probe_by_layer": {},
+           "veto": {}}
     for name in dirs:
         fam = "self_gate" if name.startswith("self_") else "random"
         for kind in ("cos", "dot"):
             k = f"{name}_{kind}"
             res[fam][k] = evaluate([r[k] for r in raw_a], half_a, [r[k] for r in raw_b], half_b)
+            if kind == "cos":
+                res["veto"][k] = veto([r[k] for r in raw_a], half_a, [r[k] for r in raw_b], half_b)
     for kind in ("cos", "dot"):  # all edited modules together: sum of z-scores, each oriented by its half-A sign
         names = [n for n in dirs if n.startswith("self_")]
         stats = {n: (np.concatenate([r[f"{n}_{kind}"] for r in raw_a]).mean(),
@@ -239,6 +277,8 @@ def main() -> None:
         comb = lambda rs: [sum(stats[n][2] * (r[f"{n}_{kind}"] - stats[n][0]) / stats[n][1] for n in names)  # noqa: E731
                            for r in rs]
         res["self_gate"][f"all_modules_{kind}"] = evaluate(comb(raw_a), half_a, comb(raw_b), half_b)
+        if kind == "cos":
+            res["veto"]["all_modules_cos"] = veto(comb(raw_a), half_a, comb(raw_b), half_b)
     for li in range(n_layers):
         res["probe_by_layer"][str(li + 1)] = evaluate([p[li] for p in probe_a], half_a,
                                                       [r["probe"][li] for r in raw_b], half_b)
@@ -256,6 +296,11 @@ def main() -> None:
             [(n, v) for n, v in res["random"].items() if n.endswith("_cos")]:
         print(f"{k:28s} AUC {v['auc']:.3f} | caught {v['loops_caught']} | lead vs text {v['median_lead_vs_text_router']} | "
               f"normal fired {v['normal_answers_fired']}")
+    print("veto (text proposes, patch direction confirms) at token false-alarm rate:")
+    for k, v in res["veto"].items():
+        for fpr, m in v.items():
+            print(f"  {k:36s} fpr {fpr:>4s} | loops on {m['loops_caught']} | normal on {m['normal_answers_on']} "
+                  f"(text alone {res['text_router']['normal_answers_fired']}) | delay {m['median_delay_after_text']} tok")
     print("saved", a.out)
 
 

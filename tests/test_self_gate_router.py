@@ -59,3 +59,8 @@ def test_runs_end_to_end(tmp_path):
     # a probe fitted on these synthetic loops separates them perfectly; the text router catches every loop
     assert r["probe_best"]["auc"] > 0.9
     assert r["text_router"]["loops_caught"] == 1.0
+    v = r["veto"]["all_modules_cos"]
+    assert set(v) == {"0.01", "0.05", "0.1", "0.2"}
+    # a confirmation step can only switch on fewer answers than the text detector alone
+    for m in v.values():
+        assert m["normal_answers_on"] <= r["text_router"]["normal_answers_fired"]
