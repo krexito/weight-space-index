@@ -101,6 +101,7 @@ def test_surgical_refusal_smoke_trihybrid_and_anti_backdoor(tmp_path) -> None:
     sg = res["safety_gate"]
     assert sg is not None and sg["threshold"] == 0.90 and isinstance(sg["passed"], bool)
     assert sg["safety_routed_passed"] is True
+    assert res["discovery"]["discovery_gen_window"] == 64
     dumped = json.dumps(res)
     assert "unsafe synthetic prompt" not in dumped and "unsafe cal prompt" not in dumped
 
@@ -108,6 +109,11 @@ def test_surgical_refusal_smoke_trihybrid_and_anti_backdoor(tmp_path) -> None:
 def test_trim_gen_ids_and_batch_probe_fallback() -> None:
     assert sr._trim_gen_ids([10, 11, 2, 0, 0], eos_id=2, pad_id=0) == [10, 11]
     assert sr._trim_gen_ids([10, 11, 0, 0], eos_id=2, pad_id=0) == [10, 11]
+
+    c_ids, c_span = sr._clip_row_for_discovery({"prompt_ids": [1, 2], "gen_ids": list(range(100))}, 64)
+    assert len(c_ids) == 66 and c_span == (2, 66)
+    f_ids, f_span = sr._clip_row_for_discovery({"prompt_ids": [1, 2], "gen_ids": list(range(100))}, 0)
+    assert len(f_ids) == 102 and f_span == (2, 102)
 
     # 1. Equal-length prompts on _TinyLFM3ToyLM -> cannot verify left-padding -> returns 1
     toy = sr._TinyLFM3ToyLM().eval()

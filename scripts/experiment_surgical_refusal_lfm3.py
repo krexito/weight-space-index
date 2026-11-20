@@ -913,6 +913,14 @@ def _evaluate_arm(
 
 
 # ------------------------------------------------------------------ Shared discovery pipeline (real GPU + CPU smoke)
+def _clip_row_for_discovery(row: dict[str, Any], max_gen: int) -> tuple[list[int], tuple[int, int]]:
+    """Return ``(full_ids, (prompt_len, full_len))`` capping generated tokens to ``max_gen`` (0 = full)."""
+    p_ids = list(row["prompt_ids"])
+    g_ids = list(row["gen_ids"][:max_gen]) if max_gen > 0 else list(row["gen_ids"])
+    full = p_ids + g_ids
+    return full, (len(p_ids), len(full))
+
+
 def _run_pipeline(
     model: nn.Module,
     tok: Any,
@@ -930,6 +938,7 @@ def _run_pipeline(
     toxic_cal_prompts: list[dict[str, str]] | list[str] | None = None,
     safety_patch_out_path: Path | None = None,
     batch_size: int = 1,
+    discovery_gen_window: int = 64,
     candidate_alphas: tuple[float, ...] = (1.0, 2.0, 4.0, 6.0),
 ) -> dict[str, Any]:
     t_all = time.perf_counter()
@@ -985,18 +994,11 @@ def _run_pipeline(
             },
         }
 
-    # Finish base evaluation on remaining OR-Bench + benign controls
+    # Finish base evaluation on remaining OR-Bench + controls batched identically per split (`ctrl_a` vs `ctrl_b`)
     rem_out = _generate_texts(
         model, tok, [x["formatted"] for x in or_items[pilot_n:]], dev, max_new_tokens=max_new_tokens, batch_size=eff_bs
     )
     base_or_all = pilot_out + rem_out
-    base_ctrl_all = _generate_texts(
-        model, tok, [x["formatted"] for x in ctrl_items], dev, max_new_tokens=max_new_tokens, batch_size=eff_bs
-    )
-    print(
-        f"[base] Generated {len(or_items) - pilot_n} remaining OR-Bench + {len(ctrl_items)} benign controls",
-        flush=True,
-    )
 
     # Stratified 50/50 split into Half-A (discover) and Half-B (held-out test)
     ref_indices = [i for i, r in enumerate(base_or_all) if r["refused"]]
@@ -1006,9 +1008,29 @@ def _run_pipeline(
     ctrl_a_idx = list(range(0, len(ctrl_items), 2))
     ctrl_b_idx = list(range(1, len(ctrl_items), 2))
 
+    ctrl_a_rows = _generate_texts(
+        model,
+        tok,
+        [ctrl_items[i]["formatted"] for i in ctrl_a_idx],
+        dev,
+        max_new_tokens=max_new_tokens,
+        batch_size=eff_bs,
+    )
+    base_ctrl_b = _generate_texts(
+        model,
+        tok,
+        [ctrl_items[i]["formatted"] for i in ctrl_b_idx],
+        dev,
+        max_new_tokens=max_new_tokens,
+        batch_size=eff_bs,
+    )
+    print(
+        f"[base] Generated {len(or_items) - pilot_n} remaining OR-Bench + {len(ctrl_a_rows)}+{len(base_ctrl_b)} benign controls",
+        flush=True,
+    )
+
     or_a_ref_rows = [base_or_all[i] for i in or_a_idx if base_or_all[i]["refused"]]
     or_a_prompt_ids = [r["prompt_ids"] for r in or_a_ref_rows] or [base_or_all[i]["prompt_ids"] for i in or_a_idx]
-    ctrl_a_rows = [base_ctrl_all[i] for i in ctrl_a_idx]
     ctrl_a_prompt_ids = [r["prompt_ids"] for r in ctrl_a_rows]
 
     # 2. Classic brute-force all-layers baseline (fit strictly on Half-A)
@@ -1039,20 +1061,22 @@ def _run_pipeline(
     if not trace_rows:
         trace_rows = [base_or_all[i] for i in or_a_idx if len(base_or_all[i]["gen_ids"]) >= 2][:n_causal_traces]
 
-    traces = [
-        capture_causal_trace(
-            model,
-            r["full_ids"],
-            target_span=(len(r["prompt_ids"]), len(r["full_ids"])),
-            healthy_span=(0, len(r["prompt_ids"])),
-            grad_mode="summary",
-            grad_checkpointing=True,
-            top_k_mlp=32,
-            top_k_attn=0,
-            capture_cache=False,
+    traces = []
+    for r in trace_rows:
+        t_ids, t_span = _clip_row_for_discovery(r, discovery_gen_window)
+        traces.append(
+            capture_causal_trace(
+                model,
+                t_ids,
+                target_span=t_span,
+                healthy_span=(0, len(r["prompt_ids"])),
+                grad_mode="summary",
+                grad_checkpointing=True,
+                top_k_mlp=32,
+                top_k_attn=0,
+                capture_cache=False,
+            )
         )
-        for r in trace_rows
-    ]
     causal_diag = diagnose_causal_traces(traces, split_ab=(len(traces) >= 2), top_k_sites=6, top_n_neurons=64)
 
     # Assemble deduplicated candidate union: Causal Proposers + Passive Refusal-Direction Proposers
@@ -1113,9 +1137,10 @@ def _run_pipeline(
             ]
             candidate_grid[cname] = MoIPatch(edits=edits, meta={"name": cname})
 
-    screen_healthy = [r["full_ids"] for r in ctrl_a_rows[: min(8, len(ctrl_a_rows))]]
-    screen_target = [r["full_ids"] for r in trace_rows[: min(8, len(trace_rows))]]
-    screen_spans = [(len(r["prompt_ids"]), len(r["full_ids"])) for r in trace_rows[: min(8, len(trace_rows))]]
+    screen_healthy = [_clip_row_for_discovery(r, discovery_gen_window)[0] for r in ctrl_a_rows[: min(8, len(ctrl_a_rows))]]
+    clipped_targets = [_clip_row_for_discovery(r, discovery_gen_window) for r in trace_rows[: min(8, len(trace_rows))]]
+    screen_target = [x[0] for x in clipped_targets]
+    screen_spans = [x[1] for x in clipped_targets]
 
     t_scr = time.perf_counter()
     screened = screen_patch_candidates(
@@ -1231,7 +1256,6 @@ def _run_pipeline(
     or_b_rows = [or_items[i] for i in or_b_idx]
     ctrl_b_rows = [ctrl_items[i] for i in ctrl_b_idx]
     base_or_b = [base_or_all[i] for i in or_b_idx]
-    base_ctrl_b = [base_ctrl_all[i] for i in ctrl_b_idx]
     base_toxic = (
         _generate_texts(
             model,
@@ -1424,6 +1448,7 @@ def _run_pipeline(
             "winner": winner_name,
             "winner_modules": [e.module for e in surgical_patch.edits],
             "winner_alpha": float(surgical_patch.edits[0].alpha),
+            "discovery_gen_window": int(discovery_gen_window),
             "n_candidates_screened": len(candidate_grid),
             "top5_screened": screened[:5],
             "causal_top3": causal_diag["sites"][:3],
@@ -1709,6 +1734,12 @@ def main() -> None:
         help="Disjoint OR-Bench-Toxic prompts used ONLY to calibrate the 5th arm wsi_safety_routed veto router (0 disables Arm 5)",
     )
     ap.add_argument("--n-causal-traces", type=int, default=10)
+    ap.add_argument(
+        "--discovery-gen-window",
+        type=int,
+        default=64,
+        help="Cap generated tokens used for causal trace & screening to refusal onset window (0 = full response)",
+    )
     ap.add_argument("--max-new-tokens", type=int, default=256)
     ap.add_argument("--batch-size", type=int, default=16, help="Max left-padded batch size (auto-verified bit-exact vs bs=1; 1 forces unpadded)")
     ap.add_argument("--strict-system", default=None, help="Optional system prompt to test overly strict refusal calibration")
@@ -1743,6 +1774,7 @@ def main() -> None:
         toxic_cal_prompts=toxic_cal,
         safety_patch_out_path=Path(args.safety_patch_out),
         batch_size=args.batch_size,
+        discovery_gen_window=args.discovery_gen_window,
     )
     payload["model"] = args.model
     payload["dtype"] = str(dtype)
