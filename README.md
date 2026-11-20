@@ -274,6 +274,16 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >
 >   `obs+recon` closes 42% / 27% / 11% of the remaining gap to the full model at 70 / 50 / 30%. Without the refit, pairwise selection is worse than `energy` (`obs` alone): it keeps neurons that only make sense once their partner's job is moved onto them. HOPE (arXiv 2609.18916) selects with pairwise terms but never compensates; this is the two combined. WikiText ppl improves at 70% and 50% (`50.4` vs `53.4`, `79.6` vs `82.6`) but is worse at 30% (`162` vs `137`). The selection pass takes `105` s for 24 layers on an L4. Still teacher-forced perplexity on 60 sequences, not task accuracy.
 >
+>   **In accuracy, pairwise selection only ties** ([`results`](./benchmarks/index_criteria/results_task_index_obs_lfm3_colab_l4.json), Colab L4). Both indexes on LiquidAI/LFM3-1.7B, matrices physically shrunk, 400 GSM8K problems, paired (full model `84.75%`):
+>
+>   | Neurons kept | `energy+recon` | `obs+recon` | obs − energy (95% CI) | only obs / only energy |
+>   |---|---|---|---|---|
+>   | 70% | `80.25%` | `82.0%` | `+1.75` [`−1.75`, `+5.5`] | 30 / 23 |
+>   | 50% | `66.0%` | `68.75%` | `+2.75` [`−1.75`, `+7.25`] | 49 / 38 |
+>   | 30% | `36.5%` | `37.75%` | `+1.25` [`−3.5`, `+6.0`] | 52 / 47 |
+>
+>   Ahead at every budget but no interval excludes 0, and on LFM3 its math perplexity is slightly worse (`33.6` vs `32.8` at 70%), the opposite of Qwen3.5-0.8B. `energy+recon` stays the default (simpler, no greedy pass); `obs` remains an option.
+>
 >   **How small can the compensation summary be?** The full covariance is `1.23 GB` (24 layers × `3584²` fp32). Keeping the `energy` selection fixed and varying only the covariance used for the refit (`experiment_gram_compress.py`, [`results`](./benchmarks/gram_compress/results_colab_l4.json)), math ppl:
 >
 >   | Stored summary | Size | 50% kept | 30% kept |
