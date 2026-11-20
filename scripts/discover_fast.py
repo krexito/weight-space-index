@@ -319,6 +319,28 @@ def cmd_diagnose(a) -> None:
     print("layer rank:", rank)
 
 
+def spec_config_from_env() -> dict | None:
+    """Optional speculative decoding config from $WSI_SPEC ('mtp', 'ngram', 'suffix')."""
+    spec = os.environ.get("WSI_SPEC", "").strip().lower()
+    if not spec:
+        return None
+    if spec == "mtp":
+        return {"method": "mtp", "num_speculative_tokens": int(os.environ.get("WSI_SPEC_TOKENS", "2"))}
+    if spec == "ngram":
+        return {
+            "method": "ngram",
+            "num_speculative_tokens": int(os.environ.get("WSI_SPEC_TOKENS", "8")),
+            "prompt_lookup_max": int(os.environ.get("WSI_SPEC_NGRAM_MAX", "4")),
+        }
+    if spec == "suffix":
+        return {
+            "method": "suffix",
+            "num_speculative_tokens": int(os.environ.get("WSI_SPEC_TOKENS", "16")),
+            "suffix_decoding_max_cached_requests": int(os.environ.get("WSI_SPEC_SUFFIX_CACHE", "2000")),
+        }
+    raise SystemExit(f"WSI_SPEC={spec!r}: supported methods are 'mtp', 'ngram', 'suffix'")
+
+
 # ------------------------------------------------------------------ generation: one vLLM, many jobs
 def _llm(model: str, cfg: dict, max_len: int, dtype: str, gpu_mem: float):
     os.environ.setdefault("VLLM_ALLOW_INSECURE_SERIALIZATION", "1")  # apply_model sends a function to the worker
@@ -334,13 +356,19 @@ def _llm(model: str, cfg: dict, max_len: int, dtype: str, gpu_mem: float):
     proc = loop_kill_v2.processor()
     if proc is not None:
         extras["logits_processors"] = [proc]
-    for drop in ([], ["limit_mm_per_prompt"], ["logits_processors"], ["limit_mm_per_prompt", "logits_processors"]):
+    spec_cfg = spec_config_from_env()
+    if spec_cfg is not None:
+        base_kw["speculative_config"] = spec_cfg
+    drop_order = [[], ["limit_mm_per_prompt"], ["logits_processors"], ["limit_mm_per_prompt", "logits_processors"]]
+    if spec_cfg is not None and proc is not None:
+        drop_order = [d for d in drop_order if "logits_processors" not in d]
+    for drop in drop_order:
         kw = {**base_kw, **{k: v for k, v in extras.items() if k not in drop}}
         try:
             llm = LLM(**kw)
             kill = "logits_processors" in kw
             print(f"[gen] vLLM options: text_only={'limit_mm_per_prompt' in kw} early_loop_stop={kill} "
-                  f"({getattr(proc, '__name__', None)})", flush=True)
+                  f"({getattr(proc, '__name__', None)}) spec={kw.get('speculative_config')}", flush=True)
             return llm, kill
         except Exception as e:  # noqa: BLE001
             print(f"[gen] vLLM refused {sorted(set(extras) - set(drop))}: {type(e).__name__}: {str(e)[:300]}",

@@ -124,3 +124,46 @@ def test_llm_fast_mtp_never_drops_the_loop_kill(monkeypatch):
     calls.clear()
     _, kill = m._llm_fast("x", {"base_dir": "x", "seed": 0}, 1024, "auto", 0.9)
     assert kill
+
+
+def test_spec_config_from_env(monkeypatch):
+    import discover_fast as fast
+
+    monkeypatch.delenv("WSI_SPEC", raising=False)
+    assert fast.spec_config_from_env() is None
+
+    monkeypatch.setenv("WSI_SPEC", "mtp")
+    monkeypatch.delenv("WSI_SPEC_TOKENS", raising=False)
+    assert fast.spec_config_from_env() == {"method": "mtp", "num_speculative_tokens": 2}
+
+    monkeypatch.setenv("WSI_SPEC", "ngram")
+    monkeypatch.setenv("WSI_SPEC_TOKENS", "6")
+    monkeypatch.setenv("WSI_SPEC_NGRAM_MAX", "5")
+    assert fast.spec_config_from_env() == {"method": "ngram", "num_speculative_tokens": 6, "prompt_lookup_max": 5}
+
+    monkeypatch.setenv("WSI_SPEC", "suffix")
+    monkeypatch.setenv("WSI_SPEC_TOKENS", "12")
+    monkeypatch.setenv("WSI_SPEC_SUFFIX_CACHE", "500")
+    assert fast.spec_config_from_env() == {
+        "method": "suffix",
+        "num_speculative_tokens": 12,
+        "suffix_decoding_max_cached_requests": 500,
+    }
+
+    monkeypatch.setenv("WSI_SPEC", "bogus")
+    with pytest.raises(SystemExit):
+        fast.spec_config_from_env()
+
+
+@pytest.mark.parametrize("method", ["ngram", "suffix"])
+def test_llm_fast_ngram_and_suffix_keep_loop_kill(monkeypatch, method):
+    calls = _fake_vllm(monkeypatch)
+    monkeypatch.setenv("WSI_SPEC", method)
+    _, kill = m._llm_fast("x", {"base_dir": "x", "seed": 0}, 1024, "auto", 0.9)
+    assert kill and calls[-1]["speculative_config"]["method"] == method
+    assert calls[-1]["logits_processors"] == ["KILL"]
+
+    calls = _fake_vllm(monkeypatch, refuse=lambda kw: "logits_processors" in kw and "speculative_config" in kw)
+    with pytest.raises(SystemExit):
+        m._llm_fast("x", {"base_dir": "x", "seed": 0}, 1024, "auto", 0.9)
+    assert all("logits_processors" in kw for kw in calls)

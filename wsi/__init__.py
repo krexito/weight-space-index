@@ -21,6 +21,14 @@ from .compare import (
 from .indexer import build_index
 from .moipatch import Edit, MoIPatch, PatchHandle, RoutedPatchHandle
 from .query import WeightSpaceIndex, load_index
+from .spec_eval import (
+    SuffixDraftIndex,
+    capture_base_drafts,
+    evaluate_patches_speculative,
+    greedy_generate_reference,
+    load_base_drafts_jsonl,
+    speculative_generate_with_base,
+)
 from .tracer import (
     CompactTrace,
     capture_compact,
@@ -49,8 +57,10 @@ __all__ = [
     "PatchHandle",
     "RoutedPatchHandle",
     "SelectiveMoI",
+    "SuffixDraftIndex",
     "TaskRouter",
     "apply_selection",
+    "capture_base_drafts",
     "capture_compact",
     "capture_index",
     "dequantize_block_fp4",
@@ -59,15 +69,19 @@ __all__ = [
     "diff_compact",
     "diff_traces",
     "discover_compact_circuit",
+    "evaluate_patches_speculative",
     "find_mlps",
     "gradient_screen_candidates",
+    "greedy_generate_reference",
     "hadamard_transform",
+    "load_base_drafts_jsonl",
     "quantization_error",
     "quantize_block_fp4",
     "quantize_block_int4",
     "quantize_block_ternary",
     "resolve_mlp_idx_mode",
     "screen_patch_candidates",
+    "speculative_generate_with_base",
     "trace_all",
     "DynamicCircuitPager",
     "MixtureOfIndexes",

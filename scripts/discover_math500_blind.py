@@ -140,14 +140,10 @@ def _llm_fast(model: str, cfg: dict, max_len: int, dtype: str, gpu_mem: float):
     proc = loop_kill_v2.processor()
     if proc is not None:
         extras["logits_processors"] = [proc]
-    # WSI_SPEC=mtp: Qwen3.5's own MTP heads as speculative decoding (1.5x decode on the L4 bench). Same output
-    # distribution in theory; check accuracy and loop rate against a run without it before trusting it.
-    spec = os.environ.get("WSI_SPEC", "").strip().lower()
-    if spec:
-        if spec != "mtp":
-            raise SystemExit(f"WSI_SPEC={spec!r}: only 'mtp' is supported")
-        base_kw["speculative_config"] = {"method": "mtp",
-                                         "num_speculative_tokens": int(os.environ.get("WSI_SPEC_TOKENS", "2"))}
+    # WSI_SPEC=mtp|ngram|suffix: speculative decoding with guaranteed early-loop-stop guard.
+    spec_cfg = fast.spec_config_from_env()
+    if spec_cfg is not None:
+        base_kw["speculative_config"] = spec_cfg
 
     # Try full fast config first; progressively drop optional speed flags, keeping logits_processors as long as possible
     drop_order = [
@@ -160,7 +156,7 @@ def _llm_fast(model: str, cfg: dict, max_len: int, dtype: str, gpu_mem: float):
         ["async_scheduling", "kv_cache_dtype", "max_num_batched_tokens", "max_num_seqs", "enable_chunked_prefill", "logits_processors"],
         ["async_scheduling", "kv_cache_dtype", "max_num_batched_tokens", "max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt", "logits_processors"],
     ]
-    if spec and proc is not None:
+    if spec_cfg is not None and proc is not None:
         # never trade the early loop stop for speed: with it off, every loop runs to the token cap (#13: 9 h)
         drop_order = [d for d in drop_order if "logits_processors" not in d]
     for drop in drop_order:
