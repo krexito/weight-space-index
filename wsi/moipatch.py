@@ -118,7 +118,10 @@ class MoIPatch:
         router = None
         if self.router:
             tensors["router.dir"] = torch.as_tensor(self.router["dir"]).float().cpu().contiguous()
-            router = {k: v for k, v in self.router.items() if k != "dir"}
+            router = {k: v for k, v in self.router.items() if k not in ("dir", "veto_dir")}
+            if self.router.get("veto_dir") is not None:
+                tensors["router.veto_dir"] = torch.as_tensor(self.router["veto_dir"]).float().cpu().contiguous()
+                router["has_veto"] = True
         manifest = {"format": FORMAT, "edits": edits, "router": router, "gates": self.gates, "meta": self.meta}
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -140,7 +143,11 @@ class MoIPatch:
                                   base_sha256=e["base_sha256"], base_dtype=e["base_dtype"], shape=tuple(e["shape"])))
             router = manifest.get("router")
             if router is not None:
-                router = dict(router, dir=f.get_tensor("router.dir"))
+                has_veto = bool(router.get("has_veto")) or ("router.veto_dir" in f.keys())
+                router = {k: v for k, v in router.items() if k != "has_veto"}
+                router["dir"] = f.get_tensor("router.dir")
+                if has_veto:
+                    router["veto_dir"] = f.get_tensor("router.veto_dir")
         return cls(edits=edits, router=router, gates=manifest.get("gates", []), meta=manifest.get("meta", {}))
 
     # ------------------------------------------------------------------ fingerprint from a checkpoint (no model load)
@@ -235,18 +242,23 @@ class MoIPatch:
             verify_fingerprint=verify_fingerprint,
         )
 
-    def router_score(self, hidden_states) -> torch.Tensor:
-        """hidden_states: the tuple from output_hidden_states=True (or the [B, T, D] tensor of the router layer).
-        Returns h_last . dir for each sequence (left padding assumed, so the last position is the last token)."""
+    def _router_last_hidden(self, hidden_states) -> torch.Tensor:
         if self.router is None:
             raise ValueError("this patch has no router")
         h = hidden_states[self.router["layer"]] if isinstance(hidden_states, (tuple, list)) else hidden_states
-        h = h[:, -1] if h.dim() == 3 else h
-        return h.float().cpu() @ self.router["dir"].float()
+        return (h[:, -1] if h.dim() == 3 else h).float().cpu()
+
+    def router_score(self, hidden_states) -> torch.Tensor:
+        """hidden_states: the tuple from output_hidden_states=True (or the [B, T, D] tensor of the router layer).
+        Returns h_last . dir for each sequence (left padding assumed, so the last position is the last token)."""
+        return self._router_last_hidden(hidden_states) @ self.router["dir"].float()
 
     def fires(self, hidden_states, confidence: float | torch.Tensor | None = None) -> torch.Tensor:
-        """Evaluate router decision, plus any answer_confidence gate if `confidence` is supplied."""
-        ok = self.router_score(hidden_states) > self.router["thr"]
+        """Evaluate router decision, optional safety veto, plus any answer_confidence gate if `confidence` is supplied."""
+        h_last = self._router_last_hidden(hidden_states)
+        ok = (h_last @ self.router["dir"].float()) > self.router["thr"]
+        if self.router.get("veto_dir") is not None and "veto_thr" in self.router:
+            ok = ok & ((h_last @ self.router["veto_dir"].float()) <= float(self.router["veto_thr"]))
         if confidence is not None:
             conf = torch.as_tensor(confidence, dtype=torch.float32).cpu()
             for g in self.gates:
@@ -265,6 +277,10 @@ class MoIPatch:
                          f"sha256 {e.base_sha256[:12]}...")
         if self.router:
             lines.append(f"  router: hidden_states[{self.router['layer']}] last token . dir > {self.router['thr']:.4g}")
+            if self.router.get("veto_dir") is not None and "veto_thr" in self.router:
+                lines.append(
+                    f"  router veto: hidden_states[{self.router['layer']}] last token . veto_dir <= {float(self.router['veto_thr']):.4g}"
+                )
         for g in self.gates:
             lines.append(f"  gate: {g.get('type')} > {g.get('thr')}  ({g.get('note', '')})")
         if m.get("policy"):
@@ -746,6 +762,9 @@ class RoutedPatchHandle:
         )
         self._rdir = patch.router["dir"].detach().float().cpu() if has_residual else None
         self._rthr = float(patch.router["thr"]) if has_residual else 0.0
+        has_veto = bool(has_residual and patch.router.get("veto_dir") is not None and "veto_thr" in patch.router)
+        self._vdir = patch.router["veto_dir"].detach().float().cpu() if has_veto else None
+        self._vthr = float(patch.router["veto_thr"]) if has_veto else 0.0
         if has_residual and threshold is not None:
             self._rthr = float(threshold)
         elif ngram_cfg is not None and threshold is not None:
@@ -943,6 +962,8 @@ class RoutedPatchHandle:
         h_last = _last_token_hidden(h, attention_mask).float().cpu()
         scores = h_last @ self._rdir
         fired = scores > self._rthr
+        if self._vdir is not None:
+            fired = fired & ((h_last @ self._vdir) <= self._vthr)
         if self._confidence is not None and self._conf_thr is not None:
             conf = torch.as_tensor(self._confidence, dtype=torch.float32).cpu()
             if conf.dim() == 0 or (conf.numel() == 1 and fired.numel() > 1):
@@ -1552,6 +1573,7 @@ def audit_moipatch(
         "fingerprint_ok": bool(fp_ok),
         "restore_exact_ok": bool(restore_ok),
         "has_router": patch.router is not None,
+        "has_router_veto": bool(patch.router and patch.router.get("veto_dir") is not None),
         "router_layer": patch.router.get("layer") if patch.router else None,
         "vocab_logit_lens": vocab_logit_lens,
         "output_logit_diff": output_logit_diff,

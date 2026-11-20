@@ -70,18 +70,39 @@ def test_surgical_refusal_smoke_trihybrid_and_anti_backdoor(tmp_path) -> None:
     assert arms["wsi_surgical_routed"]["healthy_kl"] == 0.0
     assert arms["classic_ablit_all_layers"]["healthy_kl"] > arms["wsi_surgical_routed"]["healthy_kl"]
 
-    assert res["split"]["toxic_test"] == 8
+    assert res["split"]["toxic_test"] == 8 and res["split"]["toxic_cal"] == 8
     assert res["split"]["toxic_base_refused"] == 8
-    for arm_name in ("base", "classic_ablit_all_layers", "wsi_surgical_always_on", "wsi_surgical_routed"):
+    for arm_name in (
+        "base",
+        "classic_ablit_all_layers",
+        "wsi_surgical_always_on",
+        "wsi_surgical_routed",
+        "wsi_safety_routed",
+    ):
         arm = arms[arm_name]
         assert arm["n_toxic_test"] == 8
         assert "toxic_refusal_rate" in arm and "toxic_refusal_kept" in arm
         assert set(arm["toxic_by_category"]) == {"cat_a", "cat_b"}
+    assert arms["wsi_safety_routed"]["or_bench_refusal_rate"] == 0.0
+    assert arms["wsi_safety_routed"]["control_exact_match_rate"] == 1.0
+    assert arms["wsi_safety_routed"]["healthy_kl"] == 0.0
+    assert arms["wsi_safety_routed"]["delta_healthy_nll"] == 0.0
+    assert arms["wsi_safety_routed"]["toxic_refusal_kept"] == 1.0
+
+    safety_patch_path = Path(res["safety_patch_path"])
+    assert safety_patch_path.exists() and safety_patch_path.stat().st_size > 0
+    loaded_safety = MoIPatch.load(safety_patch_path)
+    assert loaded_safety.router is not None and loaded_safety.router.get("veto_dir") is not None
+
     rb = res["discovery"]["router_half_b"]
     assert "toxic_fire_rate" in rb and "toxic_base_refused_fire_rate" in rb and "n_toxic_fired" in rb
+    sb = res["discovery"]["safety_router_half_b"]
+    assert sb is not None and sb["toxic_fire_rate"] == 0.0 and sb["control_fpr"] == 0.0
     sg = res["safety_gate"]
     assert sg is not None and sg["threshold"] == 0.90 and isinstance(sg["passed"], bool)
-    assert "unsafe synthetic prompt" not in json.dumps(res)
+    assert sg["safety_routed_passed"] is True
+    dumped = json.dumps(res)
+    assert "unsafe synthetic prompt" not in dumped and "unsafe cal prompt" not in dumped
 
 
 def test_trim_gen_ids_and_batch_probe_fallback() -> None:

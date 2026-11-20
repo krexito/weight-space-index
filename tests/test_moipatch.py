@@ -740,6 +740,55 @@ def test_audit_moipatch_structural_and_end_to_end() -> None:
         assert ca["max_abs_logit_diff_routed"] == 0.0
 
 
+def test_router_veto_save_load_fires_and_enable_routed() -> None:
+    torch.manual_seed(9)
+    model = _TinyRoutableLM(n_layers=4, hidden=16, inter=32, vocab=32).eval()
+    with torch.no_grad():
+        # Token 9 has trigger signal (coord 0 = +4) AND toxic veto signal (coord 4 = +4); token 7 has coord 4 = 0
+        model.model.embed_tokens.weight[9].zero_()
+        model.model.embed_tokens.weight[9, 0] = 4.0
+        model.model.embed_tokens.weight[9, 4] = 4.0
+
+    r_dir = torch.zeros(16)
+    r_dir[0] = 1.0
+    v_dir = torch.zeros(16)
+    v_dir[4] = 1.0
+    patch = MoIPatch(
+        edits=[Edit(module="layers.2.self_attn.o_proj", u=_unit_vec(16, 71), alpha=6.0)],
+        router={"layer": 1, "readout": "last_token", "dir": r_dir, "thr": 0.0, "veto_dir": v_dir, "veto_thr": 1.0},
+    )
+
+    with tempfile.TemporaryDirectory() as td:
+        out_p = Path(td) / "veto_test.moipatch"
+        patch.save(out_p)
+        loaded = MoIPatch.load(out_p)
+        assert loaded.router is not None and loaded.router.get("veto_dir") is not None
+        assert "router veto:" in loaded.describe()
+        rep = loaded.audit(model)
+        assert rep["has_router_veto"] is True and rep["fingerprint_ok"] is True
+
+        hs = [torch.zeros(3, 2, 16) for _ in range(4)]
+        hs[1][0, -1, 0] = -2.0                    # control -> score <= thr -> False
+        hs[1][1, -1, 0] = 2.0                     # benign trigger -> score > thr & veto <= thr -> True
+        hs[1][2, -1, 0] = 2.0                     # toxic trigger -> score > thr BUT veto > thr -> False
+        hs[1][2, -1, 4] = 3.0
+        assert loaded.fires(hs).tolist() == [False, True, False]
+
+        mixed_ids = torch.tensor([[2, 3, 1], [2, 3, 7], [2, 3, 9]], dtype=torch.long)
+        with torch.no_grad():
+            base_logits = model(mixed_ids).logits
+            with loaded.attach(model) as ph:
+                ph.on()
+                patched_logits = model(mixed_ids).logits
+            with loaded.enable_routed(model) as h:
+                routed_logits = model(mixed_ids).logits
+                assert h.stats["last_fired"] == [False, True, False]
+                assert h.stats["fired"] == 1
+                assert torch.equal(routed_logits[0], base_logits[0])
+                assert torch.allclose(routed_logits[1], patched_logits[1], atol=1e-4, rtol=1e-4)
+                assert torch.equal(routed_logits[2], base_logits[2])
+
+
 if __name__ == "__main__":
     test_moipatch_save_load_attach_and_restore()
     test_make_moipatch_sycophancy_and_cli()
@@ -751,4 +800,5 @@ if __name__ == "__main__":
     test_enable_routed_real_hf_llama_generate()
     test_enable_routed_always_on_and_fingerprint_rejection()
     test_audit_moipatch_structural_and_end_to_end()
+    test_router_veto_save_load_fires_and_enable_routed()
     print("ALL MOIPATCH TESTS PASSED!")
