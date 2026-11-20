@@ -469,7 +469,8 @@ def cmd_elicit(a) -> None:
     s = score_math(work, "requests_elicit.jsonl", "outputs_elicit.jsonl")
     print(f"elicit (MATH-500): accuracy={s['accuracy']:.1%}, loop_killed={s['loop_killed']:.1%}, truncated={s['truncated']:.1%}")
     fast.note_time(work, "elicit", time.perf_counter() - t0)
-    gate = {"loop_killed": s["loop_killed"], "min_loop_killed": a.min_loop_killed, "n": s["n"],
+    gate = {"loop_killed": s["loop_killed"], "accuracy": s["accuracy"], "truncated": s["truncated"],
+            "min_loop_killed": a.min_loop_killed, "n": s["n"],
             "passed": s["loop_killed"] >= a.min_loop_killed, "forced": bool(a.force)}
     (work / "gate_elicit.json").write_text(json.dumps(gate, indent=1))
     fast.sync(work)
