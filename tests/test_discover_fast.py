@@ -165,3 +165,60 @@ def test_loop_kill_stops_loops_soon_after_the_rule_and_leaves_others():
     exact = lr.first_window_hit(lr.dup_flags(loop[:T]), lr.KILL_WINDOW, lr.KILL_FRAC)
     assert exact is not None and 1 not in killed_at
     assert exact <= killed_at[0] <= exact + 8 + 2
+
+
+def test_loop_kill_works_under_speculative_decoding():
+    """MTP/ngram: each request owns spec_k + 1 logits rows, commits 1..spec_k + 1 tokens per step, and the token
+    buffer past the committed length holds draft junk. The loop must still be stopped on every one of its rows, the
+    normal request never, and the junk must not be read."""
+    torch = pytest.importorskip("torch")
+    import loop_kill_v2 as lk
+    import moi_loop_router_vllm as lr
+
+    P, T, V, EOS, K = 5, 3000, 50, 49, 2
+    rng = np.random.default_rng(1)
+    normal = list(rng.integers(0, 40, size=T + 10))
+    loop = (list(rng.integers(0, 40, size=400)) + list(rng.integers(0, 40, size=37)) * 80)[: T + 10]
+    seqs = {0: loop, 1: normal}
+    rs = _Fake(4, P + T + 20)
+    core = lk._LoopKillCore(rs, stride=4, spec_k=K)
+    on = SimpleNamespace(extra_args={"loop_kill_eos": EOS})
+    for s in (0, 1):
+        assert core.add_request(s, on)
+        rs.prompt_len.np[s] = P
+    junk = torch.tensor([7] * (K + 1))  # a repeated token: would look like a loop if it were ever read
+    done = {0: 0, 1: 0}
+    killed_at = {}
+    while min(done.values()) < T:
+        for s in (0, 1):
+            n = int(rng.integers(1, K + 2))  # tokens accepted this step
+            for t in range(done[s], min(done[s] + n, T)):
+                rs.all_token_ids.gpu[s, P + t] = seqs[s][t]
+            done[s] = min(done[s] + n, T)
+            rs.all_token_ids.gpu[s, P + done[s]: P + done[s] + K + 1] = junk  # this step's drafts
+        slots = np.array([1, 0])  # batch position -> slot
+        ctx = SimpleNamespace(idx_mapping_np=slots,
+                              seq_lens_upper_bound_np=np.array([P + done[1] + K, P + done[0] + K]),
+                              expanded_idx_mapping=torch.tensor([1] * (K + 1) + [0] * (K + 1)))
+        logits = core.apply(torch.zeros(2 * (K + 1), V), ctx)
+        rows0, rows1 = logits[K + 1:], logits[: K + 1]
+        if 0 not in killed_at and torch.isinf(rows0).any():
+            assert (rows0[:, EOS] == 0).all() and torch.isinf(rows0[:, :EOS]).all()  # every draft row of the loop
+            killed_at[0] = done[0]
+        assert not torch.isinf(rows1).any()  # the normal request is never touched
+        if 0 in killed_at:
+            break
+    exact = lr.first_window_hit(lr.dup_flags(loop[:T]), lr.KILL_WINDOW, lr.KILL_FRAC)
+    assert exact is not None and exact <= killed_at[0] <= exact + 4 * (K + 1) + K + 2
+
+
+def test_loop_kill_says_so_when_spec_rows_cannot_be_mapped(capsys):
+    torch = pytest.importorskip("torch")
+    import loop_kill_v2 as lk
+
+    rs = _Fake(2, 50)
+    core = lk._LoopKillCore(rs, spec_k=2)
+    core.add_request(0, SimpleNamespace(extra_args={"loop_kill_eos": 3}))
+    ctx = SimpleNamespace(idx_mapping_np=np.array([0]), seq_lens_upper_bound_np=np.array([10]))
+    out = core.apply(torch.zeros(3, 5), ctx)  # 3 rows, 1 request, no expanded_idx_mapping
+    assert not torch.isinf(out).any() and "early stop is OFF" in capsys.readouterr().out

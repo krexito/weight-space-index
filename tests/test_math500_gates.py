@@ -83,3 +83,44 @@ def test_test_step_runs_base_only_for_no_patch(work, monkeypatch):
     monkeypatch.setattr(m, "_run_fused_pair", lambda *a, **k: called.append("fused"))
     m.cmd_test(SimpleNamespace(work=str(work), ck_root=None))
     assert called == []
+
+
+def _fake_vllm(monkeypatch, refuse=lambda kw: False):
+    import types
+    calls = []
+
+    class LLM:
+        def __init__(self, **kw):
+            calls.append(kw)
+            if refuse(kw):
+                raise ValueError("refused")
+
+    monkeypatch.setitem(sys.modules, "vllm", types.SimpleNamespace(LLM=LLM))
+    import loop_kill_v2
+    monkeypatch.setattr(loop_kill_v2, "processor", lambda: "KILL")
+    monkeypatch.setattr(m, "_fp8_kv_ok", lambda: False)
+    return calls
+
+
+def test_llm_fast_mtp_switch(monkeypatch):
+    calls = _fake_vllm(monkeypatch)
+    monkeypatch.delenv("WSI_SPEC", raising=False)
+    m._llm_fast("x", {"base_dir": "x", "seed": 0}, 1024, "auto", 0.9)
+    assert "speculative_config" not in calls[-1]
+    monkeypatch.setenv("WSI_SPEC", "mtp")
+    llm, kill = m._llm_fast("x", {"base_dir": "x", "seed": 0}, 1024, "auto", 0.9)
+    assert kill and calls[-1]["speculative_config"] == {"method": "mtp", "num_speculative_tokens": 2}
+    assert calls[-1]["logits_processors"] == ["KILL"]
+
+
+def test_llm_fast_mtp_never_drops_the_loop_kill(monkeypatch):
+    # a vLLM that refuses MTP together with a logits processor: stop, do not silently run without early stop
+    calls = _fake_vllm(monkeypatch, refuse=lambda kw: "logits_processors" in kw and "speculative_config" in kw)
+    monkeypatch.setenv("WSI_SPEC", "mtp")
+    with pytest.raises(SystemExit):
+        m._llm_fast("x", {"base_dir": "x", "seed": 0}, 1024, "auto", 0.9)
+    assert all("logits_processors" in kw for kw in calls)
+    monkeypatch.delenv("WSI_SPEC")  # without MTP the old fallback still works
+    calls.clear()
+    _, kill = m._llm_fast("x", {"base_dir": "x", "seed": 0}, 1024, "auto", 0.9)
+    assert kill

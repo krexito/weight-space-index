@@ -13,6 +13,12 @@ holds (moi_loop_router_vllm.grade -> analyse -> first_window_hit), so the graded
 stop.
 
 Enable per request with SamplingParams(extra_args={"loop_kill_eos": <eos id>}).
+
+Speculative decoding (MTP, ngram): a request then owns one logits row per draft token, so rows no longer match
+requests. The processor maps rows to request slots with `ctx.expanded_idx_mapping` and forces EOS on every row of a
+stopped request (the first draft is then rejected and EOS is emitted). Token history is read only up to the
+committed length: `seq_lens_upper_bound_np` also counts this step's drafts, so the read stops `spec_k` tokens earlier.
+Before this, spec-decoding steps were skipped and early stop was silently off.
 """
 from __future__ import annotations
 
@@ -46,8 +52,10 @@ def _sync_ok():
 class _LoopKillCore:
     """Per-slot host state; the vLLM-free part, tested locally with a fake request state."""
 
-    def __init__(self, req_states, stride: int = STRIDE):
+    def __init__(self, req_states, stride: int = STRIDE, spec_k: int = 0):
         self.rs = req_states
+        self.spec_k = int(spec_k)  # draft tokens per step (0 = no speculative decoding)
+        self.warned = False
         n = req_states.max_num_reqs
         self.on = np.zeros(n, dtype=bool)
         self.hit = np.zeros(n, dtype=bool)
@@ -80,7 +88,7 @@ class _LoopKillCore:
         """New committed response tokens of each slot since the last read (the newest token is left for later)."""
         p = self.rs.prompt_len.np[slots].astype(np.int64)
         start = p + np.array([len(self.toks[int(s)]) for s in slots], dtype=np.int64)
-        end = cur.astype(np.int64) - 1
+        end = cur.astype(np.int64) - 1 - self.spec_k  # only committed tokens (the upper bound counts drafts)
         n = np.maximum(end - start, 0)
         if n.max(initial=0) == 0:
             return [[] for _ in slots]
@@ -101,7 +109,7 @@ class _LoopKillCore:
         if live.size == 0:
             return
         p_live = self.rs.prompt_len.np[live].astype(np.int64)
-        ready = (cur_live.astype(np.int64) - 1 - p_live) >= lr.KILL_WINDOW
+        ready = (cur_live.astype(np.int64) - 1 - self.spec_k - p_live) >= lr.KILL_WINDOW
         live, cur_live = live[ready], cur_live[ready]
         if live.size == 0:
             return
@@ -117,19 +125,40 @@ class _LoopKillCore:
     def apply(self, logits, ctx):
         slots = np.asarray(ctx.idx_mapping_np)
         rows = np.flatnonzero(self.on[slots])
-        if rows.size == 0 or logits.shape[0] != slots.shape[0]:  # nothing to do, or speculative decoding rows
+        if rows.size == 0:
+            return logits
+        spec_rows = logits.shape[0] != slots.shape[0]
+        expanded = getattr(ctx, "expanded_idx_mapping", None)
+        if spec_rows and expanded is None:  # an older vLLM without the row -> slot map: cannot stop, say so once
+            if not self.warned:
+                print("[loop_kill_v2] speculative decoding rows without ctx.expanded_idx_mapping: early stop is OFF",
+                      flush=True)
+                self.warned = True
             return logits
         self.step += 1
         if self.step % self.stride == 0:
             self.update(slots[rows], np.asarray(ctx.seq_lens_upper_bound_np)[rows])
-        dead = rows[self.hit[slots[rows]]]
-        if dead.size:
-            import torch
+        dead_b = rows[self.hit[slots[rows]]]  # batch positions of stopped requests
+        if dead_b.size == 0:
+            return logits
+        import torch
 
-            r = torch.as_tensor(dead, device=logits.device)
-            e = torch.as_tensor(self.eos[slots[dead]], device=logits.device)
+        if not spec_rows:
+            r = torch.as_tensor(dead_b, device=logits.device)
+            e = torch.as_tensor(self.eos[slots[dead_b]], device=logits.device)
             logits[r] = float("-inf")
             logits[r, e] = 0.0
+            return logits
+        # one row per draft token: find every row of a stopped request on the device (no host sync)
+        dead_slot = torch.zeros(self.on.shape[0], dtype=torch.bool, device=logits.device)
+        dead_slot[torch.as_tensor(slots[dead_b], device=logits.device)] = True
+        eos_slot = torch.as_tensor(self.eos, device=logits.device)
+        exp = expanded.to(logits.device).long()
+        row_dead = dead_slot[exp][:, None]
+        e = eos_slot[exp][:, None]
+        keep = logits.gather(1, e)
+        logits.masked_fill_(row_dead, float("-inf"))
+        logits.scatter_(1, e, torch.where(row_dead, torch.zeros_like(keep), keep))
         return logits
 
 
@@ -138,7 +167,8 @@ if _Base is not None:
         """vLLM V2 logits processor: the kill rule of moi_loop_router_vllm, checked every STRIDE steps."""
 
         def __init__(self, vllm_config, req_states):
-            self.core = _LoopKillCore(req_states)
+            sc = getattr(vllm_config, "speculative_config", None)
+            self.core = _LoopKillCore(req_states, spec_k=int(getattr(sc, "num_speculative_tokens", 0) or 0))
 
         @classmethod
         def validate_params(cls, sampling_params) -> None:
