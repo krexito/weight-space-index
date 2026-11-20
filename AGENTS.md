@@ -41,6 +41,13 @@ Generation (`12k–16k` thinking tokens) is ~95% of wall-clock time. Apply these
 - **`#7 Reconstruction` A/B (`Qwen/Qwen3.5-0.8B`, `GSM8K`, `n=200`, `16k`, same 189-word brief, zero repo hints):**
   - **Agent A (Raw PyTorch, `7.7 min`):** `11.5%` always-on / `44.0%` loop-routed (`64/0` vs `base` `12.0%`; picked `L10-14`).
   - **Agent B (WSI toolkit, `8.4 min`):** **`35.5%`** always-on (`+24.0 pts` vs Agent A) / **`50.5%`** loop-routed (`77/0` vs `base`, `95% CI [+32%, +45%]`; `6.5s` `screen_patch_candidates` ranked `L13-14` `#1` at `pareto=2.75` vs `L10-14` `1.12`; exported `17.7 KB` `agent_b.moipatch`).
+- **Surgical Over-Refusal Abliteration (`LiquidAI/LFM3-1.7B`, `OR-Bench` `or-bench-hard-1k`, `n=160` + `60` benign controls, `50/50` Half-A/Half-B, Colab L4, 2026-11-20, `scripts/experiment_surgical_refusal_lfm3.py`):**
+  - `base` over-refused **`51.9%`** (`41/79`) on Half-B. Passive diff-in-means pointed to late layers (`L23/21/22`), whereas `capture_causal_trace` + `diagnose_causal_traces` localized the causal switch at **`layers.8.self_attn.o_proj`** (`#1`); all Top-5 of `60` screened candidates (`59.5 s`, total discovery `230.5 s`) were causal (`causal_r1_all_a6` `#1/60`, `pareto_kl=57.18`).
+  - Held-out Half-B (`79` OR-Bench, `30` benign controls):
+    - `classic_ablit_all_layers` (`48/48` writers, `478.2M` weights / `27.7%` of model): `5.1%` refusal (`90.2%` recovered), `10.0%` control exact match, `healthy_kl=0.02018`, `ΔNLL=+0.01080`.
+    - `wsi_surgical_always_on` (`1/48` module `layers.8.self_attn.o_proj`, `4.19M` weights / `0.24%` — `114×` fewer weights): `5.1%` refusal (`92.7%` recovered), `16.7%` control exact match, `healthy_kl=0.00747` (`2.7×` lower KL), `ΔNLL=+0.02346`.
+    - `wsi_surgical_routed` (`24.89 KB` `.moipatch`, `fingerprint_ok=true`, `restore_exact_ok=true`, L24 router `97.6%` fire on base-refused / `0.0%` control FPR): **`5.1%`** refusal (**`92.7%`** recovered), **`100.0%`** control exact match (`30/30`), **`0.00000`** `healthy_kl` & `ΔNLL`.
+  - **Audit caveat:** static weight-space logit-lens on early layers (e.g. `L8/24`) is pre-rotation and yields cryptic subtokens; use end-to-end `output_logit_diff` in `wsi.moipatch.audit_moipatch` for human-readable vocabulary shifts.
 
 ## 3. Planned Next Experiment (Queued — Do Not Run Yet)
 

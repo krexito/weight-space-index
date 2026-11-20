@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from wsi import Edit, MoIPatch, PatchHandle, RoutedPatchHandle  # noqa: E402
+from wsi import Edit, MoIPatch, PatchHandle, RoutedPatchHandle, audit_moipatch  # noqa: E402
 from wsi.cli import main as wsi_cli_main  # noqa: E402
 from wsi.moipatch import apply_edit  # noqa: E402
 
@@ -666,6 +666,80 @@ def test_enable_routed_always_on_and_fingerprint_rejection() -> None:
     assert "_wsi_route_stack" not in model.__dict__
 
 
+def test_audit_moipatch_structural_and_end_to_end() -> None:
+    torch.manual_seed(7)
+    # 1. Model without lm_head: structural/fingerprint checks pass and vocab_logit_lens stays empty
+    no_head = _TinyLM(n_layers=3, hidden=16, inter=32, dtype=torch.float32).eval()
+    p_no_head = MoIPatch(edits=[Edit(module="layers.1.mlp.down_proj", u=_unit_vec(16, 61), alpha=2.0, base_dtype="float32")])
+    rep_min = p_no_head.audit(no_head)
+    assert rep_min["vocab_logit_lens"] == []
+    assert rep_min["output_logit_diff"] is None
+    assert rep_min["control_audit"] is None
+    assert rep_min["fingerprint_ok"] is True and rep_min["restore_exact_ok"] is True
+
+    # 2. Early-layer edit + end-to-end output_logit_diff + routed control_audit
+    model = _TinyRoutableLM(n_layers=4, hidden=16, inter=32, vocab=32).eval()
+    with torch.no_grad():
+        # Strong positive signal on dim 1 during trigger prompts (token 7 -> embed dim 1 = +4.0, dim 2 = 0)
+        model.model.embed_tokens.weight[7, 1] = 4.0
+        model.model.embed_tokens.weight[1, 1] = -2.0
+        model.model.layers[1].self_attn.o_proj.weight.zero_()
+        model.model.layers[1].self_attn.o_proj.weight[1, 1] = 2.0
+        model.lm_head.weight.zero_()
+        model.lm_head.weight[29, 1] = 5.0
+        model.lm_head.weight[14, 2] = 1.5
+        model.model.embed_tokens.weight[:, 2] = 3.0
+
+    u = torch.zeros(16)
+    u[1] = 1.0
+    r_dir = torch.zeros(16)
+    r_dir[0] = 1.0
+    patch = MoIPatch(
+        edits=[Edit(module="layers.1.self_attn.o_proj", u=u, alpha=1.0, base_dtype="float32")],
+        router={"layer": 1, "readout": "last_token", "dir": r_dir, "thr": 0.0},
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p_path = Path(td) / "audit_test.moipatch"
+        patch.save(p_path)
+        loaded = MoIPatch.load(p_path)
+
+        class _DummyTok:
+            eos_token_id = 0
+
+            def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+                return [2, 3, 7] if "trigger" in text else [2, 3, 1]
+
+            def decode(self, ids: list[int]) -> str:
+                return f"tok_{ids[0]}"
+
+        orig_w1 = model.model.layers[1].self_attn.o_proj.weight.detach().clone()
+        rep = audit_moipatch(
+            loaded,
+            model,
+            _DummyTok(),
+            probe_prompts=["trigger a", "trigger b"],
+            control_prompts=["benign a", "benign b"],
+            patch_path=p_path,
+            top_k=5,
+        )
+        assert rep["patch_size_kb"] is not None and rep["patch_size_kb"] > 0
+        assert rep["fingerprint_ok"] is True and rep["restore_exact_ok"] is True
+        assert torch.equal(model.model.layers[1].self_attn.o_proj.weight, orig_w1)
+        assert rep["vocab_logit_lens"][0]["early_layer_caveat"] is True
+
+        old = rep["output_logit_diff"]
+        assert old is not None and old["n_probes"] == 2 and old["mean_next_token_kl"] > 0
+        assert old["probe_router_fire_rate"] == 1.0
+        assert old["suppressed_tokens"][0]["token_id"] == 29 and old["suppressed_tokens"][0]["mean_delta_prob"] < 0
+        pro_ids = {x["token_id"]: x for x in old["promoted_tokens"]}
+        assert 14 in pro_ids and pro_ids[14]["mean_delta_prob"] > 0
+
+        ca = rep["control_audit"]
+        assert ca is not None and ca["n_controls"] == 2
+        assert ca["routed_fire_rate"] == 0.0 and ca["routed_mean_kl"] == 0.0
+        assert ca["max_abs_logit_diff_routed"] == 0.0
+
+
 if __name__ == "__main__":
     test_moipatch_save_load_attach_and_restore()
     test_make_moipatch_sycophancy_and_cli()
@@ -676,4 +750,5 @@ if __name__ == "__main__":
     test_enable_routed_compose_two_patches_and_out_of_order_close()
     test_enable_routed_real_hf_llama_generate()
     test_enable_routed_always_on_and_fingerprint_rejection()
+    test_audit_moipatch_structural_and_end_to_end()
     print("ALL MOIPATCH TESTS PASSED!")

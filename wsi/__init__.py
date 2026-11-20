@@ -19,7 +19,7 @@ from .compare import (
     transplant_connected_chain,
 )
 from .indexer import build_index
-from .moipatch import Edit, MoIPatch, PatchHandle, RoutedPatchHandle
+from .moipatch import Edit, MoIPatch, PatchHandle, RoutedPatchHandle, audit_moipatch
 from .query import WeightSpaceIndex, load_index
 from .spec_eval import (
     SuffixDraftIndex,
@@ -63,6 +63,7 @@ __all__ = [
     "SuffixDraftIndex",
     "TaskRouter",
     "apply_selection",
+    "audit_moipatch",
     "capture_base_drafts",
     "capture_causal_trace",
     "capture_compact",
