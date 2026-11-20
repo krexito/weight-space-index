@@ -789,6 +789,32 @@ def test_router_veto_save_load_fires_and_enable_routed() -> None:
                 assert torch.equal(routed_logits[2], base_logits[2])
 
 
+def test_moipatch_save_shared_tensors() -> None:
+    u_shared = _unit_vec(16, 88).double().contiguous()
+    idx_shared = torch.tensor([0, 2, 4, 6], dtype=torch.long)
+    r_shared = _unit_vec(16, 89).float().contiguous()
+    patch = MoIPatch(
+        edits=[
+            Edit(module="layers.1.self_attn.o_proj", u=u_shared, alpha=2.0, idx=idx_shared),
+            Edit(module="layers.1.mlp.down_proj", u=u_shared, alpha=4.0, idx=idx_shared),
+        ],
+        router={"layer": 1, "readout": "last_token", "dir": r_shared, "thr": 0.1, "veto_dir": r_shared, "veto_thr": 0.5},
+    )
+    with tempfile.TemporaryDirectory() as td:
+        p_out = Path(td) / "shared_tensors.moipatch"
+        patch.save(p_out)
+        loaded = MoIPatch.load(p_out)
+        assert len(loaded.edits) == 2
+        assert torch.equal(loaded.edits[0].u, u_shared)
+        assert torch.equal(loaded.edits[1].u, u_shared)
+        assert loaded.edits[0].idx is not None and loaded.edits[1].idx is not None
+        assert torch.equal(loaded.edits[0].idx, idx_shared)
+        assert torch.equal(loaded.edits[1].idx, idx_shared)
+        assert loaded.router is not None
+        assert torch.equal(loaded.router["dir"], r_shared)
+        assert torch.equal(loaded.router["veto_dir"], r_shared)
+
+
 if __name__ == "__main__":
     test_moipatch_save_load_attach_and_restore()
     test_make_moipatch_sycophancy_and_cli()
@@ -801,4 +827,5 @@ if __name__ == "__main__":
     test_enable_routed_always_on_and_fingerprint_rejection()
     test_audit_moipatch_structural_and_end_to_end()
     test_router_veto_save_load_fires_and_enable_routed()
+    test_moipatch_save_shared_tensors()
     print("ALL MOIPATCH TESTS PASSED!")

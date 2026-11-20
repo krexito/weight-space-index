@@ -110,17 +110,17 @@ class MoIPatch:
 
         tensors, edits = {}, []
         for i, e in enumerate(self.edits):
-            tensors[f"edit.{i}.u"] = e.u.detach().to(torch.float64 if e.u.dtype == torch.float64 else torch.float32).cpu().contiguous()  # keep fp64 so the patched bf16 weights are bit-identical to the run
+            tensors[f"edit.{i}.u"] = e.u.detach().to(torch.float64 if e.u.dtype == torch.float64 else torch.float32).cpu().contiguous().clone()  # keep fp64 so the patched bf16 weights are bit-identical to the run
             if e.idx is not None:
-                tensors[f"edit.{i}.idx"] = e.idx.detach().long().cpu().contiguous()
+                tensors[f"edit.{i}.idx"] = e.idx.detach().long().cpu().contiguous().clone()
             edits.append({"module": e.module, "alpha": float(e.alpha), "has_idx": e.idx is not None,
                           "base_sha256": e.base_sha256, "base_dtype": e.base_dtype, "shape": list(e.shape)})
         router = None
         if self.router:
-            tensors["router.dir"] = torch.as_tensor(self.router["dir"]).float().cpu().contiguous()
+            tensors["router.dir"] = torch.as_tensor(self.router["dir"]).float().cpu().contiguous().clone()
             router = {k: v for k, v in self.router.items() if k not in ("dir", "veto_dir")}
             if self.router.get("veto_dir") is not None:
-                tensors["router.veto_dir"] = torch.as_tensor(self.router["veto_dir"]).float().cpu().contiguous()
+                tensors["router.veto_dir"] = torch.as_tensor(self.router["veto_dir"]).float().cpu().contiguous().clone()
                 router["has_veto"] = True
         manifest = {"format": FORMAT, "edits": edits, "router": router, "gates": self.gates, "meta": self.meta}
         p = Path(path)
