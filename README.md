@@ -248,6 +248,30 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >     | random direction, same rule: loops caught | `33%` | `49%` |
 >
 >     The veto keeps (almost) every loop and removes most false alarms, at the cost of switching on later; it still switches on before the loop would be killed. At 5% token false alarms the delay drops to ~10 tokens (GSM8K) but non-looping answers switched on rise to 5 / 11 and 3 / 7, so the gain is mostly gone. Not yet tested in generation: whether the later switch-on keeps the MoI accuracy (the restart part of the gain depends on when the cut happens). Few non-looping answers (11, 7), so the false-alarm counts are rough.
+>   * **Early warning: does the residual announce a loop before the text detector fires? Barely.** ([`results`](./benchmarks/onset_precursor/results_qwen35-08b_colab_l4.json), Colab L4, `wsi/precursor.py`, `scripts/experiment_onset_precursor.py`, same saved answers, no generation). A diff-of-means direction per layer for the 512 tokens *before* the text detector fires vs earlier tokens, fitted on half A; threshold set so ~10% of half-A non-looping answers raise an alarm; held-out half B:
+>
+>     | Half B | GSM8K: AUC | loops warned before text (median lead) | non-looping answers alarmed | MATH-500: AUC | warned | alarmed |
+>     |---|---|---|---|---|---|---|
+>     | precursor direction (L15) | `0.789` | **`43%`** (`298` tok) | 3 / 11 | `0.563` | `16%` | 4 / 7 |
+>     | loop probe, same eval (L15) | `0.791` | `44%` (`74` tok) | 4 / 11 | `0.570` | `15%` | 5 / 7 |
+>     | looser text detector (repeats in last 256 tokens) | `0.749` | `36%` (`100` tok) | 6 / 11 | **`0.651`** | `26%` | 5 / 7 |
+>     | token position alone | `0.733` | `12%` | 6 / 11 | `0.529` | `13%` | 7 / 7 |
+>     | random direction | `0.588` | `4%` | 1 / 11 | `0.570` | `4%` | 0 / 7 |
+>
+>     On GSM8K the direction warns a bit earlier than a looser text rule with fewer false alarms, but it is the same direction as the ordinary loop probe (both pick L15, same AUC), so it is not a separate "loop is coming" signal. On MATH-500 it does not transfer from half A to half B (AUC `0.73 -> 0.56`) and loses to the text rule. The answer-level threshold also does not hold on half B (3 / 11 and 4 / 7 alarmed instead of ~10%; few non-looping answers). Verdict: no usable early warning in the residual of the 0.8B; not worth building on. (Calibration note: a 1% token-level threshold fires early on most long answers, so alarm thresholds should be set per answer.)
+>   * **Damage map: where does the always-on p50c loop patch hurt?** ([`results`](./benchmarks/damage_map/results_p50c_qwen35-08b_colab_l4.json), Colab L4, `wsi/damage_map.py`, `scripts/experiment_damage_map.py`). The same text goes through the 0.8B with the patch off and on (teacher forcing, 48 sequences x 512 tokens per domain), against a random-direction patch of the same size (same modules, kept columns, alpha):
+>
+>     | Domain | KL p50c / random | top-1 unchanged p50c / random | dNLL p50c |
+>     |---|---|---|---|
+>     | own healthy thinking | `0.015` / `0.0008` | `96.6%` / `99.1%` | `+0.007` |
+>     | math (GSM8K) | `0.017` / `0.0008` | `96.8%` / `99.1%` | `+0.015` |
+>     | prose (WikiText) | **`0.025`** / `0.0015` | `92.9%` / `98.0%` | `+0.009` |
+>     | code (HumanEval) | `0.011` / `0.0006` | `96.7%` / `99.2%` | `+0.004` |
+>     | chat (UltraChat) | `0.019` / `0.0013` | `94.4%` / `98.4%` | `-0.003` |
+>     | Spanish | `0.011` / `0.0011` | `94.6%` / `97.9%` | `+0.016` |
+>     | Chinese | `0.017` / `0.0017` | **`92.3%`** / `97.3%` | **`+0.018`** |
+>
+>     The patch changes the output 10-20x more than a random edit of the same size, in every domain, but mildly (2-4% of tokens with KL > 0.1). The worst tokens show what it breaks: **legitimate repetition**. It stops copying a name already in the context (`Kutuzov`, `Koshihikari`, `Beehively`, `Petoskey` -> `Peterson`, Jamaica in Chinese), the second `step by step` (`-by`), and another `>>>` example in a docstring that already has several (it predicts the closing `"""`). So the loop direction is an anti-repetition edit, and the cost of leaving it on is paid where text should repeat. This is why routing it (MoI: on only inside a loop) matters.
 > * **Additive MoI outside math: sycophancy** (`moi_sycophancy.py`, Qwen3.5-4B bf16, Colab A100, thinking off, scored by the probability of each answer letter, so there is no sampling). The model answers an MMLU question; the user then pushes back ("are you sure? I think it's C"). Diagnosis uses 1531 MMLU validation questions, tuning uses 300, and the test uses 1000 test questions plus one pushback and one neutral wording never seen before. The base model gives up a right answer under false pushback `85%` of the time.
 >
 >   | Arm | Keeps right answer under false pushback | Accepts a correct suggestion | Neutral follow-up unchanged | First answer accuracy |

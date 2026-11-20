@@ -1,0 +1,879 @@
+{
+ "run": {
+  "model": "/content/base",
+  "seq_len": 512,
+  "n_docs": 48,
+  "skipped": {},
+  "patches": {
+   "qwen35_0.8b_p50c_loop_fix": {
+    "modules": [
+     "layers.15.mlp.down_proj",
+     "layers.19.mlp.down_proj"
+    ],
+    "alpha": [
+     6.0,
+     6.0
+    ],
+    "kept_columns": [
+     64,
+     64
+    ]
+   },
+   "qwen35_0.8b_p50c_loop_fix__random": {
+    "modules": [
+     "layers.15.mlp.down_proj",
+     "layers.19.mlp.down_proj"
+    ],
+    "alpha": [
+     6.0,
+     6.0
+    ],
+    "kept_columns": [
+     64,
+     64
+    ]
+   }
+  },
+  "map": {
+   "qwen35_0.8b_p50c_loop_fix": {
+    "own_thinking": {
+     "n_tokens": 24528,
+     "dnll": 0.00691,
+     "kl": 0.01534,
+     "kl_p99": 0.18165,
+     "hit_share": 0.02634,
+     "top1_agree": 0.96596,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.06964,
+      "layers.19.mlp.down_proj": 0.08389
+     },
+     "worst": [
+      {
+       "kl": 1.8545,
+       "seq": 38,
+       "pos": 510,
+       "before": " the time... wait, usually \"half as much\" applies to the quantity being measured.\n    *   Let's check the wording again: \"He runs 3 hours the first day and half",
+       "actual": " as",
+       "base_top1": " as",
+       "patched_top1": " a"
+      },
+      {
+       "kl": 1.4817,
+       "seq": 1,
+       "pos": 114,
+       "before": "    *   **Question:** A robe takes 2 bolts of blue fiber and half that much white fiber. How many bolts in total does it take?\n    *   **Constraint:** Reason step",
+       "actual": " by",
+       "base_top1": " by",
+       "patched_top1": "-by"
+      },
+      {
+       "kl": 1.2456,
+       "seq": 36,
+       "pos": 150,
+       "before": " 4 yogurts for $5.00.\n    *   **Question:** How much does he spend on yogurt over 30 days?\n    *   **Constraint:** Reason step",
+       "actual": " by",
+       "base_top1": " by",
+       "patched_top1": "-by"
+      },
+      {
+       "kl": 0.8317,
+       "seq": 46,
+       "pos": 306,
+       "before": " mean she used *all* the notes available from the shop purchase or just one specific cup per person? The phrasing \"On her way... stopped off... purchased... At work... placed a single",
+       "actual": " note",
+       "base_top1": " Post",
+       "patched_top1": " note"
+      },
+      {
+       "kl": 0.7552,
+       "seq": 14,
+       "pos": 52,
+       "before": ", 20% enrolled in contemporary dance, 25% of the remaining enrolled in jazz dance, and the rest enrolled in hip-hop dance. What percentage of the entire students enrolled in hip",
+       "actual": "-hop",
+       "base_top1": "-hop",
+       "patched_top1": "‑"
+      }
+     ]
+    },
+    "math": {
+     "n_tokens": 9311,
+     "dnll": 0.01527,
+     "kl": 0.01707,
+     "kl_p99": 0.17551,
+     "hit_share": 0.02857,
+     "top1_agree": 0.96821,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.08056,
+      "layers.19.mlp.down_proj": 0.09871
+     },
+     "worst": [
+      {
+       "kl": 0.6231,
+       "seq": 37,
+       "pos": 161,
+       "before": ".20 x 4 = $<<1.20*4=4.80>>4.80.\nThe cost of 5 cups of soda is $0.5",
+       "actual": " x",
+       "base_top1": " x",
+       "patched_top1": "0"
+      },
+      {
+       "kl": 0.6137,
+       "seq": 3,
+       "pos": 175,
+       "before": ">>84 pages left to be read.\nSince she wants to read half of the remaining pages tomorrow, then she should read 84/2 = <<84/2=42",
+       "actual": ">>",
+       "base_top1": ">>",
+       "patched_top1": ">>"
+      },
+      {
+       "kl": 0.5689,
+       "seq": 45,
+       "pos": 191,
+       "before": "<<7*5=35>>35.\nTherefore, the unicorn piñata and the treats cost $13 + $36 + $15 + $35 = $",
+       "actual": "<<",
+       "base_top1": "<<",
+       "patched_top1": "1"
+      },
+      {
+       "kl": 0.5012,
+       "seq": 25,
+       "pos": 235,
+       "before": " that Ralph didn't hit.\nCombined, Ralph was not able to hit 60 + 50 = <<60+50=110>>110 tennis balls Ralph",
+       "actual": " didn",
+       "base_top1": " didn",
+       "patched_top1": " didn"
+      },
+      {
+       "kl": 0.4391,
+       "seq": 5,
+       "pos": 194,
+       "before": "28>>28 flowers.\nThat means in Mark's garden there are 25/100 * 28 = <<25/100*28=7",
+       "actual": ">>",
+       "base_top1": ".",
+       "patched_top1": "."
+      }
+     ]
+    },
+    "prose": {
+     "n_tokens": 24528,
+     "dnll": 0.00943,
+     "kl": 0.02534,
+     "kl_p99": 0.20552,
+     "hit_share": 0.04069,
+     "top1_agree": 0.92935,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.04953,
+      "layers.19.mlp.down_proj": 0.06272
+     },
+     "worst": [
+      {
+       "kl": 2.5533,
+       "seq": 41,
+       "pos": 424,
+       "before": " the former legionnaires was Ante Roso , previously a Sous @-@ Officier ( non @-@ commissioned officer – NCO ) in the 4th Foreign Regiment . In consequence , Ros",
+       "actual": "o",
+       "base_top1": "o",
+       "patched_top1": "co"
+      },
+      {
+       "kl": 1.7349,
+       "seq": 20,
+       "pos": 508,
+       "before": " was a mixture of infantry , Jägers ( usually deployed as skirmishers ) , Russian musketeers and Russian and Austrian cavalry , accompanied by more than 68 artillery pieces . Kut",
+       "actual": "uz",
+       "base_top1": "uz",
+       "patched_top1": "uz"
+      },
+      {
+       "kl": 1.4932,
+       "seq": 3,
+       "pos": 69,
+       "before": " Rifenburg was named All State in football , basketball and track . \n\n It is ironic that Rifenburg was born in Petoskey , Michigan in 1926 for several reasons . Ted Pet",
+       "actual": "os",
+       "base_top1": "os",
+       "patched_top1": "erson"
+      },
+      {
+       "kl": 1.1537,
+       "seq": 20,
+       "pos": 379,
+       "before": " In this decision Kutuzov abandoned Vienna to the French , who were converging on the Austrian capital from the north , west and southwest , for the security of uniting with reinforcements from Galicia . Kut",
+       "actual": "uz",
+       "base_top1": "uz",
+       "patched_top1": "uz"
+      },
+      {
+       "kl": 1.0993,
+       "seq": 30,
+       "pos": 293,
+       "before": " these scenes , the rose symbolizes Lester 's desire for her . When associated with Carolyn , the rose represents a \" façade for suburban success \" . Roses are included in almost every shot inside the Burn",
+       "actual": "h",
+       "base_top1": "h",
+       "patched_top1": "ham"
+      }
+     ]
+    },
+    "code": {
+     "n_tokens": 7253,
+     "dnll": 0.00415,
+     "kl": 0.01063,
+     "kl_p99": 0.12565,
+     "hit_share": 0.01779,
+     "top1_agree": 0.96677,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.06128,
+      "layers.19.mlp.down_proj": 0.07414
+     },
+     "worst": [
+      {
+       "kl": 0.5272,
+       "seq": 40,
+       "pos": 149,
+       "before": ", 3, 7])\n    False\n    >>> triples_sum_to_zero([2, 4, -5, 3, 9, 7])\n    True\n   ",
+       "actual": " >>>",
+       "base_top1": " >>>",
+       "patched_top1": " \"\"\""
+      },
+      {
+       "kl": 0.4717,
+       "seq": 3,
+       "pos": 116,
+       "before": ".\n    >>> below_zero([1, 2, 3])\n    False\n    >>> below_zero([1, 2, -4, 5])\n    True\n   ",
+       "actual": " \"\"\"",
+       "base_top1": " >>>",
+       "patched_top1": " \"\"\""
+      },
+      {
+       "kl": 0.4638,
+       "seq": 40,
+       "pos": 121,
+       "before": "_zero([1, 3, -2, 1])\n    True\n    >>> triples_sum_to_zero([1, 2, 3, 7])\n    False\n   ",
+       "actual": " >>>",
+       "base_top1": " >>>",
+       "patched_top1": " \"\"\""
+      },
+      {
+       "kl": 0.4192,
+       "seq": 40,
+       "pos": 162,
+       "before": " triples_sum_to_zero([2, 4, -5, 3, 9, 7])\n    True\n    >>> triples_sum_to_zero([1])\n    False\n   ",
+       "actual": " \"\"\"",
+       "base_top1": " >>>",
+       "patched_top1": " \"\"\""
+      },
+      {
+       "kl": 0.398,
+       "seq": 40,
+       "pos": 99,
+       "before": "_zero([1, 3, 5, 0])\n    False\n    >>> triples_sum_to_zero([1, 3, -2, 1])\n    True\n   ",
+       "actual": " >>>",
+       "base_top1": " >>>",
+       "patched_top1": " \"\"\""
+      }
+     ]
+    },
+    "chat": {
+     "n_tokens": 23798,
+     "dnll": -0.00299,
+     "kl": 0.01883,
+     "kl_p99": 0.16337,
+     "hit_share": 0.02391,
+     "top1_agree": 0.94357,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.04959,
+      "layers.19.mlp.down_proj": 0.05834
+     },
+     "worst": [
+      {
+       "kl": 1.5122,
+       "seq": 13,
+       "pos": 506,
+       "before": " at support@beehively.com and they will be able to assist you with your request.<|im_end|>\n<|im_start|>user\nCan you also tell me if there are any other recent updates or features to Bee",
+       "actual": "h",
+       "base_top1": "h",
+       "patched_top1": "hive"
+      },
+      {
+       "kl": 1.4749,
+       "seq": 1,
+       "pos": 443,
+       "before": " chloroplasts and hence contribute to tolerance. Overall, these results work as a ground for future analyses that look forward to characterize possible mechanisms to tolerate this stress. How did the tolerant rice cultivar K",
+       "actual": "oshi",
+       "base_top1": "oshi",
+       "patched_top1": "."
+      },
+      {
+       "kl": 1.0285,
+       "seq": 1,
+       "pos": 389,
+       "before": " in response to the stress. However, the tolerant cultivar Koshihikari was able to maintain its energy equilibrium by sustaining the photosynthetic capacity. The increase of oleic acid in K",
+       "actual": "oshi",
+       "base_top1": "oshi",
+       "patched_top1": "."
+      },
+      {
+       "kl": 1.0192,
+       "seq": 47,
+       "pos": 320,
+       "before": "007 election bid.<|im_end|>\n<|im_start|>user\nCan you please tell me more about the Franco-Lebanese businessman who lodged the allegations against Sarkozy?<|im_end|>\n<|im_start|>assistant\nYes, the Franco",
+       "actual": "-Le",
+       "base_top1": "-Le",
+       "patched_top1": "-Le"
+      },
+      {
+       "kl": 0.995,
+       "seq": 27,
+       "pos": 484,
+       "before": " heights, shapes, and embellishments reflecting the prevailing aesthetics of different periods. In the 20th and 21st centuries, designers like Christian Louboutin, Manolo Blah",
+       "actual": "nik",
+       "base_top1": "nik",
+       "patched_top1": "nik"
+      }
+     ]
+    },
+    "spanish": {
+     "n_tokens": 11592,
+     "dnll": 0.0163,
+     "kl": 0.01136,
+     "kl_p99": 0.07697,
+     "hit_share": 0.00509,
+     "top1_agree": 0.94617,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.03157,
+      "layers.19.mlp.down_proj": 0.04881
+     },
+     "worst": [
+      {
+       "kl": 0.5732,
+       "seq": 5,
+       "pos": 35,
+       "before": "Por favor, compraste a Dixon un estudio de grabación para una semana, y luego financiaste mi spot comercial. Sólo en 48 estados. Además, anfet",
+       "actual": "amin",
+       "base_top1": "ol",
+       "patched_top1": "ina"
+      },
+      {
+       "kl": 0.3729,
+       "seq": 35,
+       "pos": 253,
+       "before": "arias. Fotos, biografías, todo. 7 . Recuerda, oh SEÑOR, contra los hijos de Edom el día de Jerusalén, quienes dijeron: Arrasadla, arr",
+       "actual": "asad",
+       "base_top1": "asad",
+       "patched_top1": "asad"
+      },
+      {
+       "kl": 0.278,
+       "seq": 39,
+       "pos": 240,
+       "before": ", yo creo en mantenerse con tu gente a las duras y a las maduras, en lo bueno y en lo malo. - ¡Salgan y muevan el tráfico! El Señor los bend",
+       "actual": "ice",
+       "base_top1": "ice",
+       "patched_top1": "ice"
+      },
+      {
+       "kl": 0.271,
+       "seq": 39,
+       "pos": 162,
+       "before": ". Sr. Djessan Philippe Djangone-Bi, Representante Permanente de Côte d'Ivoire (presentación de información sobre la situación en su país) No decía nada. Sr.",
+       "actual": " Murdoch",
+       "base_top1": " Dj",
+       "patched_top1": " Dj"
+      },
+      {
+       "kl": 0.2623,
+       "seq": 34,
+       "pos": 175,
+       "before": "ando con Mónica y un tipo me habló. Se supone que el ponente debe representar a la comisión responsable del informe y aquí tenemos al Sr. Ripa di Meana representando a una pon",
+       "actual": "ente",
+       "base_top1": "ente",
+       "patched_top1": "ente"
+      }
+     ]
+    },
+    "chinese": {
+     "n_tokens": 14325,
+     "dnll": 0.0177,
+     "kl": 0.01656,
+     "kl_p99": 0.11295,
+     "hit_share": 0.01298,
+     "top1_agree": 0.92307,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.03561,
+      "layers.19.mlp.down_proj": 0.06263
+     },
+     "worst": [
+      {
+       "kl": 2.0391,
+       "seq": 13,
+       "pos": 371,
+       "before": "我做老爸的责任 28. Schőpp-Schilling女士说，她同意委员会其他成员对牙买加执行《公约》的积极评论，但是，她感到遗憾的是，牙",
+       "actual": "买",
+       "base_top1": "买",
+       "patched_top1": "利"
+      },
+      {
+       "kl": 0.9843,
+       "seq": 5,
+       "pos": 100,
+       "before": "干的很好，卡米拉 同时成功实施了内部和外部改革，导致司法活动明显增加，一个相当重要的原因是新增九名审案法庭。 琌ぃ�",
+       "actual": "�",
+       "base_top1": "�",
+       "patched_top1": "�"
+      },
+      {
+       "kl": 0.8493,
+       "seq": 10,
+       "pos": 217,
+       "before": "能力；与联合国各机构、基金和方案及所有有关合作伙伴，包括国际金融机构和捐助者，对冲突后建设和平与能力建设的双边和多边援助开展合作和协调；向东",
+       "actual": "帝",
+       "base_top1": "帝",
+       "patched_top1": "帝"
+      },
+      {
+       "kl": 0.6443,
+       "seq": 14,
+       "pos": 432,
+       "before": "次氯酸纳的时间表，由CODAMED/卫生部负责操作；通过公共卫生实验室保证所有各州的能力建设，以便开展对急性腹泻疾病的病因诊断；在巴西东北地区的“紧急",
+       "actual": "霍",
+       "base_top1": "霍",
+       "patched_top1": "霍"
+      },
+      {
+       "kl": 0.5754,
+       "seq": 14,
+       "pos": 466,
+       "before": "在巴西东北地区的“紧急霍乱控制和预防计划”中被列为高度优先的市辖区内，利用地区和本地通讯媒体的现有工具更加深入地开展传播工作；在巴西东北地区的“紧急",
+       "actual": "霍",
+       "base_top1": "霍",
+       "patched_top1": "霍"
+      }
+     ]
+    }
+   },
+   "qwen35_0.8b_p50c_loop_fix__random": {
+    "own_thinking": {
+     "n_tokens": 24528,
+     "dnll": -0.00109,
+     "kl": 0.00084,
+     "kl_p99": 0.00726,
+     "hit_share": 0.0,
+     "top1_agree": 0.99107,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.02712,
+      "layers.19.mlp.down_proj": 0.02722
+     },
+     "worst": [
+      {
+       "kl": 0.0583,
+       "seq": 29,
+       "pos": 91,
+       "before": " of heels costs $33 and the other costs twice as much, how many dollars are the boots?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>",
+       "actual": "assistant",
+       "base_top1": "assistant",
+       "patched_top1": "assistant"
+      },
+      {
+       "kl": 0.044,
+       "seq": 43,
+       "pos": 83,
+       "before": " daily calorie target is 2000 and you have already consumed 1800 calories?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>",
+       "actual": "assistant",
+       "base_top1": "assistant",
+       "patched_top1": "assistant"
+      },
+      {
+       "kl": 0.0349,
+       "seq": 10,
+       "pos": 83,
+       "before": "0% in the third month. How many downloads did the program have total over the three months?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": "\n"
+      },
+      {
+       "kl": 0.0349,
+       "seq": 41,
+       "pos": 133,
+       "before": " not holding the gemstone. If holding the gemstone, how far outside of the reach of the dragon's flames could Polly stand and still hit the dragon with the gold javelin?\nPlease reason",
+       "actual": " step",
+       "base_top1": " step",
+       "patched_top1": " step"
+      },
+      {
+       "kl": 0.0326,
+       "seq": 42,
+       "pos": 104,
+       "before": ", there were 14 pieces of pie remaining.  How many pieces were taken by the guests?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>",
+       "actual": "assistant",
+       "base_top1": "assistant",
+       "patched_top1": "assistant"
+      }
+     ]
+    },
+    "math": {
+     "n_tokens": 9311,
+     "dnll": -4e-05,
+     "kl": 0.0008,
+     "kl_p99": 0.00533,
+     "hit_share": 0.0,
+     "top1_agree": 0.99141,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.03086,
+      "layers.19.mlp.down_proj": 0.03329
+     },
+     "worst": [
+      {
+       "kl": 0.0232,
+       "seq": 5,
+       "pos": 194,
+       "before": "28>>28 flowers.\nThat means in Mark's garden there are 25/100 * 28 = <<25/100*28=7",
+       "actual": ">>",
+       "base_top1": ".",
+       "patched_top1": "."
+      },
+      {
+       "kl": 0.0195,
+       "seq": 10,
+       "pos": 210,
+       "before": " 847 people.\nThus, the ship that the monster ate in the first hundred years had S = 847 / 7 = <<847/7=12",
+       "actual": "1",
+       "base_top1": "1",
+       "patched_top1": "1"
+      },
+      {
+       "kl": 0.0175,
+       "seq": 18,
+       "pos": 119,
+       "before": " hours a week to walk to work.\nRoque takes 6*2 = <<6*2=12>>12 hours a week to walk to and from work.\nRoque",
+       "actual": " takes",
+       "base_top1": " takes",
+       "patched_top1": " takes"
+      },
+      {
+       "kl": 0.0171,
+       "seq": 13,
+       "pos": 20,
+       "before": "Jasper will serve charcuterie at his dinner party. He buys 2 pounds of cheddar",
+       "actual": " cheese",
+       "base_top1": " cheese",
+       "patched_top1": ","
+      },
+      {
+       "kl": 0.0116,
+       "seq": 37,
+       "pos": 228,
+       "before": " is $15 + $4.80 + $2.50 +$2.7 = $<<15+4.8+2.5+2.7=2",
+       "actual": "5",
+       "base_top1": "5",
+       "patched_top1": "5"
+      }
+     ]
+    },
+    "prose": {
+     "n_tokens": 24528,
+     "dnll": 0.00105,
+     "kl": 0.00145,
+     "kl_p99": 0.00731,
+     "hit_share": 0.0,
+     "top1_agree": 0.98047,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.02639,
+      "layers.19.mlp.down_proj": 0.02552
+     },
+     "worst": [
+      {
+       "kl": 0.0747,
+       "seq": 0,
+       "pos": 293,
+       "before": " the 2007 theatre production of How to Curse directed by Josie Rourke . How to Curse was performed at Bush Theatre in the London Borough of Hammersmith and Fulham . Boul",
+       "actual": "ter",
+       "base_top1": "ner",
+       "patched_top1": "ner"
+      },
+      {
+       "kl": 0.0532,
+       "seq": 0,
+       "pos": 290,
+       "before": " a role in the 2007 theatre production of How to Curse directed by Josie Rourke . How to Curse was performed at Bush Theatre in the London Borough of Hammersmith and Ful",
+       "actual": "ham",
+       "base_top1": "ford",
+       "patched_top1": "ford"
+      },
+      {
+       "kl": 0.0366,
+       "seq": 43,
+       "pos": 372,
+       "before": " the four reviewers of Electronic Gaming Monthly applauded Kirby 's Block Ball for modifying the Breakout formula to create a new and enjoyable game . They especially praised the unique power @-@ ups , though Cr",
+       "actual": "isp",
+       "base_top1": "acker",
+       "patched_top1": "acker"
+      },
+      {
+       "kl": 0.0319,
+       "seq": 26,
+       "pos": 458,
+       "before": " kilometres ( 62 mi ) inland from the coast . The Olmecs are regarded as the first civilization to develop in Mesoamerica and the Olmec heartland is one of six cr",
+       "actual": "ad",
+       "base_top1": "ad",
+       "patched_top1": "ad"
+      },
+      {
+       "kl": 0.0269,
+       "seq": 6,
+       "pos": 175,
+       "before": " wrote that \" Back 2 Base X suffers from the same problems as Amerika : it tries to be conceptual in thought à la Tool and vicious in its political commentary à la Fugazi or System of",
+       "actual": " a",
+       "base_top1": " a",
+       "patched_top1": " a"
+      }
+     ]
+    },
+    "code": {
+     "n_tokens": 7253,
+     "dnll": 0.00245,
+     "kl": 0.00058,
+     "kl_p99": 0.00405,
+     "hit_share": 0.0,
+     "top1_agree": 0.99173,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.02654,
+      "layers.19.mlp.down_proj": 0.03089
+     },
+     "worst": [
+      {
+       "kl": 0.0248,
+       "seq": 8,
+       "pos": 105,
+       "before": " to 1.\n    >>> sum_product([])\n    (0, 1)\n    >>> sum_product([1, 2, 3, 4])\n    (1",
+       "actual": "0",
+       "base_top1": "0",
+       "patched_top1": "0"
+      },
+      {
+       "kl": 0.013,
+       "seq": 32,
+       "pos": 337,
+       "before": " *= 2.0\n        end *= 2.0\n    while end - begin > 1e-10:\n        center = (begin + end) / 2.",
+       "actual": "0",
+       "base_top1": "0",
+       "patched_top1": "0"
+      },
+      {
+       "kl": 0.0094,
+       "seq": 29,
+       "pos": 42,
+       "before": " import List\n\n\ndef filter_by_prefix(strings: List[str], prefix: str) -> List[str]:\n    \"\"\" Filter an input list of strings only for ones that start with a given prefix.\n",
+       "actual": "   ",
+       "base_top1": "   ",
+       "patched_top1": "   "
+      },
+      {
+       "kl": 0.0088,
+       "seq": 17,
+       "pos": 8,
+       "before": "from typing import List\n\n\ndef parse_music",
+       "actual": "(m",
+       "base_top1": "_file",
+       "patched_top1": "_file"
+      },
+      {
+       "kl": 0.0085,
+       "seq": 3,
+       "pos": 27,
+       "before": "from typing import List\n\n\ndef below_zero(operations: List[int]) -> bool:\n    \"\"\" You're given a list of deposit",
+       "actual": " and",
+       "base_top1": " operations",
+       "patched_top1": " and"
+      }
+     ]
+    },
+    "chat": {
+     "n_tokens": 23798,
+     "dnll": -0.00247,
+     "kl": 0.00129,
+     "kl_p99": 0.00702,
+     "hit_share": 8e-05,
+     "top1_agree": 0.98407,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.02654,
+      "layers.19.mlp.down_proj": 0.02463
+     },
+     "worst": [
+      {
+       "kl": 0.1227,
+       "seq": 46,
+       "pos": 287,
+       "before": " look like? Would he even remember her?\n\nHer thoughts were interrupted by the sound of a familiar voice. \"Diane?\"\n\nShe turned to see Ben standing in the aisle, his eyes cr",
+       "actual": "ink",
+       "base_top1": "ink",
+       "patched_top1": "ink"
+      },
+      {
+       "kl": 0.1003,
+       "seq": 27,
+       "pos": 484,
+       "before": " heights, shapes, and embellishments reflecting the prevailing aesthetics of different periods. In the 20th and 21st centuries, designers like Christian Louboutin, Manolo Blah",
+       "actual": "nik",
+       "base_top1": "nik",
+       "patched_top1": "nik"
+      },
+      {
+       "kl": 0.0964,
+       "seq": 24,
+       "pos": 104,
+       "before": " children’s reach. Based on the passage above, How should the granules be administered to the fishes and turtles, and for how long should they be consumed before removing any excess?<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "<think>",
+       "patched_top1": "\n"
+      },
+      {
+       "kl": 0.0633,
+       "seq": 37,
+       "pos": 22,
+       "before": "<|im_start|>user\nHow does a syllabus help instructors better communicate their expectations for student performance?<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": "\n"
+      },
+      {
+       "kl": 0.0469,
+       "seq": 11,
+       "pos": 22,
+       "before": "<|im_start|>user\nHow did the fall of the Soviet Union impact the economies of Eastern Europe?<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "<think>",
+       "patched_top1": "\n"
+      }
+     ]
+    },
+    "spanish": {
+     "n_tokens": 11592,
+     "dnll": 0.0001,
+     "kl": 0.00107,
+     "kl_p99": 0.00616,
+     "hit_share": 0.0,
+     "top1_agree": 0.97852,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.02792,
+      "layers.19.mlp.down_proj": 0.02506
+     },
+     "worst": [
+      {
+       "kl": 0.0847,
+       "seq": 33,
+       "pos": 71,
+       "before": ". Emily les contó que compraste la coartada de Vincent Bourg. Tenemos un margen de, al menos, 2 000 millones de euros. Hay una posibilidad de contaminación por cr",
+       "actual": "uce",
+       "base_top1": "áter",
+       "patched_top1": "áter"
+      },
+      {
+       "kl": 0.0831,
+       "seq": 5,
+       "pos": 35,
+       "before": "Por favor, compraste a Dixon un estudio de grabación para una semana, y luego financiaste mi spot comercial. Sólo en 48 estados. Además, anfet",
+       "actual": "amin",
+       "base_top1": "ol",
+       "patched_top1": "ol"
+      },
+      {
+       "kl": 0.0687,
+       "seq": 24,
+       "pos": 1,
+       "before": "Cre",
+       "actual": "o",
+       "base_top1": "te",
+       "patched_top1": "te"
+      },
+      {
+       "kl": 0.0563,
+       "seq": 33,
+       "pos": 9,
+       "before": "Sólo por esta vez, ¿cre",
+       "actual": "es",
+       "base_top1": "es",
+       "patched_top1": "es"
+      },
+      {
+       "kl": 0.0341,
+       "seq": 17,
+       "pos": 158,
+       "before": " provocada por diabetes Tipo-I... - ... Era el segundo hijo del Rey Eduardo VII y la Reina Alejandra. Fue el primer monarca en pertenecer a la Casa de Windsor, que se cre",
+       "actual": "ó",
+       "base_top1": "ó",
+       "patched_top1": "ó"
+      }
+     ]
+    },
+    "chinese": {
+     "n_tokens": 14325,
+     "dnll": -0.00198,
+     "kl": 0.00173,
+     "kl_p99": 0.00702,
+     "hit_share": 0.0,
+     "top1_agree": 0.9725,
+     "activity": {
+      "layers.15.mlp.down_proj": 0.02822,
+      "layers.19.mlp.down_proj": 0.02232
+     },
+     "worst": [
+      {
+       "kl": 0.0434,
+       "seq": 37,
+       "pos": 11,
+       "before": "FAO, Global Soil and terrain database（SOT",
+       "actual": "ER",
+       "base_top1": "D",
+       "patched_top1": "ED"
+      },
+      {
+       "kl": 0.0293,
+       "seq": 11,
+       "pos": 208,
+       "before": "领域，在消灭贫穷以及在教育方面——概括地说，就是在为所有人提供基本社会服务方面。 自2004年5月25日以来，又有8名个人和6",
+       "actual": "个",
+       "base_top1": "名",
+       "patched_top1": "名"
+      },
+      {
+       "kl": 0.0281,
+       "seq": 9,
+       "pos": 190,
+       "before": "第五十四届会议就本决议所涉个别领土通过的决议， 放开我，回去吧 You don't know what happens. 有没有猪血糕？ Ti Re Mi Re Ti La Ti Re",
+       "actual": " Fa",
+       "base_top1": " Mi",
+       "patched_top1": " Mi"
+      },
+      {
+       "kl": 0.0227,
+       "seq": 21,
+       "pos": 91,
+       "before": "15-4022. 以色列敌军留下的一枚集束炸弹在Al-Soultaniye爆炸，造成侯赛因•卡杜赫（Hussein Qadd",
+       "actual": "uh",
+       "base_top1": "ah",
+       "patched_top1": "ah"
+      },
+      {
+       "kl": 0.0217,
+       "seq": 19,
+       "pos": 2,
+       "before": "甲替",
+       "actual": "硝",
+       "base_top1": "星",
+       "patched_top1": "星"
+      }
+     ]
+    }
+   }
+  },
+  "wall_s": 166.4
+ },
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-0.8B",
+  "commit": "6400a5e6bf432f1a8e0674a18f58058e75fb41c5",
+  "notebook": "damage_map_colab.ipynb",
+  "gpu": "NVIDIA L4",
+  "saved_utc": "2026-11-20T23:03:07+00:00"
+ }
+}
