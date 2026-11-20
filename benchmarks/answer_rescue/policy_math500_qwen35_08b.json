@@ -1,0 +1,242 @@
+{
+ "base": {
+  "n": 150,
+  "acc_today": 0.0267,
+  "acc_rescue_kill_and_trunc": 0.18,
+  "truncated": {
+   "n": 4,
+   "answer_given": 2,
+   "rescued": 1
+  },
+  "fire_stop": {
+   "acc": 0.18,
+   "stopped_at_fire": 22,
+   "stopped_right": 12,
+   "tokens_today": 1142768,
+   "tokens_policy": 1044127,
+   "tokens_saved_pct": 8.6
+  },
+  "strict_precision": {
+   "all": {
+    "n": 36,
+    "precision": 0.611
+   },
+   "agree": {
+    "n": 22,
+    "precision": 0.773
+   },
+   "disagree": {
+    "n": 14,
+    "precision": 0.357
+   },
+   "stated>=2": {
+    "n": 20,
+    "precision": 0.65
+   },
+   "stated=1": {
+    "n": 16,
+    "precision": 0.562
+   }
+  }
+ },
+ "wsi_fixed": {
+  "n": 150,
+  "acc_today": 0.1067,
+  "acc_rescue_kill_and_trunc": 0.1933,
+  "truncated": {
+   "n": 0,
+   "answer_given": 0,
+   "rescued": 0
+  },
+  "fire_stop": {
+   "acc": 0.1867,
+   "stopped_at_fire": 24,
+   "stopped_right": 13,
+   "tokens_today": 1090589,
+   "tokens_policy": 1006529,
+   "tokens_saved_pct": 7.7
+  },
+  "strict_precision": {
+   "all": {
+    "n": 33,
+    "precision": 0.394
+   },
+   "agree": {
+    "n": 23,
+    "precision": 0.435
+   },
+   "disagree": {
+    "n": 10,
+    "precision": 0.3
+   },
+   "stated>=2": {
+    "n": 19,
+    "precision": 0.526
+   },
+   "stated=1": {
+    "n": 14,
+    "precision": 0.214
+   }
+  }
+ },
+ "random_fixed": {
+  "n": 150,
+  "acc_today": 0.0533,
+  "acc_rescue_kill_and_trunc": 0.1933,
+  "truncated": {
+   "n": 4,
+   "answer_given": 1,
+   "rescued": 0
+  },
+  "fire_stop": {
+   "acc": 0.1733,
+   "stopped_at_fire": 22,
+   "stopped_right": 10,
+   "tokens_today": 1116782,
+   "tokens_policy": 1053601,
+   "tokens_saved_pct": 5.7
+  },
+  "strict_precision": {
+   "all": {
+    "n": 34,
+    "precision": 0.618
+   },
+   "agree": {
+    "n": 27,
+    "precision": 0.704
+   },
+   "disagree": {
+    "n": 7,
+    "precision": 0.286
+   },
+   "stated>=2": {
+    "n": 18,
+    "precision": 0.778
+   },
+   "stated=1": {
+    "n": 16,
+    "precision": 0.438
+   }
+  }
+ },
+ "wsi_moi": {
+  "n": 150,
+  "acc_today": 0.1467,
+  "acc_rescue_kill_and_trunc": 0.2333,
+  "truncated": {
+   "n": 6,
+   "answer_given": 0,
+   "rescued": 0
+  },
+  "fire_stop": {
+   "acc": 0.2133,
+   "stopped_at_fire": 22,
+   "stopped_right": 12,
+   "tokens_today": 1409652,
+   "tokens_policy": 1299499,
+   "tokens_saved_pct": 7.8
+  },
+  "strict_precision": {
+   "all": {
+    "n": 27,
+    "precision": 0.481
+   },
+   "agree": {
+    "n": 20,
+    "precision": 0.6
+   },
+   "disagree": {
+    "n": 7,
+    "precision": 0.143
+   },
+   "stated>=2": {
+    "n": 12,
+    "precision": 0.5
+   },
+   "stated=1": {
+    "n": 15,
+    "precision": 0.467
+   }
+  }
+ },
+ "random_moi": {
+  "n": 150,
+  "acc_today": 0.18,
+  "acc_rescue_kill_and_trunc": 0.2867,
+  "truncated": {
+   "n": 18,
+   "answer_given": 4,
+   "rescued": 3
+  },
+  "fire_stop": {
+   "acc": 0.24,
+   "stopped_at_fire": 22,
+   "stopped_right": 12,
+   "tokens_today": 1436792,
+   "tokens_policy": 1347003,
+   "tokens_saved_pct": 6.2
+  },
+  "strict_precision": {
+   "all": {
+    "n": 20,
+    "precision": 0.65
+   },
+   "agree": {
+    "n": 16,
+    "precision": 0.75
+   },
+   "disagree": {
+    "n": 4,
+    "precision": 0.25
+   },
+   "stated>=2": {
+    "n": 13,
+    "precision": 0.769
+   },
+   "stated=1": {
+    "n": 7,
+    "precision": 0.429
+   }
+  }
+ },
+ "restart_moi": {
+  "n": 150,
+  "acc_today": 0.1733,
+  "acc_rescue_kill_and_trunc": 0.2867,
+  "truncated": {
+   "n": 16,
+   "answer_given": 3,
+   "rescued": 2
+  },
+  "fire_stop": {
+   "acc": 0.2533,
+   "stopped_at_fire": 22,
+   "stopped_right": 12,
+   "tokens_today": 1449699,
+   "tokens_policy": 1357783,
+   "tokens_saved_pct": 6.3
+  },
+  "strict_precision": {
+   "all": {
+    "n": 24,
+    "precision": 0.625
+   },
+   "agree": {
+    "n": 16,
+    "precision": 0.688
+   },
+   "disagree": {
+    "n": 8,
+    "precision": 0.5
+   },
+   "stated>=2": {
+    "n": 13,
+    "precision": 0.615
+   },
+   "stated=1": {
+    "n": 11,
+    "precision": 0.636
+   }
+  }
+ }
+}
