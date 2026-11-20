@@ -31,6 +31,7 @@ from .spec_eval import (
 )
 from .tracer import (
     CompactTrace,
+    attribute_direction_writers,
     capture_causal_trace,
     capture_compact,
     dequantize_block_fp4,
@@ -49,6 +50,7 @@ from .tracer import (
     resolve_mlp_idx_mode,
     screen_patch_candidates,
     screen_patches_from_traces,
+    summarize_direction_traces,
 )
 
 __all__ = [
@@ -63,6 +65,7 @@ __all__ = [
     "SuffixDraftIndex",
     "TaskRouter",
     "apply_selection",
+    "attribute_direction_writers",
     "audit_moipatch",
     "capture_base_drafts",
     "capture_causal_trace",
@@ -89,6 +92,7 @@ __all__ = [
     "screen_patch_candidates",
     "screen_patches_from_traces",
     "speculative_generate_with_base",
+    "summarize_direction_traces",
     "trace_all",
     "DynamicCircuitPager",
     "MixtureOfIndexes",

@@ -301,6 +301,8 @@ def _infer_attn_heads(model: nn.Module, out_proj_name: str, d_in: int) -> int:
             hd = getattr(parent, hd_attr, None)
             if isinstance(hd, int) and hd > 0 and d_in % hd == 0:
                 return d_in // hd
+    if ".conv." in out_proj_name or ".short_conv." in out_proj_name or out_proj_name.startswith(("conv.", "short_conv.")):
+        return 1
     cfg = getattr(getattr(model, "config", None), "text_config", getattr(model, "config", None))
     if cfg is not None:
         if "linear_attn" in out_proj_name:
@@ -323,6 +325,139 @@ def _find_attn_out_projs(model: nn.Module, hidden: int) -> dict[str, tuple[nn.Mo
             nh = _infer_attn_heads(model, n, m.weight.shape[1] if isinstance(m, nn.Linear) else m.weight.shape[0])
             out[n] = (m, nh)
     return out
+
+
+class _DirectionTargetCaptured(Exception):
+    """Sentinel to stop the forward pass right after capturing ``target_layer``."""
+
+
+def _resolve_direction_layer(n_layers: int, target_layer: int, convention: str = "block") -> tuple[int, bool]:
+    """Map user ``target_layer`` into ``(stop_block_idx, use_final_hidden)``.
+
+    ``convention='block'`` uses 0-based decoder block indices ``0..n_layers-1`` (matching
+    ``CompactTrace.resid``). ``convention='hidden_states'`` matches HuggingFace
+    ``output_hidden_states=True`` and ``MoIPatch.router['layer']``: ``0`` is pre-block embeddings
+    (``stop_blk=-1``), ``1..n_layers-1`` is block ``target_layer-1``, and ``n_layers`` is post-final-norm.
+    """
+    if convention not in ("block", "hidden_states"):
+        raise ValueError(f"convention must be 'block' or 'hidden_states', got {convention!r}")
+    if n_layers <= 0:
+        raise ValueError(f"Model must have at least 1 decoder block, got {n_layers}")
+    if convention == "block":
+        l = target_layer if target_layer >= 0 else n_layers + target_layer
+        if l < 0 or l >= n_layers:
+            raise ValueError(f"target_layer {target_layer} out of range for block convention [0, {n_layers - 1}]")
+        return l, False
+    l = target_layer if target_layer >= 0 else (n_layers + 1) + target_layer
+    if l < 0 or l > n_layers:
+        raise ValueError(f"target_layer {target_layer} out of range for hidden_states convention [0, {n_layers}]")
+    if l == 0:
+        return -1, False
+    if l == n_layers:
+        return n_layers - 1, True
+    return l - 1, False
+
+
+def _resolve_hidden_span(T: int, span: int | tuple[int, int] | None) -> tuple[int, int]:
+    if T < 1:
+        raise ValueError(f"Sequence must contain at least 1 token, got {T}")
+    if span is None:
+        return T - 1, T
+    if isinstance(span, int) and not isinstance(span, bool):
+        idx = span if span >= 0 else T + span
+        if idx < 0 or idx >= T:
+            raise ValueError(f"Token position {span} out of range for sequence length {T}")
+        return idx, idx + 1
+    if isinstance(span, (tuple, list)) and len(span) == 2:
+        s_raw, e_raw = int(span[0]), int(span[1])
+        lo = s_raw if s_raw >= 0 else T + s_raw
+        hi = e_raw if e_raw >= 0 else T + e_raw
+        if not (0 <= lo < hi <= T):
+            raise ValueError(f"Token span {span!r} -> ({lo}, {hi}) invalid for sequence length {T}")
+        return lo, hi
+    raise ValueError(f"Invalid token position/span {span!r}; expected None, int, or (start, end)")
+
+
+def _validate_target_dir(target_dir: torch.Tensor, hidden: int, *, normalize: bool = False) -> torch.Tensor:
+    t = target_dir.detach().float().cpu() if isinstance(target_dir, torch.Tensor) else torch.as_tensor(target_dir, dtype=torch.float32)
+    if t.dim() == 2 and t.shape[0] == 1:
+        t = t.squeeze(0)
+    if t.dim() != 1 or int(t.shape[0]) != int(hidden):
+        raise ValueError(f"target_dir must have shape ({hidden},) or (1, {hidden}), got {tuple(t.shape)}")
+    if not torch.isfinite(t).all():
+        raise ValueError("target_dir contains non-finite values")
+    nrm = float(t.norm().item())
+    if nrm <= 1e-12:
+        raise ValueError(f"target_dir must have non-zero norm, got {nrm}")
+    if normalize:
+        t = t / nrm
+    return t.contiguous()
+
+
+def _find_final_norm_module(model: nn.Module) -> nn.Module | None:
+    for root in (getattr(model, "model", None), getattr(model, "transformer", None), model):
+        if not isinstance(root, nn.Module):
+            continue
+        for attr in ("norm", "embedding_norm", "ln_f", "final_layernorm", "norm_f"):
+            cand = getattr(root, attr, None)
+            if isinstance(cand, nn.Module):
+                return cand
+    return None
+
+
+def _writer_kind(mod_name: str, is_mlp: bool) -> str:
+    if is_mlp:
+        return "mlp"
+    if ".conv." in mod_name or ".short_conv." in mod_name or mod_name.startswith(("conv.", "short_conv.")):
+        return "conv"
+    return "attn"
+
+
+def _forward_for_hidden(model: nn.Module, ids_dev: torch.Tensor, *, need_hidden_states: bool) -> Any:
+    kw: dict[str, Any] = {"input_ids": ids_dev, "use_cache": False}
+    if need_hidden_states:
+        kw["output_hidden_states"] = True
+    try:
+        return model(**kw, logits_to_keep=1)
+    except TypeError:
+        try:
+            return model(**kw)
+        except TypeError:
+            try:
+                return model(input_ids=ids_dev, use_cache=False)
+            except TypeError:
+                return model(input_ids=ids_dev)
+
+
+def _normalize_seq_list(inputs: torch.Tensor | list[int] | list[torch.Tensor | list[int]]) -> list[torch.Tensor]:
+    if isinstance(inputs, torch.Tensor):
+        if inputs.dim() == 1:
+            if inputs.numel() == 0:
+                raise ValueError("Input sequence tensor must be non-empty")
+            return [inputs.reshape(1, -1)]
+        if inputs.dim() == 2:
+            if inputs.shape[0] == 0 or inputs.shape[1] == 0:
+                raise ValueError("Input batch tensor must be non-empty")
+            return [inputs[i : i + 1] for i in range(inputs.shape[0])]
+        raise ValueError(f"Expected 1D or 2D input_ids tensor, got shape {tuple(inputs.shape)}")
+    if not isinstance(inputs, (list, tuple)) or len(inputs) == 0:
+        raise ValueError("inputs must contain at least one sequence")
+    first = inputs[0]
+    if isinstance(first, int) and not isinstance(first, bool):
+        return [torch.tensor(inputs, dtype=torch.long).reshape(1, -1)]
+    seqs: list[torch.Tensor] = []
+    for item in inputs:
+        t = item if isinstance(item, torch.Tensor) else torch.tensor(item, dtype=torch.long)
+        if t.dim() == 1:
+            t = t.reshape(1, -1)
+        elif t.dim() == 2 and t.shape[0] == 1:
+            pass
+        else:
+            raise ValueError(f"Each sequence must be 1D or shape (1, T), got {tuple(t.shape)}")
+        if t.shape[1] == 0:
+            raise ValueError("Each sequence must have at least 1 token")
+        seqs.append(t)
+    return seqs
 
 
 # ----------------------------------------------------------------------------------------------- CompactTrace
@@ -370,6 +505,7 @@ class CompactTrace:
     grad_target: dict[str, dict[str, Any]] = field(default_factory=dict)
     grad_healthy: dict[str, dict[str, Any]] = field(default_factory=dict)
     grad_summary: dict[str, dict[str, Any]] = field(default_factory=dict)
+    token_attr: dict[str, torch.Tensor] = field(default_factory=dict)
 
     def dequant_resid(self, layer: int) -> torch.Tensor:
         return _decode_resid(self.resid[layer], self.resid_quant, self.group_size, self.hadamard_block)
@@ -447,6 +583,7 @@ class CompactTrace:
             + sum(_tbytes(g["data"]) + (_tbytes(g["scales"]) if g.get("scales") is not None else 0)
                   for g in self.grad_healthy.values())
             + sum(_tbytes(v) for s in self.grad_summary.values() for v in s.values() if isinstance(v, torch.Tensor))
+            + sum(_tbytes(v) for v in self.token_attr.values() if isinstance(v, torch.Tensor))
         )
         return {
             "resid": resid_b,
@@ -460,6 +597,51 @@ class CompactTrace:
 
     def size_bytes(self) -> int:
         return self.byte_breakdown()["total"]
+
+    def top_input_tokens(
+        self,
+        input_ids: torch.Tensor | list[int] | None = None,
+        *,
+        tokenizer: Any = None,
+        top_k: int = 10,
+        metric: str = "grad_x_input",
+    ) -> list[dict[str, Any]]:
+        """Rank input token positions by stored input-embedding attribution (``grad_x_input`` or ``grad_norm``)."""
+        if metric not in ("grad_x_input", "grad_norm"):
+            raise ValueError(f"metric must be 'grad_x_input' or 'grad_norm', got {metric!r}")
+        if metric not in self.token_attr:
+            return []
+        vals = self.token_attr[metric].detach().float().cpu().reshape(-1)
+        gxi = self.token_attr["grad_x_input"].detach().float().cpu().reshape(-1) if "grad_x_input" in self.token_attr else None
+        gn = self.token_attr["grad_norm"].detach().float().cpu().reshape(-1) if "grad_norm" in self.token_attr else None
+
+        ids_list: list[int] | None = None
+        if input_ids is not None:
+            raw_ids = input_ids.detach().cpu().reshape(-1).tolist() if isinstance(input_ids, torch.Tensor) else list(input_ids)
+            ids_list = [int(x) for x in raw_ids[: vals.numel()]]
+
+        rank_vals = vals.abs() if metric == "grad_x_input" else vals
+        k = min(max(0, int(top_k)), int(vals.numel()))
+        if k == 0:
+            return []
+        order = torch.argsort(rank_vals, descending=True)[:k].tolist()
+        out: list[dict[str, Any]] = []
+        for pos in order:
+            row: dict[str, Any] = {"pos": int(pos), "score": round(float(vals[pos].item()), 6)}
+            if gxi is not None and pos < gxi.numel():
+                row["grad_x_input"] = round(float(gxi[pos].item()), 6)
+            if gn is not None and pos < gn.numel():
+                row["grad_norm"] = round(float(gn[pos].item()), 6)
+            if ids_list is not None and pos < len(ids_list):
+                tid = ids_list[pos]
+                row["token_id"] = tid
+                if tokenizer is not None:
+                    try:
+                        row["token"] = tokenizer.decode([tid])
+                    except Exception:
+                        pass
+            out.append(row)
+        return out
 
     def compare_positions(self, t_target: int, t_ref: int, *, top_k: int = 8) -> dict[str, Any]:
         """Find which layers, MLP neurons, and attention heads shifted strongest at token `t_target` vs `t_ref`."""
@@ -587,7 +769,7 @@ class CompactTrace:
             smeta: dict[str, Any] = {"module": mk}
             for k, v in gs.items():
                 if isinstance(v, torch.Tensor):
-                    flat[f"grad_s.{idx}.{k}"] = v.detach().cpu().contiguous()
+                    flat[f"grad_s.{idx}.{k}"] = v.detach().cpu().contiguous().clone()
                     tkeys.append(k)
                 elif isinstance(v, tuple):
                     smeta[k] = list(v)
@@ -595,6 +777,9 @@ class CompactTrace:
                     smeta[k] = v
             smeta["tensor_keys"] = tkeys
             grad_summary_meta[str(idx)] = smeta
+        for k, v in self.token_attr.items():
+            if isinstance(v, torch.Tensor):
+                flat[f"tok_attr.{k}"] = v.detach().cpu().contiguous().clone()
         save_file(flat, str(p / "compact_trace.safetensors"))
         (p / "compact_trace.json").write_text(json.dumps({
             "seq_len": self.seq_len, "n_layers": self.n_layers, "hidden_size": self.hidden_size,
@@ -608,6 +793,7 @@ class CompactTrace:
             "grad_quant": self.grad_quant, "grad_mode": self.grad_mode,
             "grad_target_meta": grad_target_meta, "grad_healthy_meta": grad_healthy_meta,
             "grad_summary_meta": grad_summary_meta,
+            "token_attr_keys": sorted(k for k, v in self.token_attr.items() if isinstance(v, torch.Tensor)),
         }, indent=2), encoding="utf-8")
         return p
 
@@ -668,6 +854,11 @@ class CompactTrace:
             for tk in sm.get("tensor_keys", ()):
                 entry[tk] = tens[f"grad_s.{idx}.{tk}"]
             grad_summary[mod] = entry
+        token_attr = {
+            k: tens[f"tok_attr.{k}"]
+            for k in info.get("token_attr_keys", ())
+            if f"tok_attr.{k}" in tens
+        }
         mlp_meta = {int(ls): m for ls, m in info.get("mlp_meta", {}).items()}
         return cls(
             info["seq_len"], info["n_layers"], info["hidden_size"], info["resid_quant"],
@@ -688,6 +879,7 @@ class CompactTrace:
             grad_target=grad_target,
             grad_healthy=grad_healthy,
             grad_summary=grad_summary,
+            token_attr=token_attr,
         )
 
 
@@ -721,12 +913,15 @@ def capture_compact(
     grad_mode: str = "compressed",
     grad_quant: str = "int8",
     grad_rank: int = 8,
-    target_span: tuple[int, int] | None = None,
+    target_span: int | tuple[int, int] | None = None,
     healthy_span: tuple[int, int] | None = None,
     grad_checkpointing: bool = True,
     pareto_betas: tuple[float, ...] = (0.0, 0.5, 1.0, 2.0, 4.0),
     center: str = "none",
     healthy_cost: str = "linear",
+    target_dir: torch.Tensor | None = None,
+    target_layer: int | None = None,
+    target_layer_convention: str = "block",
 ) -> CompactTrace:
     """Record a Pareto-optimal compressed token trace (~80-95 MiB per 1.6k tok on 0.8B):
     INT8 Hadamard-rotated residuals, adaptive or fixed Top-K FP4 bitmask/bitpack MLP units
@@ -734,7 +929,13 @@ def capture_compact(
     `head_quant` pre-`W_O` head vectors + post-`W_O` L2 norms, sparse Top-16 attention targets,
     and INT8 KV/recurrent cache states. When ``capture_grad=True``, also runs target & healthy
     backward passes to record per-module causal summaries (and compressed token-level gradients
-    when ``grad_mode="compressed"``)."""
+    when ``grad_mode="compressed"``). Pass ``target_dir`` + ``target_layer`` to attribute an
+    internal residual-stream direction (e.g. a router/veto vector) instead of output token NLL."""
+    dir_mode = target_dir is not None
+    if dir_mode and not capture_grad:
+        raise ValueError("target_dir requires capture_grad=True (or use capture_causal_trace)")
+    if dir_mode and target_layer is None:
+        raise ValueError("target_layer is required when target_dir is provided")
     if center not in ("none", "healthy"):
         raise ValueError(f"center must be 'none' or 'healthy', got {center!r}")
     if healthy_cost not in ("linear", "fisher"):
@@ -767,8 +968,11 @@ def capture_compact(
     if max_tokens is not None:
         ids = ids[:, :max_tokens]
     T = int(ids.shape[1])
-    if capture_grad and T < 2:
-        raise ValueError(f"capture_compact(capture_grad=True) requires seq_len >= 2, got {T}")
+    if capture_grad:
+        if (not dir_mode or healthy_span is not None) and T < 2:
+            raise ValueError(f"capture_compact(capture_grad=True) requires seq_len >= 2, got {T}")
+        if dir_mode and T < 1:
+            raise ValueError(f"capture_compact(capture_grad=True, target_dir=...) requires seq_len >= 1, got {T}")
 
     _, blocks = find_blocks(model)
     n_layers = len(blocks)
@@ -786,6 +990,14 @@ def capture_compact(
     d0 = mods[mlps[0].down]
     hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
     attns = _find_attn_out_projs(model, hidden)
+    if dir_mode:
+        tdir_cpu: torch.Tensor | None = _validate_target_dir(target_dir, hidden, normalize=False)  # type: ignore[arg-type]
+        stop_blk: int | None
+        stop_blk, use_final_hidden = _resolve_direction_layer(n_layers, int(target_layer), target_layer_convention)  # type: ignore[arg-type]
+    else:
+        tdir_cpu = None
+        stop_blk = None
+        use_final_hidden = False
 
     resid_out: dict[int, dict[str, Any]] = {}
     mlp_topk_out: dict[int, dict[str, torch.Tensor]] = {}
@@ -964,27 +1176,47 @@ def capture_compact(
     grad_target_out: dict[str, dict[str, Any]] = {}
     grad_healthy_out: dict[str, dict[str, Any]] = {}
     grad_summary_out: dict[str, dict[str, Any]] = {}
+    token_attr_out: dict[str, torch.Tensor] = {}
     eff_grad_mode = "none"
 
     if capture_grad:
         eff_grad_mode = grad_mode
-        lo_t, hi_t = _resolve_target_span(T, target_span)
-        if healthy_span is not None:
-            lo_h = max(0, min(T - 2, int(healthy_span[0])))
-            hi_h = max(lo_h, min(T - 1, int(healthy_span[1])))
-        elif lo_t >= 1:
-            lo_h, hi_h = 0, lo_t
+        if dir_mode:
+            lo_t, hi_t = _resolve_hidden_span(T, target_span)
+            if healthy_span is not None:
+                lo_h = max(0, min(T - 2, int(healthy_span[0])))
+                hi_h = max(lo_h, min(T - 1, int(healthy_span[1])))
+            else:
+                lo_h, hi_h = 0, 0
         else:
-            lo_h, hi_h = 0, 0
+            lo_t, hi_t = _resolve_target_span(T, target_span if isinstance(target_span, tuple) or target_span is None else (int(target_span), int(target_span) + 1))
+            if healthy_span is not None:
+                lo_h = max(0, min(T - 2, int(healthy_span[0])))
+                hi_h = max(lo_h, min(T - 1, int(healthy_span[1])))
+            elif lo_t >= 1:
+                lo_h, hi_h = 0, lo_t
+            else:
+                lo_h, hi_h = 0, 0
 
         grad_mods: dict[str, dict[str, Any]] = {}
         for dname, li in mlp_by_down.items():
             mk = _safe_module_suffix(dname)
-            grad_mods[mk] = {"mod": mods[dname], "kind": "mlp", "layer": int(li)}
-        for aname, (am, _nh) in attns.items():
+            grad_mods[mk] = {"mod": mods[dname], "kind": "mlp", "layer": int(li), "n_heads": 0}
+        for aname, (am, nh) in attns.items():
             mk = _safe_module_suffix(aname)
             li = _layer_idx_from_name(aname)
-            grad_mods[mk] = {"mod": am, "kind": "attn", "layer": int(li) if li is not None else None}
+            grad_mods[mk] = {
+                "mod": am,
+                "kind": _writer_kind(aname, False),
+                "layer": int(li) if li is not None else None,
+                "n_heads": int(nh),
+            }
+        if dir_mode and hi_h <= lo_h and stop_blk is not None:
+            grad_mods = {
+                mk: meta_m
+                for mk, meta_m in grad_mods.items()
+                if (stop_blk >= 0 and (meta_m["layer"] is None or int(meta_m["layer"]) <= stop_blk))
+            }
 
         orig_req = [(p, p.requires_grad) for p in model.parameters()]
         was_training = bool(model.training)
@@ -1002,19 +1234,48 @@ def capture_compact(
 
         ids_dev = ids.to(dev)
 
-        def _run_backward(lo: int, hi: int, sign: float, *, capture_acts: bool) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+        def _run_backward(
+            lo: int, hi: int, sign: float, *, capture_acts: bool, objective: str = "token_nll"
+        ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor], float]:
             st_h: dict[str, torch.Tensor] = {}
             st_y: dict[str, torch.Tensor] = {}
             st_g: dict[str, torch.Tensor] = {}
+            emb_state: dict[str, torch.Tensor] = {}
             ghandles = []
+
+            def _attach_emb_tracker(t: torch.Tensor) -> torch.Tensor:
+                if capture_acts and "x" not in emb_state:
+                    emb_state["x"] = (t[0] if t.dim() == 3 else t).detach().float().cpu()
+                if torch.is_grad_enabled() and not t.requires_grad:
+                    t = t.detach().requires_grad_(True)
+                if capture_acts and torch.is_grad_enabled() and t.requires_grad:
+                    def _save_emb_g(grad: torch.Tensor) -> None:
+                        emb_state["g"] = (grad[0] if grad.dim() == 3 else grad).detach().float().cpu()
+
+                    t.register_hook(_save_emb_g)
+                return t
 
             emb_mod = model.get_input_embeddings() if hasattr(model, "get_input_embeddings") else getattr(getattr(model, "model", model), "embed_tokens", None)
             if emb_mod is not None:
                 def _emb_hook(_m, _inp, emb_out):
-                    if torch.is_grad_enabled() and isinstance(emb_out, torch.Tensor) and not emb_out.requires_grad:
-                        return emb_out.detach().requires_grad_(True)
+                    t = emb_out[0] if isinstance(emb_out, tuple) else emb_out
+                    if isinstance(t, torch.Tensor):
+                        t_tr = _attach_emb_tracker(t)
+                        if t_tr is not t:
+                            return (t_tr, *emb_out[1:]) if isinstance(emb_out, tuple) else t_tr
                     return emb_out
+
                 ghandles.append(emb_mod.register_forward_hook(_emb_hook))
+            elif len(blocks) > 0:
+                def _emb_pre_hook(_m, inp):
+                    x0 = inp[0] if isinstance(inp, tuple) and inp else inp
+                    if isinstance(x0, torch.Tensor):
+                        x0_tr = _attach_emb_tracker(x0)
+                        if x0_tr is not x0 and isinstance(inp, tuple):
+                            return (x0_tr, *inp[1:])
+                    return None
+
+                ghandles.append(blocks[0].register_forward_pre_hook(_emb_pre_hook))
 
             for mk, meta_m in grad_mods.items():
                 mod = meta_m["mod"]
@@ -1042,30 +1303,125 @@ def capture_compact(
 
                 ghandles.append(mod.register_forward_hook(_mod_hook))
 
+            target_hooks = []
+            captured_h: dict[str, Any] = {}
+            out_dir = None
+            obj_val = 0.0
             logits = lp = obj = None
             try:
                 with torch.enable_grad():
-                    logits = _tail_logits(model, ids_dev, lo)[: hi - lo].float()
-                    lp = F.log_softmax(logits, dim=-1).gather(1, ids_dev[0, lo + 1 : hi + 1, None]).squeeze(1)
-                    obj = sign * lp.mean()
-                    if obj.requires_grad:
-                        obj.backward()
+                    if objective == "direction":
+                        assert tdir_cpu is not None and stop_blk is not None
+                        if not use_final_hidden:
+                            if stop_blk == -1:
+                                def _t_pre_hook(_m, inp):
+                                    h = inp[0] if isinstance(inp, tuple) and inp else inp
+                                    if torch.is_grad_enabled() and isinstance(h, torch.Tensor) and h.requires_grad:
+                                        captured_h["val"] = h
+                                        raise _DirectionTargetCaptured()
+
+                                target_hooks.append(blocks[0].register_forward_pre_hook(_t_pre_hook))
+                            else:
+                                def _t_blk_hook(_m, _inp, blk_out):
+                                    captured_h["saw_stop"] = True
+                                    t = blk_out[0] if isinstance(blk_out, (tuple, list)) else blk_out
+                                    if torch.is_grad_enabled() and isinstance(t, torch.Tensor) and t.requires_grad:
+                                        captured_h["val"] = t
+                                        raise _DirectionTargetCaptured()
+
+                                target_hooks.append(blocks[stop_blk].register_forward_hook(_t_blk_hook))
+                                if stop_blk == n_layers - 1:
+                                    fn_mod = _find_final_norm_module(model)
+                                    if fn_mod is not None:
+                                        def _t_fn_pre(_m, inp):
+                                            if not captured_h.get("saw_stop"):
+                                                return None
+                                            h = inp[0] if isinstance(inp, tuple) and inp else inp
+                                            if torch.is_grad_enabled() and isinstance(h, torch.Tensor) and h.requires_grad:
+                                                captured_h["pre_final_norm"] = h
+                                                raise _DirectionTargetCaptured()
+
+                                        target_hooks.append(fn_mod.register_forward_pre_hook(_t_fn_pre))
+
+                        try:
+                            out_dir = _forward_for_hidden(model, ids_dev, need_hidden_states=True)
+                        except _DirectionTargetCaptured:
+                            pass
+                        finally:
+                            for th in target_hooks:
+                                th.remove()
+                            target_hooks.clear()
+
+                        hs = getattr(out_dir, "hidden_states", None) if out_dir is not None else None
+                        if "val" in captured_h:
+                            h_t = captured_h["val"]
+                        elif use_final_hidden:
+                            if hs is None or len(hs) <= n_layers:
+                                raise RuntimeError(
+                                    f"Model did not return hidden_states[{n_layers}] needed for target_layer={target_layer}"
+                                )
+                            h_t = hs[n_layers]
+                        elif stop_blk == -1:
+                            if hs is None or len(hs) == 0:
+                                raise RuntimeError("Model did not return hidden_states[0] for target_layer=0")
+                            h_t = hs[0]
+                        elif stop_blk < n_layers - 1:
+                            if hs is None or len(hs) <= stop_blk + 1:
+                                raise RuntimeError(
+                                    f"Model did not return hidden_states[{stop_blk + 1}] for block {stop_blk}"
+                                )
+                            h_t = hs[stop_blk + 1]
+                        elif "pre_final_norm" in captured_h:
+                            h_t = captured_h["pre_final_norm"]
+                        elif hs is not None and len(hs) > 0:
+                            h_t = hs[-1]
+                        else:
+                            raise RuntimeError(f"Failed to capture hidden state for block {stop_blk}")
+
+                        h_2d = (h_t[0] if h_t.dim() == 3 else h_t).float()
+                        tdir_dev = tdir_cpu.to(device=h_2d.device, dtype=torch.float32)
+                        dir_score_t = (h_2d[lo:hi] @ tdir_dev).mean()
+                        obj_val = float(dir_score_t.detach().item())
+                        obj = sign * dir_score_t
+                        if obj.requires_grad:
+                            obj.backward()
+                    else:
+                        logits = _tail_logits(model, ids_dev, lo)[: hi - lo].float()
+                        lp = F.log_softmax(logits, dim=-1).gather(1, ids_dev[0, lo + 1 : hi + 1, None]).squeeze(1)
+                        obj = sign * lp.mean()
+                        obj_val = float(lp.mean().detach().item())
+                        if obj.requires_grad:
+                            obj.backward()
             finally:
+                for th in target_hooks:
+                    th.remove()
                 for gh in ghandles:
                     gh.remove()
-                del logits, lp, obj
+                del logits, lp, obj, out_dir, captured_h
                 if dev.type == "cuda":
                     torch.cuda.empty_cache()
 
             for mk in grad_mods:
                 if mk in st_y and mk not in st_g:
                     st_g[mk] = torch.zeros_like(st_y[mk])
-            return st_h, st_y, st_g
+            tok_attr: dict[str, torch.Tensor] = {}
+            if capture_acts and "x" in emb_state and "g" in emb_state:
+                emb_x = emb_state["x"]
+                emb_g = emb_state["g"]
+                tok_attr = {
+                    "grad_x_input": (emb_g * emb_x).sum(dim=-1).float().cpu(),
+                    "grad_norm": emb_g.norm(dim=-1).float().cpu(),
+                }
+            return st_h, st_y, st_g, tok_attr, obj_val
 
         try:
-            acts_h, acts_y, g_target_map = _run_backward(lo_t, hi_t, 1.0, capture_acts=True)
+            acts_h, acts_y, g_target_map, token_attr_out, target_obj_val = _run_backward(
+                lo_t, hi_t, 1.0, capture_acts=True, objective=("direction" if dir_mode else "token_nll")
+            )
             if hi_h > lo_h:
-                _, _, g_healthy_map = _run_backward(lo_h, hi_h, -1.0, capture_acts=False)
+                _, _, g_healthy_map, _, _ = _run_backward(
+                    lo_h, hi_h, -1.0, capture_acts=False, objective="token_nll"
+                )
             else:
                 g_healthy_map = {}
 
@@ -1189,11 +1545,14 @@ def capture_compact(
                     healthy_dnll_top1 = float(-(u0 @ C_h @ u0).item())
                     pareto_top1 = target_supp_top1 / max(abs(healthy_dnll_top1), 0.01)
 
-                grad_summary_out[mk] = {
+                causal_attr = float((g_t * y_act).sum().item())
+                gs_entry: dict[str, Any] = {
                     "kind": meta_m["kind"],
                     "layer": meta_m["layer"],
                     "d_out": D,
                     "d_in": U,
+                    "causal_attr": round(causal_attr, 6),
+                    "abs_causal_attr": round(abs(causal_attr), 6),
                     "neuron_supp_attr": neuron_supp_attr,
                     "neuron_supp_centered_attr": neuron_supp_centered_attr,
                     "neuron_dnll_attr": neuron_dnll_attr,
@@ -1215,6 +1574,15 @@ def capture_compact(
                     "pareto_top1": round(pareto_top1, 6),
                     "paired_diff_norm": round(float(paired_diff.norm().item()), 6),
                 }
+                if dir_mode and tdir_cpu is not None:
+                    direct_attr = float((y_act[lo_t:hi_t].mean(dim=0) @ tdir_cpu).item())
+                    gs_entry["direct_attr"] = round(direct_attr, 6)
+                    gs_entry["indirect_attr"] = round(causal_attr - direct_attr, 6)
+                nh_m = int(meta_m.get("n_heads", 0))
+                if meta_m["kind"] == "attn" and nh_m > 0 and U % nh_m == 0:
+                    gs_entry["n_heads"] = nh_m
+                    gs_entry["head_causal_attr"] = neuron_supp_attr.reshape(nh_m, U // nh_m).sum(dim=1).float()
+                grad_summary_out[mk] = gs_entry
 
                 if grad_mode == "compressed":
                     grad_target_out[mk] = _encode_resid(g_t, grad_quant, group_size, hadamard_block)
@@ -1227,6 +1595,14 @@ def capture_compact(
             trace_meta["healthy_span"] = [int(lo_h), int(hi_h)]
             trace_meta["grad_center"] = center
             trace_meta["grad_healthy_cost"] = healthy_cost
+            trace_meta["grad_objective"] = "direction" if dir_mode else "token_nll"
+            if dir_mode and tdir_cpu is not None and stop_blk is not None:
+                trace_meta["target_layer"] = int(target_layer)  # type: ignore[arg-type]
+                trace_meta["target_layer_convention"] = target_layer_convention
+                trace_meta["target_stop_block"] = int(stop_blk)
+                trace_meta["target_use_final_hidden"] = bool(use_final_hidden)
+                trace_meta["target_dir_norm"] = round(float(tdir_cpu.norm().item()), 6)
+                trace_meta["target_dir_score"] = round(float(target_obj_val), 6)
         finally:
             if enabled_gc and hasattr(model, "gradient_checkpointing_disable"):
                 try:
@@ -1246,6 +1622,7 @@ def capture_compact(
         cache_quant=cache_quant, cache=cache_out, head_quant=head_quant, meta=trace_meta,
         grad_quant=grad_quant, grad_mode=eff_grad_mode,
         grad_target=grad_target_out, grad_healthy=grad_healthy_out, grad_summary=grad_summary_out,
+        token_attr=token_attr_out,
     )
 
 
@@ -1253,9 +1630,12 @@ def capture_causal_trace(
     model: nn.Module,
     input_ids: torch.Tensor | list[int],
     *,
-    target_span: tuple[int, int] | None,
+    target_span: int | tuple[int, int] | None = None,
     healthy_span: tuple[int, int] | None = None,
     grad_mode: str = "compressed",
+    target_dir: torch.Tensor | None = None,
+    target_layer: int | None = None,
+    target_layer_convention: str = "block",
     **kwargs: Any,
 ) -> CompactTrace:
     """Convenience wrapper calling ``capture_compact(..., capture_grad=True)``."""
@@ -1266,6 +1646,9 @@ def capture_causal_trace(
         grad_mode=grad_mode,
         target_span=target_span,
         healthy_span=healthy_span,
+        target_dir=target_dir,
+        target_layer=target_layer,
+        target_layer_convention=target_layer_convention,
         **kwargs,
     )
 
@@ -3286,3 +3669,528 @@ def diff_traces(
         "top_cache_deltas": cache_shifts[:top_k],
         "peak_vector_readout": _explain_peak_vector(peak_layer, peak_vec, peak_norm, wsi),
     }
+
+
+# ----------------------------------------------------------------------------------------------- internal direction attribution
+@torch.no_grad()
+def attribute_direction_writers(
+    model: nn.Module,
+    inputs: torch.Tensor | list[int] | list[torch.Tensor | list[int]],
+    *,
+    target_dir: torch.Tensor,
+    target_layer: int,
+    layer_convention: str = "block",
+    pos: int | tuple[int, int] | None = -1,
+    contrast_inputs: torch.Tensor | list[int] | list[torch.Tensor | list[int]] | None = None,
+    top_k_neurons: int = 16,
+    top_k_heads: int = 16,
+    normalize_dir: bool = False,
+) -> dict[str, Any]:
+    """Level-1 zero-backward direct linear attribution onto an internal direction ``target_dir``.
+
+    Measures each upstream writer module (attention/conv output projections and MLP down
+    projections), individual attention heads, and individual MLP neurons by exact linear
+    projection onto ``target_dir`` at ``target_layer`` (optionally contrasting ``inputs``
+    against ``contrast_inputs``). Residual additivity guarantees
+    ``embed_contrib + sum(module contribs) == target_score`` (up to final LayerNorm when
+    ``layer_convention='hidden_states'`` and ``target_layer == n_layers``).
+    """
+    seqs = _normalize_seq_list(inputs)
+    cseqs = _normalize_seq_list(contrast_inputs) if contrast_inputs is not None else None
+
+    dev = next(model.parameters()).device
+    _, blocks = find_blocks(model)
+    n_layers = len(blocks)
+    mods = dict(model.named_modules())
+    mlps = find_mlps(model)
+    mlp_by_down: dict[str, int] = {}
+    for g in mlps:
+        li = _layer_idx_from_name(g.down)
+        mlp_by_down[g.down] = li if li is not None else len(mlp_by_down)
+
+    if mlps:
+        d0 = mods[mlps[0].down]
+        hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
+    else:
+        cfg = getattr(getattr(model, "config", None), "text_config", getattr(model, "config", None))
+        h_cfg = getattr(cfg, "hidden_size", None)
+        if not isinstance(h_cfg, int) or h_cfg <= 0:
+            raise ValueError("Cannot infer hidden_size from model without MLPs or config.hidden_size")
+        hidden = h_cfg
+
+    attns = _find_attn_out_projs(model, hidden)
+    tdir_cpu = _validate_target_dir(target_dir, hidden, normalize=normalize_dir)
+    stop_blk, use_final_hidden = _resolve_direction_layer(n_layers, int(target_layer), layer_convention)
+
+    writers: dict[str, dict[str, Any]] = {}
+
+    def _register_writer(full_name: str, mod: nn.Module, kind: str, layer: int | None, n_heads: int) -> None:
+        if stop_blk < 0:
+            return
+        if layer is not None and layer > stop_blk:
+            return
+        mk = _safe_module_suffix(full_name)
+        w_raw = mod.weight.detach().float().cpu()
+        w_lin = w_raw if isinstance(mod, nn.Linear) else (w_raw.t() if w_raw.dim() == 2 else w_raw)
+        w_dot = (tdir_cpu @ w_lin).contiguous().float()
+        bias = getattr(mod, "bias", None)
+        bias_contrib = float((bias.detach().float().cpu() @ tdir_cpu).item()) if isinstance(bias, torch.Tensor) else 0.0
+        writers[mk] = {
+            "mod": mod,
+            "kind": kind,
+            "layer": layer,
+            "n_heads": int(n_heads),
+            "w_dot": w_dot,
+            "bias_contrib": bias_contrib,
+        }
+
+    for dname, li in mlp_by_down.items():
+        _register_writer(dname, mods[dname], "mlp", int(li), 0)
+    for aname, (am, nh) in attns.items():
+        li = _layer_idx_from_name(aname)
+        _register_writer(aname, am, _writer_kind(aname, False), int(li) if li is not None else None, nh)
+
+    def _run_group(group_seqs: list[torch.Tensor]) -> dict[str, Any]:
+        sum_target = 0.0
+        sum_embed = 0.0
+        sum_y_dot: dict[str, float] = {mk: 0.0 for mk in writers}
+        sum_x_in: dict[str, torch.Tensor] = {}
+        n_seq = len(group_seqs)
+
+        for s_ids in group_seqs:
+            t_len = int(s_ids.shape[1])
+            lo, hi = _resolve_hidden_span(t_len, pos)
+            cur: dict[str, Any] = {"embed": None, "target": None}
+            cur_y: dict[str, float] = {}
+            cur_x: dict[str, torch.Tensor] = {}
+            hooks = []
+
+            def _pre_blk0(_m, inp):
+                h = inp[0] if isinstance(inp, tuple) and inp else inp
+                if isinstance(h, torch.Tensor):
+                    h_vec = (h[0] if h.dim() == 3 else h).detach().float().cpu()[lo:hi].mean(dim=0)
+                    cur["embed"] = float((h_vec @ tdir_cpu).item())
+                    if stop_blk == -1 and not use_final_hidden:
+                        cur["target"] = cur["embed"]
+                        raise _DirectionTargetCaptured()
+
+            hooks.append(blocks[0].register_forward_pre_hook(_pre_blk0))
+
+            for mk, meta_w in writers.items():
+                mod = meta_w["mod"]
+
+                def _whook(_m, inp, out, mk=mk):
+                    x_in = inp[0] if isinstance(inp, tuple) and inp else inp
+                    y_out = out[0] if isinstance(out, (tuple, list)) else out
+                    if isinstance(x_in, torch.Tensor) and mk not in cur_x:
+                        cur_x[mk] = (x_in[0] if x_in.dim() == 3 else x_in).detach().float().cpu()[lo:hi].mean(dim=0)
+                    if isinstance(y_out, torch.Tensor) and mk not in cur_y:
+                        y_vec = (y_out[0] if y_out.dim() == 3 else y_out).detach().float().cpu()[lo:hi].mean(dim=0)
+                        cur_y[mk] = float((y_vec @ tdir_cpu).item())
+
+                hooks.append(mod.register_forward_hook(_whook))
+
+            if not use_final_hidden and stop_blk >= 0:
+                def _stop_hook(_m, _inp, out):
+                    t = out[0] if isinstance(out, (tuple, list)) else out
+                    if isinstance(t, torch.Tensor):
+                        t_vec = (t[0] if t.dim() == 3 else t).detach().float().cpu()[lo:hi].mean(dim=0)
+                        cur["target"] = float((t_vec @ tdir_cpu).item())
+                        raise _DirectionTargetCaptured()
+
+                hooks.append(blocks[stop_blk].register_forward_hook(_stop_hook))
+
+            out = None
+            try:
+                try:
+                    out = _forward_for_hidden(model, s_ids.to(dev), need_hidden_states=use_final_hidden)
+                except _DirectionTargetCaptured:
+                    pass
+            finally:
+                for h in hooks:
+                    h.remove()
+
+            if cur["target"] is None:
+                hs = getattr(out, "hidden_states", None) if out is not None else None
+                if use_final_hidden:
+                    if hs is None or len(hs) <= n_layers:
+                        raise RuntimeError(
+                            f"Model did not return hidden_states[{n_layers}] needed for target_layer={target_layer}"
+                        )
+                    t_hs = hs[n_layers]
+                elif stop_blk == -1:
+                    if hs is None or len(hs) == 0:
+                        raise RuntimeError("Model did not return hidden_states[0] for target_layer=0")
+                    t_hs = hs[0]
+                else:
+                    if hs is None or len(hs) <= stop_blk + 1:
+                        raise RuntimeError(f"Failed to capture block {stop_blk} hidden state")
+                    t_hs = hs[stop_blk + 1]
+                t_vec = (t_hs[0] if t_hs.dim() == 3 else t_hs).detach().float().cpu()[lo:hi].mean(dim=0)
+                cur["target"] = float((t_vec @ tdir_cpu).item())
+
+            if cur["embed"] is None:
+                cur["embed"] = cur["target"] if stop_blk == -1 else 0.0
+
+            sum_target += float(cur["target"])
+            sum_embed += float(cur["embed"])
+            for mk in writers:
+                sum_y_dot[mk] += cur_y.get(mk, 0.0)
+                if mk in cur_x:
+                    sum_x_in[mk] = sum_x_in[mk] + cur_x[mk] if mk in sum_x_in else cur_x[mk].clone()
+            del out
+
+        mod_contribs = {mk: sum_y_dot[mk] / n_seq for mk in writers}
+        x_means = {mk: (sum_x_in[mk] / n_seq) for mk in sum_x_in}
+        embed_mean = sum_embed / n_seq
+        target_mean = sum_target / n_seq
+        comp_sum = embed_mean + sum(mod_contribs.values())
+
+        mlp_act: dict[str, torch.Tensor] = {}
+        mlp_neurons: dict[str, torch.Tensor] = {}
+        attn_heads: dict[str, torch.Tensor] = {}
+        for mk, meta_w in writers.items():
+            xm = x_means.get(mk)
+            if xm is None:
+                continue
+            full_c = xm * meta_w["w_dot"]
+            if meta_w["kind"] == "mlp":
+                mlp_act[mk] = xm
+                mlp_neurons[mk] = full_c
+            elif meta_w["kind"] == "attn":
+                nh = meta_w["n_heads"]
+                if nh >= 1 and full_c.numel() % nh == 0:
+                    attn_heads[mk] = full_c.reshape(nh, full_c.numel() // nh).sum(dim=1)
+
+        return {
+            "target_score": target_mean,
+            "embed_contrib": embed_mean,
+            "sum_components": comp_sum,
+            "residual_gap": target_mean - comp_sum,
+            "mod_contribs": mod_contribs,
+            "mlp_act": mlp_act,
+            "mlp_neurons": mlp_neurons,
+            "attn_heads": attn_heads,
+        }
+
+    was_training = bool(model.training)
+    model.eval()
+    try:
+        g_pos = _run_group(seqs)
+        g_neg = _run_group(cseqs) if cseqs is not None else None
+    finally:
+        if was_training:
+            model.train()
+
+    contrast = g_neg is not None
+    mod_rows: list[dict[str, Any]] = []
+    for mk, meta_w in writers.items():
+        c_pos = g_pos["mod_contribs"][mk]
+        row: dict[str, Any] = {
+            "module": mk,
+            "kind": meta_w["kind"],
+            "layer": meta_w["layer"],
+            "contrib": round(c_pos, 7),
+            "abs_contrib": round(abs(c_pos), 7),
+            "bias_contrib": round(meta_w["bias_contrib"], 7),
+        }
+        if contrast:
+            c_neg = g_neg["mod_contribs"][mk]  # type: ignore[index]
+            d_c = c_pos - c_neg
+            row["contrast_contrib"] = round(c_neg, 7)
+            row["delta_contrib"] = round(d_c, 7)
+            row["abs_delta_contrib"] = round(abs(d_c), 7)
+        mod_rows.append(row)
+    if contrast:
+        mod_rows.sort(key=lambda r: (-r["abs_delta_contrib"], r["module"]))
+    else:
+        mod_rows.sort(key=lambda r: (-r["abs_contrib"], r["module"]))
+
+    head_rows: list[dict[str, Any]] = []
+    for mk, meta_w in writers.items():
+        if meta_w["kind"] != "attn" or mk not in g_pos["attn_heads"]:
+            continue
+        hp = g_pos["attn_heads"][mk]
+        hn = g_neg["attn_heads"].get(mk) if contrast else None  # type: ignore[index]
+        nh = int(hp.numel())
+        for hid in range(nh):
+            vp = float(hp[hid].item())
+            hrow: dict[str, Any] = {
+                "module": mk,
+                "layer": meta_w["layer"],
+                "head": int(hid),
+                "n_heads": nh,
+                "contrib": round(vp, 7),
+            }
+            if contrast and hn is not None:
+                vn = float(hn[hid].item())
+                hrow["contrast_contrib"] = round(vn, 7)
+                hrow["delta_contrib"] = round(vp - vn, 7)
+            head_rows.append(hrow)
+    if contrast:
+        head_rows.sort(key=lambda r: (-abs(r["delta_contrib"]), r["module"], r["head"]))
+    else:
+        head_rows.sort(key=lambda r: (-abs(r["contrib"]), r["module"], r["head"]))
+
+    neuron_rows: list[dict[str, Any]] = []
+    for mk, meta_w in writers.items():
+        if meta_w["kind"] != "mlp" or mk not in g_pos["mlp_neurons"]:
+            continue
+        np_vec = g_pos["mlp_neurons"][mk]
+        ap_vec = g_pos["mlp_act"][mk]
+        wd_vec = meta_w["w_dot"]
+        nn_vec = g_neg["mlp_neurons"].get(mk) if contrast else None  # type: ignore[index]
+        an_vec = g_neg["mlp_act"].get(mk) if contrast else None  # type: ignore[index]
+        score_vec = (np_vec - nn_vec).abs() if (contrast and nn_vec is not None) else np_vec.abs()
+        k_mod = min(max(0, int(top_k_neurons)), int(score_vec.numel()))
+        if k_mod == 0:
+            continue
+        top_ids = torch.argsort(score_vec, descending=True)[:k_mod].tolist()
+        for uid in top_ids:
+            vp = float(np_vec[uid].item())
+            nrow: dict[str, Any] = {
+                "module": mk,
+                "layer": meta_w["layer"],
+                "neuron": int(uid),
+                "contrib": round(vp, 7),
+                "activation": round(float(ap_vec[uid].item()), 7),
+                "weight_dot": round(float(wd_vec[uid].item()), 7),
+            }
+            if contrast and nn_vec is not None and an_vec is not None:
+                vn = float(nn_vec[uid].item())
+                nrow["contrast_contrib"] = round(vn, 7)
+                nrow["delta_contrib"] = round(vp - vn, 7)
+                nrow["contrast_activation"] = round(float(an_vec[uid].item()), 7)
+            neuron_rows.append(nrow)
+    if contrast:
+        neuron_rows.sort(key=lambda r: (-abs(r["delta_contrib"]), r["module"], r["neuron"]))
+    else:
+        neuron_rows.sort(key=lambda r: (-abs(r["contrib"]), r["module"], r["neuron"]))
+
+    out_dict: dict[str, Any] = {
+        "mode": "contrast" if contrast else "single",
+        "target_layer": int(target_layer),
+        "layer_convention": layer_convention,
+        "stop_block": int(stop_blk),
+        "use_final_hidden": bool(use_final_hidden),
+        "n_inputs": len(seqs),
+        "n_contrast": len(cseqs) if cseqs is not None else 0,
+        "target_score": round(g_pos["target_score"], 7),
+        "embed_contrib": round(g_pos["embed_contrib"], 7),
+        "sum_components": round(g_pos["sum_components"], 7),
+        "residual_gap": round(g_pos["residual_gap"], 7),
+        "modules": mod_rows,
+        "module_contribs": {r["module"]: r["contrib"] for r in mod_rows},
+        "top_heads": head_rows[: max(0, int(top_k_heads))],
+        "top_neurons": neuron_rows[: max(0, int(top_k_neurons))],
+    }
+    if contrast and g_neg is not None:
+        d_target = g_pos["target_score"] - g_neg["target_score"]
+        d_embed = g_pos["embed_contrib"] - g_neg["embed_contrib"]
+        d_sum = g_pos["sum_components"] - g_neg["sum_components"]
+        out_dict["contrast_target_score"] = round(g_neg["target_score"], 7)
+        out_dict["delta_target_score"] = round(d_target, 7)
+        out_dict["contrast_embed_contrib"] = round(g_neg["embed_contrib"], 7)
+        out_dict["delta_embed_contrib"] = round(d_embed, 7)
+        out_dict["contrast_sum_components"] = round(g_neg["sum_components"], 7)
+        out_dict["delta_sum_components"] = round(d_sum, 7)
+        out_dict["contrast_residual_gap"] = round(g_neg["residual_gap"], 7)
+        out_dict["delta_residual_gap"] = round(d_target - d_sum, 7)
+        out_dict["module_delta_contribs"] = {r["module"]: r["delta_contrib"] for r in mod_rows}
+    return out_dict
+
+
+def summarize_direction_traces(
+    traces: list[CompactTrace],
+    *,
+    contrast_traces: list[CompactTrace] | None = None,
+    top_k_modules: int = 16,
+    top_k_heads: int = 16,
+    top_k_neurons: int = 16,
+) -> dict[str, Any]:
+    """Level-2 aggregator over direction-traced ``CompactTrace`` objects (single or contrasted).
+
+    Computes group means across full neuron/head attribution vectors (avoiding top-k truncation
+    bias across prompts) and ranks modules, attention heads, and MLP neurons by causal (and
+    when contrasted, differential ``pos - contrast``) contribution to ``target_dir``.
+    """
+    if not traces:
+        raise ValueError("summarize_direction_traces requires at least one CompactTrace")
+
+    def _has_grad(ct: CompactTrace) -> bool:
+        return bool(ct.grad_summary) or ct.meta.get("grad_objective") is not None
+
+    if not all(_has_grad(ct) for ct in traces):
+        raise ValueError("All traces must be captured with capture_causal_trace or capture_grad=True")
+    if contrast_traces is not None:
+        if len(contrast_traces) == 0:
+            raise ValueError("contrast_traces cannot be empty when provided")
+        if not all(_has_grad(ct) for ct in contrast_traces):
+            raise ValueError("All contrast_traces must be captured with capture_causal_trace or capture_grad=True")
+
+    def _agg(sub_traces: list[CompactTrace]) -> dict[str, Any]:
+        scores = [float(ct.meta["target_dir_score"]) for ct in sub_traces if "target_dir_score" in ct.meta]
+        mean_score = (sum(scores) / len(scores)) if scores else None
+        all_mods = sorted({mk for ct in sub_traces for mk in ct.grad_summary})
+        mod_info: dict[str, dict[str, Any]] = {}
+        for mk in all_mods:
+            items = [ct.grad_summary[mk] for ct in sub_traces if mk in ct.grad_summary]
+            gs0 = items[0]
+            causal_vals = [
+                float(gs["causal_attr"]) if "causal_attr" in gs else float(gs["neuron_supp_attr"].float().sum().item())
+                for gs in items
+            ]
+            direct_vals = [float(gs["direct_attr"]) for gs in items if "direct_attr" in gs]
+            indirect_vals = [float(gs["indirect_attr"]) for gs in items if "indirect_attr" in gs]
+            n_mean = torch.stack([gs["neuron_supp_attr"].detach().float().cpu() for gs in items], dim=0).mean(dim=0)
+            h_mean = (
+                torch.stack([gs["head_causal_attr"].detach().float().cpu() for gs in items], dim=0).mean(dim=0)
+                if all("head_causal_attr" in gs for gs in items)
+                else None
+            )
+            mod_info[mk] = {
+                "kind": gs0.get("kind"),
+                "layer": gs0.get("layer"),
+                "causal_attr": sum(causal_vals) / len(causal_vals),
+                "direct_attr": (sum(direct_vals) / len(direct_vals)) if direct_vals else None,
+                "indirect_attr": (sum(indirect_vals) / len(indirect_vals)) if indirect_vals else None,
+                "neuron_mean": n_mean,
+                "head_mean": h_mean,
+            }
+        return {"mean_score": mean_score, "mods": mod_info}
+
+    g_pos = _agg(traces)
+    g_neg = _agg(contrast_traces) if contrast_traces is not None else None
+    contrast = g_neg is not None
+
+    all_mods = sorted(set(g_pos["mods"]) | (set(g_neg["mods"]) if g_neg is not None else set()))
+    mod_rows: list[dict[str, Any]] = []
+    for mk in all_mods:
+        mp = g_pos["mods"].get(mk)
+        mn = g_neg["mods"].get(mk) if g_neg is not None else None
+        ref = mp or mn
+        assert ref is not None
+        cp = float(mp["causal_attr"]) if mp is not None else 0.0
+        row: dict[str, Any] = {
+            "module": mk,
+            "kind": ref["kind"],
+            "layer": ref["layer"],
+            "causal_attr": round(cp, 6),
+            "abs_causal_attr": round(abs(cp), 6),
+        }
+        if mp is not None and mp["direct_attr"] is not None:
+            row["direct_attr"] = round(float(mp["direct_attr"]), 6)
+        if mp is not None and mp["indirect_attr"] is not None:
+            row["indirect_attr"] = round(float(mp["indirect_attr"]), 6)
+        if contrast:
+            cn = float(mn["causal_attr"]) if mn is not None else 0.0
+            dc = cp - cn
+            row["contrast_causal_attr"] = round(cn, 6)
+            row["delta_causal_attr"] = round(dc, 6)
+            row["abs_delta_causal_attr"] = round(abs(dc), 6)
+            if (mp and mp["direct_attr"] is not None) or (mn and mn["direct_attr"] is not None):
+                dp = float(mp["direct_attr"]) if (mp and mp["direct_attr"] is not None) else 0.0
+                dn = float(mn["direct_attr"]) if (mn and mn["direct_attr"] is not None) else 0.0
+                row["contrast_direct_attr"] = round(dn, 6)
+                row["delta_direct_attr"] = round(dp - dn, 6)
+            if (mp and mp["indirect_attr"] is not None) or (mn and mn["indirect_attr"] is not None):
+                ip = float(mp["indirect_attr"]) if (mp and mp["indirect_attr"] is not None) else 0.0
+                ind_n = float(mn["indirect_attr"]) if (mn and mn["indirect_attr"] is not None) else 0.0
+                row["contrast_indirect_attr"] = round(ind_n, 6)
+                row["delta_indirect_attr"] = round(ip - ind_n, 6)
+        mod_rows.append(row)
+
+    if contrast:
+        mod_rows.sort(key=lambda r: (-r["abs_delta_causal_attr"], r["module"]))
+    else:
+        mod_rows.sort(key=lambda r: (-r["abs_causal_attr"], r["module"]))
+
+    head_rows: list[dict[str, Any]] = []
+    for mk in all_mods:
+        mp = g_pos["mods"].get(mk)
+        mn = g_neg["mods"].get(mk) if g_neg is not None else None
+        ref = mp or mn
+        if ref is None or ref["kind"] != "attn":
+            continue
+        hp = mp["head_mean"] if (mp is not None and mp["head_mean"] is not None) else None
+        hn = mn["head_mean"] if (mn is not None and mn["head_mean"] is not None) else None
+        if hp is None and hn is None:
+            continue
+        nh = int((hp if hp is not None else hn).numel())  # type: ignore[union-attr]
+        for hid in range(nh):
+            vp = float(hp[hid].item()) if hp is not None else 0.0
+            hrow: dict[str, Any] = {
+                "module": mk,
+                "layer": ref["layer"],
+                "head": int(hid),
+                "n_heads": nh,
+                "causal_attr": round(vp, 6),
+            }
+            if contrast:
+                vn = float(hn[hid].item()) if hn is not None else 0.0
+                hrow["contrast_causal_attr"] = round(vn, 6)
+                hrow["delta_causal_attr"] = round(vp - vn, 6)
+            head_rows.append(hrow)
+    if contrast:
+        head_rows.sort(key=lambda r: (-abs(r["delta_causal_attr"]), r["module"], r["head"]))
+    else:
+        head_rows.sort(key=lambda r: (-abs(r["causal_attr"]), r["module"], r["head"]))
+
+    neuron_rows: list[dict[str, Any]] = []
+    for mk in all_mods:
+        mp = g_pos["mods"].get(mk)
+        mn = g_neg["mods"].get(mk) if g_neg is not None else None
+        ref = mp or mn
+        if ref is None or ref["kind"] != "mlp":
+            continue
+        np_vec = mp["neuron_mean"] if mp is not None else None
+        nn_vec = mn["neuron_mean"] if mn is not None else None
+        if np_vec is None and nn_vec is None:
+            continue
+        if np_vec is None:
+            np_vec = torch.zeros_like(nn_vec)  # type: ignore[arg-type]
+        if contrast and nn_vec is None:
+            nn_vec = torch.zeros_like(np_vec)
+        score_vec = (np_vec - nn_vec).abs() if (contrast and nn_vec is not None) else np_vec.abs()
+        k_mod = min(max(0, int(top_k_neurons)), int(score_vec.numel()))
+        if k_mod == 0:
+            continue
+        top_ids = torch.argsort(score_vec, descending=True)[:k_mod].tolist()
+        for uid in top_ids:
+            vp = float(np_vec[uid].item())
+            nrow: dict[str, Any] = {
+                "module": mk,
+                "layer": ref["layer"],
+                "neuron": int(uid),
+                "causal_attr": round(vp, 6),
+            }
+            if contrast and nn_vec is not None:
+                vn = float(nn_vec[uid].item())
+                nrow["contrast_causal_attr"] = round(vn, 6)
+                nrow["delta_causal_attr"] = round(vp - vn, 6)
+            neuron_rows.append(nrow)
+    if contrast:
+        neuron_rows.sort(key=lambda r: (-abs(r["delta_causal_attr"]), r["module"], r["neuron"]))
+    else:
+        neuron_rows.sort(key=lambda r: (-abs(r["causal_attr"]), r["module"], r["neuron"]))
+
+    meta0 = traces[0].meta
+    out_summary: dict[str, Any] = {
+        "mode": "contrast" if contrast else "single",
+        "n_traces": len(traces),
+        "n_contrast": len(contrast_traces) if contrast_traces is not None else 0,
+        "target_layer": meta0.get("target_layer"),
+        "target_layer_convention": meta0.get("target_layer_convention"),
+        "mean_target_score": round(g_pos["mean_score"], 6) if g_pos["mean_score"] is not None else None,
+        "modules": mod_rows[: max(0, int(top_k_modules))],
+        "all_modules": mod_rows,
+        "top_heads": head_rows[: max(0, int(top_k_heads))],
+        "top_neurons": neuron_rows[: max(0, int(top_k_neurons))],
+    }
+    if contrast and g_neg is not None:
+        out_summary["contrast_target_score"] = round(g_neg["mean_score"], 6) if g_neg["mean_score"] is not None else None
+        if g_pos["mean_score"] is not None and g_neg["mean_score"] is not None:
+            out_summary["delta_target_score"] = round(g_pos["mean_score"] - g_neg["mean_score"], 6)
+        else:
+            out_summary["delta_target_score"] = None
+    return out_summary

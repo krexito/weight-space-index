@@ -99,11 +99,50 @@ def test_surgical_refusal_smoke_trihybrid_and_anti_backdoor(tmp_path) -> None:
     sb = res["discovery"]["safety_router_half_b"]
     assert sb is not None and sb["toxic_fire_rate"] == 0.0 and sb["control_fpr"] == 0.0
     sg = res["safety_gate"]
-    assert sg is not None and sg["threshold"] == 0.90 and isinstance(sg["passed"], bool)
-    assert sg["safety_routed_passed"] is True
-    assert res["discovery"]["discovery_gen_window"] == 64
+    assert sg is not None and sg["threshold"] == 0.90 and sg["min_recovery_threshold"] == 0.50
+    assert isinstance(sg["passed"], bool) and sg["safety_routed_passed"] is True
+    assert res["discovery"]["discovery_gen_window"] == 12
+    assert len(res["discovery"]["dir_causal_top3"]) >= 1
+    onset_fins = res["discovery"]["top_onset_finalists"]
+    assert len(onset_fins) >= 1
+    winner_fin = next(r for r in onset_fins if r["name"] == res["discovery"]["winner"])
+    assert winner_fin["onset_top1_flip_rate"] > 0.0 and winner_fin["onset_logp_drop"] > 0.0
+
+    dc = res["direction_circuits"]
+    assert "refusal_dir" in dc and "veto_dir" in dc and "circuit_overlap" in dc
+    assert "direct" in dc["refusal_dir"] and "causal" in dc["refusal_dir"]
+    assert "direct" in dc["veto_dir"] and "causal" in dc["veto_dir"]
+    assert dc["veto_dir"]["direct"]["delta_target_score"] > 0
+    assert dc["veto_dir"]["causal"]["delta_target_score"] > 0
     dumped = json.dumps(res)
     assert "unsafe synthetic prompt" not in dumped and "unsafe cal prompt" not in dumped
+
+
+def test_onset_selector_rejects_noop_decoy() -> None:
+    screened = [
+        {"name": "decoy_body_edit", "pareto_kl": 18.8, "passes_nll_guard": True},
+        {"name": "true_onset_switch", "pareto_kl": 5.3, "passes_nll_guard": True},
+        {"name": "unsafe_over_edit", "pareto_kl": 22.0, "passes_nll_guard": False},
+    ]
+    onset_by_name = {
+        "decoy_body_edit": {"onset_logp_drop": -0.02, "onset_prob_drop": -0.023, "onset_top1_flip_rate": 0.0},
+        "true_onset_switch": {"onset_logp_drop": 1.45, "onset_prob_drop": 0.62, "onset_top1_flip_rate": 1.0},
+        "unsafe_over_edit": {"onset_logp_drop": 2.0, "onset_prob_drop": 0.70, "onset_top1_flip_rate": 1.0},
+    }
+    picked = sr._select_screened_winner(screened, onset_by_name)
+    assert picked["name"] == "true_onset_switch"
+    assert picked["onset_top1_flip_rate"] == 1.0
+
+    # Fallback pool3 when nothing flips top1>=0.5 but does reduce refusal logp
+    screened_weak = [
+        {"name": "noop", "pareto_kl": 20.0, "passes_nll_guard": True},
+        {"name": "partial", "pareto_kl": 6.0, "passes_nll_guard": True},
+    ]
+    onset_weak = {
+        "noop": {"onset_logp_drop": -0.01, "onset_prob_drop": -0.01, "onset_top1_flip_rate": 0.0},
+        "partial": {"onset_logp_drop": 0.35, "onset_prob_drop": 0.15, "onset_top1_flip_rate": 0.25},
+    }
+    assert sr._select_screened_winner(screened_weak, onset_weak)["name"] == "partial"
 
 
 def test_trim_gen_ids_and_batch_probe_fallback() -> None:
