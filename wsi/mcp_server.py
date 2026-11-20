@@ -319,7 +319,12 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
                 "top_k": {"type": "integer", "default": 10},
                 "prefilter_top_k": {
                     "type": "integer",
-                    "description": "Optional gradient prefilter count: when set (< number of candidates), runs 1 backward per sequence to narrow down to the top-K candidates before running forward screening",
+                    "description": "Optional gradient prefilter count: when set (< number of candidates), narrows down to the top-K candidates before running forward screening (uses offline `trace_dirs` if provided, else 1 backward per sequence)",
+                },
+                "trace_dirs": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional paths to saved causal CompactTrace directories (`capture_grad=True, grad_mode='compressed'`) so Stage-1 `prefilter_top_k` runs 100% offline with zero backward passes",
                 },
                 "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
                 "device_map": {"type": "string", "default": "auto"},
@@ -426,6 +431,7 @@ def _screen_candidates_tool(args: dict[str, Any]) -> dict[str, Any]:
     rank_by = str(args.get("rank_by", "pareto"))
     top_k = int(args.get("top_k", 10))
     prefilter_top_k = int(args["prefilter_top_k"]) if args.get("prefilter_top_k") is not None else None
+    trace_dirs = [str(p) for p in args["trace_dirs"]] if args.get("trace_dirs") else None
 
     model = _load_model_for_screen(
         args["model_dir"],
@@ -442,6 +448,7 @@ def _screen_candidates_tool(args: dict[str, Any]) -> dict[str, Any]:
             max_nll_delta=max_nll_delta,
             rank_by=rank_by,
             prefilter_top_k=prefilter_top_k,
+            traces=trace_dirs,
         )
     finally:
         del model

@@ -1476,7 +1476,14 @@ def _resolve_attn_meta(
     """Resolve `MoIPatch` fingerprint metadata for an attention `o_proj` / `out_proj` module."""
     if model is not None:
         mods = _mod_cache if _mod_cache is not None else dict(model.named_modules())
-        am = mods.get(mod_name)
+        bare = mod_name[6:] if mod_name.startswith("model.") else mod_name
+        am = next(
+            (mods[c] for c in (mod_name, bare, f"model.{bare}", f"model.language_model.{bare}") if c in mods),
+            None,
+        )
+        if am is None:
+            suffix = f".{bare}"
+            am = next((m for n, m in mods.items() if n.endswith(suffix)), None)
         if am is not None and getattr(am, "weight", None) is not None:
             return _weight_fingerprint(mod_name, am.weight.detach())
     if wsi is not None and hasattr(wsi, "ck"):
@@ -1619,6 +1626,7 @@ def discover_compact_circuit(
     loop_window: int = 192,
     origin_range: tuple[int, int] | None = None,
     attach_router: bool = True,
+    candidate_alphas: tuple[float, ...] = (4.0, 8.0, 12.0),
 ) -> dict[str, Any]:
     """Blind multi-site circuit discovery from `CompactTrace` + static `WSI` weights.
 
@@ -2050,6 +2058,143 @@ def discover_compact_circuit(
     if len(mlp_fa) >= 3:
         patches["mlp_fa3"] = build_patch(mlp_fa[:3], use_wsi_resonance=False)
 
+    # Optional Causal Proposer (when traces carry `grad_summary`): union with passive candidates for forward judge
+    causal_cts = [ct for ct, _, is_loop, _ in entries if ct.grad_summary and is_loop]
+    if not causal_cts:
+        causal_cts = [ct for ct, _, _, _ in entries if ct.grad_summary]
+    causal_diag: dict[str, Any] | None = None
+    if causal_cts:
+        causal_diag = diagnose_causal_traces(
+            causal_cts,
+            split_ab=True,
+            top_k_sites=6,
+            top_n_neurons=max(int(top_k_neurons), 64),
+        )
+        meta_by_suffix: dict[str, dict[str, Any]] = {m["module"]: m for m in mod_meta.values()}
+        for m_a in attn_meta_cache.values():
+            if m_a is not None:
+                meta_by_suffix[m_a["module"]] = m_a
+        for s_row in causal_diag["sites"]:
+            mk = s_row["module"]
+            if mk not in meta_by_suffix:
+                m_res = _resolve_attn_meta(
+                    mk, model, wsi,
+                    _mod_cache=mod_cache, _ck_names=ck_names, _ck_name_set=ck_name_set,
+                )
+                if m_res is not None:
+                    meta_by_suffix[mk] = m_res
+
+        valid_causal_sites = [s for s in causal_diag["sites"] if s["module"] in meta_by_suffix]
+
+        def build_causal_patch(
+            c_sites: list[dict[str, Any]],
+            *,
+            patch_alpha: float | None = None,
+            use_top_neurons: bool = True,
+            name: str = "compact-causal",
+        ) -> MoIPatch:
+            a_val = float(alpha if patch_alpha is None else patch_alpha)
+            edits = []
+            for s_row in c_sites:
+                mk = s_row["module"]
+                mm = meta_by_suffix[mk]
+                t_neurons = causal_diag["top_neurons"].get(mk, [])
+                cols = (
+                    torch.tensor(t_neurons[: int(top_k_neurons)], dtype=torch.long)
+                    if (use_top_neurons and t_neurons)
+                    else None
+                )
+                edits.append(
+                    Edit(
+                        module=mk,
+                        u=causal_diag["directions"][mk].double(),
+                        alpha=a_val,
+                        idx=cols,
+                        base_sha256=mm["base_sha256"],
+                        base_dtype=mm["base_dtype"],
+                        shape=mm["shape"],
+                    )
+                )
+            return _make_patch(edits, name)
+
+        if len(valid_causal_sites) >= 1:
+            patches["causal_top1"] = build_causal_patch(valid_causal_sites[:1], name="compact-causal-top1")
+            patches["causal_top1_all"] = build_causal_patch(
+                valid_causal_sites[:1], use_top_neurons=False, name="compact-causal-top1-all"
+            )
+        if len(valid_causal_sites) >= 2:
+            patches["causal_top2"] = build_causal_patch(valid_causal_sites[:2], name="compact-causal-top2")
+        causal_attn_sites = [s for s in valid_causal_sites if s["kind"] == "attn"]
+        if causal_attn_sites:
+            patches["causal_attn_top1"] = build_causal_patch(
+                causal_attn_sites[:1], use_top_neurons=False, name="compact-causal-attn-top1"
+            )
+
+    # Build deduplicated union candidate grid (Top Passive + Top Causal) x candidate_alphas for forward screening
+    union_templates: list[tuple[str, MoIPatch]] = []
+    if len(mlp_ranked) >= 1:
+        union_templates.append(("passive_blind_top1", build_patch(mlp_ranked[:1], use_wsi_resonance=False)))
+    for k_name in (
+        "unified_top2",
+        "blind_top2",
+        "attn_top2",
+        "wsi_pair",
+        "causal_top1",
+        "causal_top1_all",
+        "causal_top2",
+        "causal_attn_top1",
+    ):
+        if k_name in patches:
+            pref = k_name if k_name.startswith("causal_") else f"passive_{k_name}"
+            union_templates.append((pref, patches[k_name]))
+
+    dedup_templates: list[tuple[str, MoIPatch]] = []
+    for t_name, t_patch in union_templates:
+        if not t_patch.edits:
+            continue
+        is_dup = False
+        for _, prev_p in dedup_templates:
+            if len(prev_p.edits) != len(t_patch.edits):
+                continue
+            same_all = True
+            for e1, e2 in zip(t_patch.edits, prev_p.edits):
+                if e1.module != e2.module:
+                    same_all = False
+                    break
+                idx1 = None if e1.idx is None else tuple(int(x) for x in e1.idx.tolist())
+                idx2 = None if e2.idx is None else tuple(int(x) for x in e2.idx.tolist())
+                if idx1 != idx2:
+                    same_all = False
+                    break
+                cos_u = float(F.cosine_similarity(e1.u.float()[None], e2.u.float()[None]).item())
+                if cos_u < 0.999:
+                    same_all = False
+                    break
+            if same_all:
+                is_dup = True
+                break
+        if not is_dup:
+            dedup_templates.append((t_name, t_patch))
+
+    candidate_grid: dict[str, MoIPatch] = {}
+    for t_name, t_patch in dedup_templates:
+        for a_val in candidate_alphas:
+            a_f = float(a_val)
+            cname = f"{t_name}_a{a_f:g}"
+            scaled_edits = [
+                Edit(
+                    module=e.module,
+                    u=e.u,
+                    alpha=a_f,
+                    idx=e.idx,
+                    base_sha256=e.base_sha256,
+                    base_dtype=e.base_dtype,
+                    shape=e.shape,
+                )
+                for e in t_patch.edits
+            ]
+            candidate_grid[cname] = _make_patch(scaled_edits, cname)
+
     recommended = (
         patches.get("unified_top2")
         or patches.get("blind_top2")
@@ -2079,6 +2224,8 @@ def discover_compact_circuit(
         "attn_top_heads": top_heads_by_mod,
         "wsi_resonant_directions": wsi_dir_ov,
         "wsi_resonant_neurons": wsi_idx_ov,
+        "causal_diagnosis": causal_diag,
+        "candidate_grid": candidate_grid,
         "patch": recommended,
         "patches": patches,
         "build_patch": build_patch,
@@ -2609,6 +2756,7 @@ def screen_patch_candidates(
     max_nll_delta: float = 0.05,
     rank_by: str = "pareto",
     prefilter_top_k: int | None = None,
+    traces: list[CompactTrace | str | Path] | None = None,
 ) -> list[dict[str, Any]]:
     """Fast 1-forward-pass proxy screen ranking candidate `MoIPatch`es by failure suppression vs. healthy drift (`delta_nll` & `healthy_kl`).
 
@@ -2616,8 +2764,11 @@ def screen_patch_candidates(
     can be pruned in seconds before running expensive long-horizon generation.
     Computes both `delta_healthy_nll` and exact full-distribution `healthy_kl = KL(p_base || p_patched)`
     on healthy sequences (zero extra forward passes).
-    Pass `prefilter_top_k` to use 1-backward `gradient_screen_candidates` as Stage 1 when screening large
-    candidate sets, narrowing to the top-K candidates before running forward evaluation.
+    Pass `prefilter_top_k` to use first-order gradient screening as Stage 1 when screening large
+    candidate sets, narrowing to the top-K candidates before running forward evaluation. When `traces`
+    (causal `CompactTrace` objects or directory paths captured with `capture_grad=True, grad_mode='compressed'`)
+    is also supplied, Stage 1 runs 100% offline via `screen_patches_from_traces` with zero backward passes;
+    otherwise Stage 1 falls back to 1-backward `gradient_screen_candidates`.
     `rank_by="pareto"` (default) ranks guard-passing patches by `pareto_score = target_suppression / max(|delta_nll|, 0.01)`;
     pass `rank_by="pareto_kl"` to rank by `pareto_kl = target_suppression / max(healthy_kl, 0.01)`,
     or `rank_by="suppression"` to rank by raw `target_suppression`.
@@ -2632,14 +2783,26 @@ def screen_patch_candidates(
         if prefilter_top_k < 1:
             raise ValueError(f"prefilter_top_k must be >= 1, got {prefilter_top_k!r}")
         if items and prefilter_top_k < len(items):
-            grad_rows = gradient_screen_candidates(
-                model,
-                items,
-                healthy_seqs=healthy_seqs,
-                target_seqs=target_seqs,
-                target_spans=target_spans,
-                max_nll_delta=max_nll_delta,
-            )
+            if traces:
+                loaded_traces = [
+                    CompactTrace.load(t) if isinstance(t, (str, Path)) else t
+                    for t in traces
+                ]
+                grad_rows = screen_patches_from_traces(
+                    loaded_traces,
+                    items,
+                    model,
+                    max_nll_delta=max_nll_delta,
+                )
+            else:
+                grad_rows = gradient_screen_candidates(
+                    model,
+                    items,
+                    healthy_seqs=healthy_seqs,
+                    target_seqs=target_seqs,
+                    target_spans=target_spans,
+                    max_nll_delta=max_nll_delta,
+                )
             grad_by_name = {r["name"]: r for r in grad_rows}
             cand_by_name = {n: p for n, p in items}
             items = [(r["name"], cand_by_name[r["name"]]) for r in grad_rows[:prefilter_top_k]]

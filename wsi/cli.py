@@ -104,7 +104,20 @@ def main(argv: list[str] | None = None) -> int:
     p_disc.add_argument(
         "--variant",
         default="unified_top2",
-        choices=["unified_top2", "blind_top2", "attn_top2", "wsi_top3", "wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"],
+        choices=[
+            "unified_top2",
+            "blind_top2",
+            "attn_top2",
+            "wsi_top3",
+            "wsi_fa3",
+            "wsi_pair",
+            "mlp_top3",
+            "mlp_fa3",
+            "causal_top1",
+            "causal_top1_all",
+            "causal_top2",
+            "causal_attn_top1",
+        ],
         help="Which discovered patch variant to save with -o (default: unified_top2)",
     )
     p_disc.add_argument("-o", "--out", default=None, help="Optional output path for the synthesized .moipatch file")

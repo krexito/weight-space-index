@@ -368,3 +368,126 @@ def test_pareto_direction_avoids_healthy_destruction() -> None:
     assert cos_e1 > 0.90, f"Expected Pareto direction near e1 (clean target switch), got cos_e1={cos_e1:.4f}, cos_e0={cos_e0:.4f}"
     assert cos_e0 < 0.35
     assert diag["top_neurons"]["layers.0.mlp.down_proj"][0] == 1
+
+
+def test_screen_patch_candidates_prefilter_with_traces(tmp_path, monkeypatch) -> None:
+    import wsi.tracer as tr_mod
+    from wsi import screen_patch_candidates
+
+    model = _PlantedDecoyCausalLM(plant_kind="mlp").eval()
+    seqs = [
+        [1, 2, 3, 4, 25, 25, 25, 25],
+        [2, 3, 4, 5, 25, 25, 25, 25],
+    ]
+    traces = [
+        capture_causal_trace(
+            model,
+            s,
+            target_span=(4, 8),
+            healthy_span=(0, 3),
+            grad_mode="compressed",
+            top_k_mlp=16,
+            group_size=16,
+            hadamard_block=16,
+            top_k_attn=0,
+            capture_cache=False,
+        )
+        for s in seqs
+    ]
+    # Save traces to disk as well to test passing directory paths via `traces=...`
+    trace_dirs = []
+    for i, ct in enumerate(traces):
+        d = tmp_path / f"trace_{i}"
+        ct.save(d)
+        trace_dirs.append(str(d))
+
+    u_e0 = torch.zeros(32); u_e0[0] = 1.0
+    u_e1 = torch.zeros(32); u_e1[1] = 1.0
+    cands = {
+        "true_a4": MoIPatch(edits=[Edit(module="layers.2.mlp.down_proj", u=u_e0, alpha=4.0)]),
+        "true_a2": MoIPatch(edits=[Edit(module="layers.2.mlp.down_proj", u=u_e0, alpha=2.0)]),
+        "decoy_l1": MoIPatch(edits=[Edit(module="layers.1.mlp.down_proj", u=u_e1, alpha=4.0)]),
+    }
+
+    # Ensure online `gradient_screen_candidates` is NEVER called when `traces` are provided
+    def _forbid_online_grad(*_a, **_kw):
+        raise AssertionError("gradient_screen_candidates should not be called when causal traces are passed")
+
+    monkeypatch.setattr(tr_mod, "gradient_screen_candidates", _forbid_online_grad)
+
+    for tr_input in (traces, trace_dirs):
+        rows = screen_patch_candidates(
+            model,
+            cands,
+            healthy_seqs=[s[:4] for s in seqs],
+            target_seqs=seqs,
+            target_spans=[(4, 8)] * len(seqs),
+            prefilter_top_k=2,
+            traces=tr_input,
+        )
+        assert len(rows) == 2
+        assert {r["name"] for r in rows} == {"true_a4", "true_a2"}
+        for r in rows:
+            assert "grad_supp" in r and "grad_dnll" in r and "grad_pareto" in r
+            assert r["target_suppression"] > 0.0
+
+
+def test_discover_compact_circuit_passive_causal_union_and_forward_judge() -> None:
+    from wsi import discover_compact_circuit, screen_patch_candidates
+
+    # Plant an Attention causal switch on Layer 2 with a massive Layer-1 MLP nullspace decoy
+    model = _PlantedDecoyCausalLM(plant_kind="attn").eval()
+    seqs = [
+        [1, 2, 3, 4, 25, 25, 25, 25],
+        [2, 3, 4, 5, 25, 25, 25, 25],
+        [3, 4, 5, 6, 25, 25, 25, 25],
+        [4, 5, 6, 7, 25, 25, 25, 25],
+    ]
+    traces = [
+        (
+            {"prompt_len": 1, "loop": True, "onset_resp": 3},
+            capture_causal_trace(
+                model,
+                s,
+                target_span=(4, 8),
+                healthy_span=(0, 3),
+                grad_mode="summary",
+                top_k_mlp=16,
+                group_size=16,
+                hadamard_block=16,
+                top_k_attn=0,
+                capture_cache=False,
+            ),
+            None,
+        )
+        for s in seqs
+    ]
+
+    disc = discover_compact_circuit(traces, model=model, top_k_neurons=8, candidate_alphas=(4.0, 8.0, 12.0))
+    # Passive ranking is fooled by the Layer-1 decoy, while causal diagnosis finds layers.2.self_attn.o_proj
+    assert disc["mlp_ranked"][0] == 1
+    assert disc["causal_diagnosis"] is not None
+    assert disc["causal_diagnosis"]["summary"]["top_causal_site"] == "layers.2.self_attn.o_proj"
+    assert "causal_top1" in disc["patches"] and "causal_attn_top1" in disc["patches"]
+
+    grid = disc["candidate_grid"]
+    assert any(k.startswith("passive_") for k in grid)
+    assert any(k.startswith("causal_") for k in grid)
+
+    # Forward screen (the real judge) evaluates the union across alphas=(4, 8, 12) and picks the causal attention fix
+    ranked = screen_patch_candidates(
+        model,
+        grid,
+        healthy_seqs=[s[:4] for s in seqs],
+        target_seqs=seqs,
+        target_spans=[(4, 8)] * len(seqs),
+    )
+    winner_name = ranked[0]["name"]
+    winner_patch = grid[winner_name]
+    assert winner_name.startswith("causal_"), f"Expected forward judge to pick a causal candidate from the union, got {winner_name}"
+    assert winner_patch.edits[0].module == "layers.2.self_attn.o_proj"
+    assert ranked[0]["target_suppression"] > 0.10
+    by_name = {r["name"]: r for r in ranked}
+    assert by_name["causal_top1_all_a4"]["target_suppression"] > by_name["passive_blind_top1_a4"]["target_suppression"] + 0.05
+
+
