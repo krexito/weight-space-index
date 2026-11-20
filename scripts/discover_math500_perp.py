@@ -321,7 +321,7 @@ def cmd_report(a) -> None:
     sc = json.loads((work / "screen.json").read_text())
     rank = {r["name"]: r for r in sc["ranking"]}
     res["perp"] = {"k_star": sc["k_star"], "guard_passing_by_k": sc["guard_passing_by_k"],
-                   "chosen_screen_row": rank.get(f"{res['choice']['name']}_p{sc['k_star']}"),
+                   "chosen_screen_row": rank.get(res["choice"]["name"]),
                    "healthy_basis": json.loads((work / "healthy_basis.json").read_text())
                    if (work / "healthy_basis.json").exists() else None}
     ref = work / "plain_ref"

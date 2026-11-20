@@ -17,6 +17,9 @@ Compensated variants ("+recon"): after slicing, the kept w2 columns are refit by
 output matches the full one on math calibration data, W_S = W G[:,S] (G_SS + lam I)^-1, with the co-activation
 G = E[h h^T] estimated from only the first --gram-tokens (default 20k) math tokens (benchmarks/gram_compress).
 "math-energy" ranks neurons by sqrt(E h^2) * ||w2_i|| instead of the mean.
+"math-obs" picks the neurons in PAIRS from the same Gram (greedy backward elimination, Optimal Brain Surgeon per
+layer: drop the neuron whose loss hurts least once the others are refit; experiment_index_criteria.obs_select).
+Use it as "math-obs+recon": on Qwen3.5-0.8B it beat energy+recon on math perplexity at every budget.
 Evaluation: GSM8K TEST accuracy (greedy, thinking off; same prompt as the per-token run, full model 83.0%),
 teacher-forced perplexity on GSM8K TEST gold solutions (in-domain) and on WikiText-2 test (general).
 
@@ -31,11 +34,15 @@ import re
 import time
 from pathlib import Path
 
+import sys
+
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 HUB_FILES = {
     "gsm8k/test.parquet": ("openai/gsm8k", "main/test-00000-of-00001.parquet"),
@@ -201,8 +208,26 @@ def main() -> None:
         Ws = torch.linalg.solve(Gss + lam * torch.eye(len(ix), device=dev, dtype=torch.float64), rhs.T).T
         return Ws.to(orig[li][2].weight.dtype)
 
+    obs_cache: dict[int, list[torch.Tensor]] = {}
+
+    def obs_index(budget: float) -> list[torch.Tensor]:
+        """Pairwise (OBS) selection on the math Gram; one greedy pass per layer gives every budget."""
+        k = round(budget * U)
+        if k not in obs_cache:
+            from experiment_index_criteria import obs_select
+
+            keeps = sorted({round(float(b) * U) for b in args.budgets.split(",")} | {k})
+            t0 = time.perf_counter()
+            per_layer = [obs_select(gram[li], orig[li][2].weight, keeps, args.ridge) for li in range(L)]
+            for kk in keeps:
+                obs_cache[kk] = [per_layer[li][kk].cpu() for li in range(L)]
+            print(f"obs selection for budgets {keeps} in {time.perf_counter() - t0:.0f}s", flush=True)
+        return obs_cache[k]
+
     def build_index(kind: str, budget: float) -> list[torch.Tensor]:
         kind = kind.removesuffix("+recon")
+        if kind == "math-obs":
+            return obs_index(budget)
         k_tot = round(budget * U * L)
         if kind == "random":
             g = torch.Generator().manual_seed(0)
@@ -261,7 +286,7 @@ def main() -> None:
         return math.exp(nll / nt)
 
     def gsm8k() -> dict:
-        correct, n_gen, samples = 0, 0, []
+        correct, n_gen, samples, per = 0, 0, [], []
         sync()
         t0 = time.perf_counter()
         for i in range(0, len(prompts), args.batch):
@@ -271,14 +296,16 @@ def main() -> None:
             for j, row in enumerate(out[:, enc.input_ids.shape[1] :]):
                 text = tok.decode(row, skip_special_tokens=True)
                 pred = extract_number(text)
-                correct += int(same_number(pred, golds[i + j]))
+                ok = int(same_number(pred, golds[i + j]))
+                correct += ok
+                per.append(ok)
                 n_gen += int((row != tok.pad_token_id).sum())
                 if len(samples) < 3:
                     samples.append({"gold": golds[i + j], "pred": pred, "text": text[-300:]})
         sync()
         dt = time.perf_counter() - t0
         return {"accuracy": correct / len(prompts), "correct": correct, "n": len(prompts), "gen_tokens": n_gen,
-                "wall_s": dt, "samples": samples}
+                "wall_s": dt, "samples": samples, "per_problem": per}
 
     def decode_speed(n_steps: int = 256, batch: int = 32) -> float:
         """Pure decode tokens/s on a fixed workload (min_new_tokens forces the same length for every config)."""
