@@ -1,0 +1,72 @@
+{
+ "model": "Qwen/Qwen3.5-0.8B",
+ "n": 200,
+ "max_tokens": 16384,
+ "spec_tokens": 2,
+ "arms": {
+  "no_mtp": {
+   "n": 200,
+   "accuracy": 0.1,
+   "accuracy_ci95": [
+    0.0657,
+    0.1494
+   ],
+   "loop_killed": 0.85,
+   "loop_killed_ci95": [
+    0.7939,
+    0.8929
+   ],
+   "truncated": 0.05,
+   "truncated_ci95": [
+    0.0274,
+    0.0896
+   ],
+   "finish_length": 10,
+   "total_tokens": 1581596,
+   "looped_median_tokens": 7550,
+   "elicit_s": 1211.6
+  },
+  "mtp": {
+   "n": 200,
+   "accuracy": 0.07,
+   "accuracy_ci95": [
+    0.0422,
+    0.1141
+   ],
+   "loop_killed": 0.865,
+   "loop_killed_ci95": [
+    0.8107,
+    0.9055
+   ],
+   "truncated": 0.06,
+   "truncated_ci95": [
+    0.0347,
+    0.1019
+   ],
+   "finish_length": 12,
+   "total_tokens": 1677124,
+   "looped_median_tokens": 7460,
+   "elicit_s": 1507.9
+  }
+ },
+ "paired": {
+  "n": 200,
+  "mtp_right_only": 7,
+  "no_mtp_right_only": 13,
+  "loop_both": 153,
+  "loop_mtp_only": 20,
+  "loop_no_mtp_only": 17
+ },
+ "speedup_wall": 0.804,
+ "speedup_tok_per_s": 0.852,
+ "early_stop_works_with_mtp": true,
+ "verdict": "do not adopt yet: no real speedup",
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-0.8B",
+  "commit": "14d0fc92a24ad3b8f57e8f36bb15d4083b88af43",
+  "notebook": "mtp_ab_math500_08b_colab.ipynb",
+  "gpu": "NVIDIA L4",
+  "saved_utc": "2026-11-20T10:33:55+00:00"
+ }
+}

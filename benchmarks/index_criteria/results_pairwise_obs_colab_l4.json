@@ -1,0 +1,161 @@
+{
+ "model": "Qwen/Qwen3.5-0.8B",
+ "calib_tokens": 60049,
+ "criteria": [
+  "mean",
+  "energy",
+  "obs"
+ ],
+ "ridge": 0.01,
+ "obs_select_s": 104.9,
+ "full": {
+  "math": 5.325,
+  "wiki": 26.118
+ },
+ "budgets": {
+  "0.85": {
+   "mean": {
+    "math": 5.532,
+    "wiki": 36.434
+   },
+   "mean+recon": {
+    "math": 5.608,
+    "wiki": 38.893
+   },
+   "energy": {
+    "math": 5.438,
+    "wiki": 36.096
+   },
+   "energy+recon": {
+    "math": 5.457,
+    "wiki": 38.158
+   },
+   "obs": {
+    "math": 5.664,
+    "wiki": 35.957
+   },
+   "obs+recon": {
+    "math": 5.425,
+    "wiki": 36.94
+   },
+   "random": {
+    "math": 8.322,
+    "wiki": 68.991
+   },
+   "overlap_with_mean": {
+    "energy": 0.9591,
+    "obs": 0.8759
+   }
+  },
+  "0.7": {
+   "mean": {
+    "math": 6.422,
+    "wiki": 55.119
+   },
+   "mean+recon": {
+    "math": 5.921,
+    "wiki": 56.86
+   },
+   "energy": {
+    "math": 5.83,
+    "wiki": 50.876
+   },
+   "energy+recon": {
+    "math": 5.741,
+    "wiki": 53.351
+   },
+   "obs": {
+    "math": 6.311,
+    "wiki": 52.917
+   },
+   "obs+recon": {
+    "math": 5.567,
+    "wiki": 50.367
+   },
+   "random": {
+    "math": 16.811,
+    "wiki": 134.203
+   },
+   "overlap_with_mean": {
+    "energy": 0.9216,
+    "obs": 0.7892
+   }
+  },
+  "0.5": {
+   "mean": {
+    "math": 8.903,
+    "wiki": 101.041
+   },
+   "mean+recon": {
+    "math": 6.493,
+    "wiki": 89.149
+   },
+   "energy": {
+    "math": 8.542,
+    "wiki": 92.3
+   },
+   "energy+recon": {
+    "math": 6.222,
+    "wiki": 82.592
+   },
+   "obs": {
+    "math": 8.804,
+    "wiki": 94.354
+   },
+   "obs+recon": {
+    "math": 5.984,
+    "wiki": 79.55
+   },
+   "random": {
+    "math": 62.999,
+    "wiki": 653.127
+   },
+   "overlap_with_mean": {
+    "energy": 0.8674,
+    "obs": 0.7229
+   }
+  },
+  "0.3": {
+   "mean": {
+    "math": 15.723,
+    "wiki": 200.637
+   },
+   "mean+recon": {
+    "math": 7.652,
+    "wiki": 152.168
+   },
+   "energy": {
+    "math": 12.35,
+    "wiki": 173.836
+   },
+   "energy+recon": {
+    "math": 7.174,
+    "wiki": 137.191
+   },
+   "obs": {
+    "math": 12.691,
+    "wiki": 210.398
+   },
+   "obs+recon": {
+    "math": 6.973,
+    "wiki": 162.223
+   },
+   "random": {
+    "math": 352.179,
+    "wiki": 4114.037
+   },
+   "overlap_with_mean": {
+    "energy": 0.8023,
+    "obs": 0.696
+   }
+  }
+ },
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-0.8B",
+  "commit": "5e62dffafdbe03dae80948878185471a1d6a0aa1",
+  "notebook": "hope_pairwise_colab.ipynb",
+  "gpu": "NVIDIA L4",
+  "saved_utc": "2026-11-20T11:36:53+00:00"
+ }
+}
