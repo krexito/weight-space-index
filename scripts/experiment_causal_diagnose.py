@@ -252,13 +252,36 @@ def run_smoke() -> dict[str, Any]:
         corr = _spearman([off_by[k] for k in cands], [onl_by[k] for k in cands])
         assert corr >= 0.99, (off_by, onl_by)
 
+        diag_f = diagnose_causal_traces(
+            traces,
+            split_ab=True,
+            top_k_sites=4,
+            top_n_neurons=8,
+            center="healthy",
+            healthy_cost="fisher",
+            model_or_weights=model,
+        )
+        assert diag_f["summary"]["top_causal_site"] == want_mod, diag_f["summary"]
+        off_f = screen_patches_from_traces(traces, cands, model, healthy_cost="fisher")
+        onl_f = gradient_screen_candidates(
+            model,
+            cands,
+            healthy_seqs=[s[:4] for s in seqs],
+            target_seqs=seqs,
+            target_spans=[(4, 8)] * len(seqs),
+            healthy_cost="fisher",
+        )
+        assert off_f[0]["name"] == onl_f[0]["name"], (off_f[0], onl_f[0])
+
         results[plant_kind] = {
             "top_passive_site": diag["summary"]["top_passive_site"],
             "top_causal_site": diag["summary"]["top_causal_site"],
+            "top_causal_site_fisher_centered": diag_f["summary"]["top_causal_site"],
             "causal_rank": diag["causal_rank"][:4],
             "passive_rank": diag["passive_rank"][:4],
             "offline_winner": off[0]["name"],
             "online_winner": onl[0]["name"],
+            "offline_fisher_winner": off_f[0]["name"],
             "offline_vs_online_spearman": corr,
             "byte_breakdown": traces[0].byte_breakdown(),
         }
@@ -385,6 +408,8 @@ def run_real(args) -> dict[str, Any]:
             healthy_span=s["healthy_span"],
             grad_mode="compressed",
             grad_checkpointing=True,
+            center=args.center,
+            healthy_cost=args.healthy_cost,
             top_k_attn=0,
             capture_cache=False,
         )
@@ -406,33 +431,35 @@ def run_real(args) -> dict[str, Any]:
         3,
     )
 
-    diag = diagnose_causal_traces(traces, split_ab=True, top_k_sites=10, top_n_neurons=64)
-
-    def _rank_pos(lst: list[str], target: str) -> int | None:
-        return (lst.index(target) + 1) if target in lst else None
-
-    probe_sites = {
-        "layers.15.mlp.down_proj": {"causal": _rank_pos(diag["causal_rank"], "layers.15.mlp.down_proj"),
-                                    "passive": _rank_pos(diag["passive_rank"], "layers.15.mlp.down_proj")},
-        "layers.19.mlp.down_proj": {"causal": _rank_pos(diag["causal_rank"], "layers.19.mlp.down_proj"),
-                                    "passive": _rank_pos(diag["passive_rank"], "layers.19.mlp.down_proj")},
-        "layers.15.self_attn.o_proj": {"causal": _rank_pos(diag["causal_rank"], "layers.15.self_attn.o_proj"),
-                                       "passive": _rank_pos(diag["passive_rank"], "layers.15.self_attn.o_proj")},
-    }
+    diag = diagnose_causal_traces(
+        traces,
+        split_ab=True,
+        top_k_sites=10,
+        top_n_neurons=64,
+        center=args.center,
+        healthy_cost=args.healthy_cost,
+        model_or_weights=model,
+    )
 
     # Build candidate grid on top causal sites
     mods = dict(model.named_modules())
     mod_meta: dict[str, dict[str, Any]] = {}
+    w_lin_by_mod: dict[str, torch.Tensor] = {}
     for g in find_mlps(model):
         mk = module_suffix(g.down)
-        w = mods[g.down].weight.detach()
+        mod_obj = mods[g.down]
+        w = mod_obj.weight.detach()
         mod_meta[mk] = {"base_sha256": _sha256(w), "base_dtype": _dtype_name(w.dtype), "shape": tuple(w.shape)}
+        w_f = w.float().cpu()
+        w_lin_by_mod[mk] = w_f if isinstance(mod_obj, nn.Linear) else (w_f.t() if w_f.dim() == 2 else w_f)
     for n, m in model.named_modules():
         if "mtp" not in n and "visual" not in n and n.endswith((".o_proj", ".out_proj")) and ".mlp." not in n:
             try:
                 mk = module_suffix(n)
                 w = m.weight.detach()
                 mod_meta[mk] = {"base_sha256": _sha256(w), "base_dtype": _dtype_name(w.dtype), "shape": tuple(w.shape)}
+                w_f = w.float().cpu()
+                w_lin_by_mod[mk] = w_f if isinstance(m, nn.Linear) else (w_f.t() if w_f.dim() == 2 else w_f)
             except ValueError:
                 pass
 
@@ -461,7 +488,7 @@ def run_real(args) -> dict[str, Any]:
                 candidates[cname] = MoIPatch(edits=edits, meta={"name": cname})
 
     t_off = time.perf_counter()
-    off_rows = screen_patches_from_traces(traces, candidates, model)
+    off_rows = screen_patches_from_traces(traces, candidates, model, healthy_cost=args.healthy_cost)
     offline_screen_s = round(time.perf_counter() - t_off, 4)
 
     healthy_seqs = [s["ids"][: s["healthy_span"][1] + 1] for s in seqs_info]
@@ -470,7 +497,12 @@ def run_real(args) -> dict[str, Any]:
 
     t_onl = time.perf_counter()
     onl_rows = gradient_screen_candidates(
-        model, candidates, healthy_seqs=healthy_seqs, target_seqs=target_seqs, target_spans=target_spans
+        model,
+        candidates,
+        healthy_seqs=healthy_seqs,
+        target_seqs=target_seqs,
+        target_spans=target_spans,
+        healthy_cost=args.healthy_cost,
     )
     online_grad_s = round(time.perf_counter() - t_onl, 4)
 
@@ -483,12 +515,122 @@ def run_real(args) -> dict[str, Any]:
     off_by = {r["name"]: r for r in off_rows}
     onl_by = {r["name"]: r for r in onl_rows}
     fwd_by = {r["name"]: r for r in fwd_rows}
+    off_rank_by = {r["name"]: i + 1 for i, r in enumerate(off_rows)}
+    onl_rank_by = {r["name"]: i + 1 for i, r in enumerate(onl_rows)}
+    fwd_rank_by = {r["name"]: i + 1 for i, r in enumerate(fwd_rows)}
     names = list(candidates)
+
+    configs_table = []
+    for r_fwd in fwd_rows:
+        nm = r_fwd["name"]
+        r_off = off_by[nm]
+        r_onl = onl_by[nm]
+        configs_table.append({
+            "name": nm,
+            "fwd_rank": fwd_rank_by[nm],
+            "off_rank": off_rank_by[nm],
+            "onl_rank": onl_rank_by[nm],
+            "grad_supp": r_off["grad_supp"],
+            "grad_dnll": r_off["grad_dnll"],
+            "grad_pareto": r_off["grad_pareto"],
+            "onl_grad_supp": r_onl["grad_supp"],
+            "onl_grad_dnll": r_onl["grad_dnll"],
+            "onl_grad_pareto": r_onl["grad_pareto"],
+            "target_suppression": r_fwd["target_suppression"],
+            "delta_healthy_nll": r_fwd["delta_healthy_nll"],
+            "healthy_kl": r_fwd["healthy_kl"],
+            "pareto_score": r_fwd["pareto_score"],
+            "passes_nll_guard": r_fwd["passes_nll_guard"],
+        })
+
+    # Criterion (c): Pass all sites in top-6 causal vs top-6 passive through the forward screen
+    causal_top6 = [r["module"] for r in diag["sites"][:6] if r["module"] in mod_meta]
+    passive_top6 = [mk for mk in diag["passive_rank"][:6] if mk in mod_meta]
+
+    # Pool passive paired_diff per site across traces for passive candidates
+    passive_dirs: dict[str, torch.Tensor] = {}
+    passive_cols: dict[str, list[int]] = {}
+    for mk in passive_top6:
+        p_vec = sum(ct.grad_summary[mk]["paired_diff"].float() for ct in traces if mk in ct.grad_summary)
+        p_dir = p_vec / p_vec.norm().clamp_min(1e-12)
+        passive_dirs[mk] = p_dir
+        proj_w = (p_dir @ w_lin_by_mod[mk]).abs()
+        passive_cols[mk] = torch.argsort(proj_w, descending=True).tolist()
+
+    causal_top6_cands: dict[str, MoIPatch] = {}
+    for r_idx, mk in enumerate(causal_top6, start=1):
+        mm = mod_meta[mk]
+        for n_col in (16, 64, "all"):
+            cols = None if n_col == "all" else torch.tensor(diag["top_neurons"][mk][: int(n_col)], dtype=torch.long)
+            cname = f"causal_r{r_idx}_{mk}_n{n_col}_a4"
+            causal_top6_cands[cname] = MoIPatch(
+                edits=[
+                    Edit(
+                        module=mk,
+                        u=diag["directions"][mk].double(),
+                        alpha=4.0,
+                        idx=cols,
+                        base_sha256=mm["base_sha256"],
+                        base_dtype=mm["base_dtype"],
+                        shape=mm["shape"],
+                    )
+                ],
+                meta={"name": cname, "site": mk, "rank": r_idx, "source": "causal"},
+            )
+
+    passive_top6_cands: dict[str, MoIPatch] = {}
+    for r_idx, mk in enumerate(passive_top6, start=1):
+        mm = mod_meta[mk]
+        for n_col in (16, 64, "all"):
+            cols = None if n_col == "all" else torch.tensor(passive_cols[mk][: int(n_col)], dtype=torch.long)
+            cname = f"passive_r{r_idx}_{mk}_n{n_col}_a4"
+            passive_top6_cands[cname] = MoIPatch(
+                edits=[
+                    Edit(
+                        module=mk,
+                        u=passive_dirs[mk].double(),
+                        alpha=4.0,
+                        idx=cols,
+                        base_sha256=mm["base_sha256"],
+                        base_dtype=mm["base_dtype"],
+                        shape=mm["shape"],
+                    )
+                ],
+                meta={"name": cname, "site": mk, "rank": r_idx, "source": "passive"},
+            )
+
+    t_c6 = time.perf_counter()
+    top6_causal_fwd = screen_patch_candidates(
+        model, causal_top6_cands, healthy_seqs=healthy_seqs, target_seqs=target_seqs, target_spans=target_spans
+    )
+    top6_passive_fwd = screen_patch_candidates(
+        model, passive_top6_cands, healthy_seqs=healthy_seqs, target_seqs=target_seqs, target_spans=target_spans
+    )
+    top6_compare_s = round(time.perf_counter() - t_c6, 4)
+
+    best_causal_top6 = top6_causal_fwd[0] if top6_causal_fwd else None
+    best_passive_top6 = top6_passive_fwd[0] if top6_passive_fwd else None
+
+    spearman_off_fwd = _spearman(
+        [off_by[n]["grad_pareto"] for n in names], [fwd_by[n]["pareto_score"] for n in names]
+    )
+    fwd_top3_names = [r["name"] for r in fwd_rows[:3]]
+    off_top10_set = {r["name"] for r in off_rows[:10]}
+    fwd_top3_in_off_top10 = sum(1 for nm in fwd_top3_names if nm in off_top10_set)
+
+    best_causal_pareto = float(best_causal_top6["pareto_score"]) if best_causal_top6 else 0.0
+    best_passive_pareto = float(best_passive_top6["pareto_score"]) if best_passive_top6 else 0.0
+
+    crit_a = bool(spearman_off_fwd >= 0.5)
+    crit_b = bool(fwd_top3_in_off_top10 >= 2)
+    crit_c = bool(best_causal_pareto >= best_passive_pareto - 1e-4)
 
     payload = {
         "model": args.model,
         "dtype": str(dtype),
         "n_seqs": len(traces),
+        "center": args.center,
+        "healthy_cost": args.healthy_cost,
         "capture_s": capture_s,
         "peak_vram_mb": peak_vram_mb,
         "mean_trace_mb": mean_bd,
@@ -496,11 +638,11 @@ def run_real(args) -> dict[str, Any]:
         "diagnosis_summary": diag["summary"],
         "top_causal_sites": diag["sites"][:6],
         "passive_top6": diag["passive_rank"][:6],
-        "probe_ranks": probe_sites,
         "timing_s": {
             "offline_grad_screen": offline_screen_s,
             "online_grad_screen": online_grad_s,
             "online_fwd_screen": online_fwd_s,
+            "top6_causal_vs_passive_fwd_screen": top6_compare_s,
             "offline_speedup_vs_online_grad": round(online_grad_s / max(offline_screen_s, 1e-6), 2),
             "offline_speedup_vs_fwd_screen": round(online_fwd_s / max(offline_screen_s, 1e-6), 2),
             "total_s": round(time.perf_counter() - t_all, 2),
@@ -512,10 +654,30 @@ def run_real(args) -> dict[str, Any]:
             "offline_vs_online_grad_pareto_spearman": _spearman(
                 [off_by[n]["grad_pareto"] for n in names], [onl_by[n]["grad_pareto"] for n in names]
             ),
-            "offline_vs_fwd_pareto_spearman": _spearman(
-                [off_by[n]["grad_pareto"] for n in names], [fwd_by[n]["pareto_score"] for n in names]
-            ),
+            "offline_vs_fwd_pareto_spearman": spearman_off_fwd,
         },
+        "criteria": {
+            "a_spearman_off_vs_fwd": spearman_off_fwd,
+            "a_target": ">= 0.5",
+            "a_passed": crit_a,
+            "b_fwd_top3_in_off_top10": fwd_top3_in_off_top10,
+            "b_fwd_top3_off_ranks": {nm: off_rank_by[nm] for nm in fwd_top3_names},
+            "b_target": ">= 2 of 3",
+            "b_passed": crit_b,
+            "c_best_causal_top6_pareto": round(best_causal_pareto, 4),
+            "c_best_causal_top6_config": best_causal_top6["name"] if best_causal_top6 else None,
+            "c_best_passive_top6_pareto": round(best_passive_pareto, 4),
+            "c_best_passive_top6_config": best_passive_top6["name"] if best_passive_top6 else None,
+            "c_target": "best_causal_top6 >= best_passive_top6",
+            "c_passed": crit_c,
+            "all_passed": bool(crit_a and crit_b and crit_c),
+        },
+        "configs_table": configs_table,
+        "offline_table": off_rows,
+        "online_grad_table": onl_rows,
+        "fwd_screen_table": fwd_rows,
+        "top6_causal_fwd": top6_causal_fwd,
+        "top6_passive_fwd": top6_passive_fwd,
         "top3_offline": off_rows[:3],
         "top3_online_grad": onl_rows[:3],
         "top3_fwd_screen": fwd_rows[:3],
@@ -533,6 +695,8 @@ def main() -> None:
     ap.add_argument("--max-new-tokens", type=int, default=1024)
     ap.add_argument("--window-before", type=int, default=512)
     ap.add_argument("--window-after", type=int, default=256)
+    ap.add_argument("--center", default="healthy", choices=["none", "healthy"])
+    ap.add_argument("--healthy-cost", default="fisher", choices=["linear", "fisher"])
     ap.add_argument("--dtype", default="auto", choices=["auto", "fp16", "bf16", "fp32"])
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--out", default=None)

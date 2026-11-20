@@ -491,3 +491,214 @@ def test_discover_compact_circuit_passive_causal_union_and_forward_judge() -> No
     assert by_name["causal_top1_all_a4"]["target_suppression"] > by_name["passive_blind_top1_a4"]["target_suppression"] + 0.05
 
 
+def test_fisher_healthy_cost_rejects_summary_mode() -> None:
+    model = _PlantedDecoyCausalLM(plant_kind="mlp", vocab=32, hidden=32, inter=64, seed=5).eval()
+    ids = [1, 2, 3, 4, 25, 25, 25, 25]
+
+    with pytest.raises(ValueError, match="healthy_cost='fisher' requires per-token gradients"):
+        capture_causal_trace(
+            model,
+            ids,
+            target_span=(4, 8),
+            healthy_span=(0, 3),
+            grad_mode="summary",
+            healthy_cost="fisher",
+            top_k_mlp=16,
+            group_size=16,
+            hadamard_block=16,
+            top_k_attn=0,
+            capture_cache=False,
+        )
+
+    tr_sum = capture_causal_trace(
+        model,
+        ids,
+        target_span=(4, 8),
+        healthy_span=(0, 3),
+        grad_mode="summary",
+        top_k_mlp=16,
+        group_size=16,
+        hadamard_block=16,
+        top_k_attn=0,
+        capture_cache=False,
+    )
+    with pytest.raises(ValueError, match="healthy_cost='fisher' requires per-token gradients"):
+        diagnose_causal_traces([tr_sum], healthy_cost="fisher")
+
+    e0 = torch.zeros(32)
+    e0[0] = 1.0
+    cands = {"a4": MoIPatch(edits=[Edit(module="layers.2.mlp.down_proj", u=e0, alpha=4.0)])}
+    with pytest.raises(ValueError, match="healthy_cost='fisher' requires per-token gradients"):
+        screen_patches_from_traces([tr_sum], cands, model, healthy_cost="fisher")
+
+
+def test_fisher_healthy_cost_penalizes_large_alpha_and_cancellation() -> None:
+    model = _ParetoContrastLM().eval()
+    # Keep token 10 as a moderate logit along dim 0 (+1.0, unsaturated) vs tokens 1 (+0.8) and 2 (-0.8)
+    # so target suppression along e0 is strictly positive, while healthy tokens 1 and 2 have opposite sensitivities
+    # along dim 0 so linear drift cancels out and empirical Fisher scales quadratically with alpha^2.
+    with torch.no_grad():
+        model.lm_head.weight[1, 0] = 0.8
+        model.lm_head.weight[2, 0] = -0.8
+        model.lm_head.weight[10, 0] = 1.0
+        model.lm_head.weight[10, 1] = 0.5
+        model.model.layers[0].mlp.gate_proj.weight[0, 2] = 0.8
+        model.model.layers[0].mlp.up_proj.weight[0, 2] = 0.8
+        model.model.layers[0].mlp.down_proj.weight[0, 0] = 0.8
+    seqs = [
+        [1, 2, 1, 2, 10, 10, 10, 10],
+        [2, 1, 2, 1, 10, 10, 10, 10],
+    ]
+    traces = [
+        capture_causal_trace(
+            model,
+            s,
+            target_span=(4, 8),
+            healthy_span=(0, 4),
+            grad_mode="compressed",
+            center="healthy",
+            healthy_cost="fisher",
+            top_k_mlp=16,
+            group_size=16,
+            hadamard_block=16,
+            top_k_attn=0,
+            capture_cache=False,
+        )
+        for s in seqs
+    ]
+    e0 = torch.zeros(16)
+    e0[0] = 1.0
+    cands = {
+        "a4": MoIPatch(edits=[Edit(module="layers.0.mlp.down_proj", u=e0, alpha=4.0)]),
+        "a8": MoIPatch(edits=[Edit(module="layers.0.mlp.down_proj", u=e0, alpha=8.0)]),
+        "a12": MoIPatch(edits=[Edit(module="layers.0.mlp.down_proj", u=e0, alpha=12.0)]),
+    }
+    off_f = screen_patches_from_traces(traces, cands, model, healthy_cost="fisher", max_nll_delta=100.0)
+    onl_f = gradient_screen_candidates(
+        model,
+        cands,
+        healthy_seqs=[s[:5] for s in seqs],
+        target_seqs=seqs,
+        target_spans=[(4, 8)] * len(seqs),
+        healthy_cost="fisher",
+        max_nll_delta=100.0,
+    )
+    by_off = {r["name"]: r for r in off_f}
+    by_onl = {r["name"]: r for r in onl_f}
+    assert by_off["a4"]["grad_supp"] > 0.0
+    assert by_off["a4"]["grad_dnll"] > 0.0
+    # Fisher scales quadratically with alpha: dnll(a12) / dnll(a4) == (12/4)^2 == 9
+    ratio = by_off["a12"]["grad_dnll"] / max(by_off["a4"]["grad_dnll"], 1e-12)
+    assert 8.5 <= ratio <= 9.5, f"Expected quadratic alpha^2 scaling (~9.0), got {ratio:.3f}"
+    # Because grad_supp > 0 (~ alpha) and Fisher ~ alpha^2, grad_pareto orders a4 > a8 > a12
+    assert by_off["a4"]["grad_pareto"] > by_off["a8"]["grad_pareto"] > by_off["a12"]["grad_pareto"]
+    assert [r["name"] for r in off_f] == ["a4", "a8", "a12"]
+    assert [r["name"] for r in onl_f] == ["a4", "a8", "a12"]
+
+
+class _HighBaselineLateDecoyLM(nn.Module):
+    """Layer 1 has a clean target-only causal switch; Layer 3 has a massive constant baseline along dim 0."""
+
+    def __init__(self, vocab: int = 32, hidden: int = 32, inter: int = 64) -> None:
+        super().__init__()
+        from experiment_causal_diagnose import _PlantedBlock
+
+        self.config = SimpleNamespace(model_type="llama", hidden_size=hidden, num_attention_heads=4)
+        self.model = nn.Module()
+        self.model.embed_tokens = nn.Embedding(vocab, hidden)
+        self.model.layers = nn.ModuleList([_PlantedBlock(hidden, inter, 4) for _ in range(4)])
+        self.lm_head = nn.Linear(hidden, vocab, bias=False)
+
+        with torch.no_grad():
+            for p in self.parameters():
+                p.zero_()
+            # Dim 0 drives target token 25; Dim 2 strongly drives healthy tokens 1..6 (logit +12 so softmax(25) ~ 0 on healthy)
+            self.lm_head.weight[25, 0] = 0.5
+            for v in range(1, 8):
+                self.lm_head.weight[v, 2] = 12.0
+
+            # Dim 4 is constant baseline present on EVERY token (healthy and target);
+            # Dim 3 is active only on trigger token 25.
+            self.model.embed_tokens.weight[:, 4] = 1.5
+            for t in range(1, 8):
+                self.model.embed_tokens.weight[t, 2] = 1.0
+            self.model.embed_tokens.weight[25, 3] = 1.5
+
+            # Layer 1 true causal switch: fires only on trigger (dim 3) -> writes +0.5 along dim 0 (zero on healthy)
+            b1 = self.model.layers[1]
+            b1.mlp.gate_proj.weight[5, 3] = 0.7
+            b1.mlp.up_proj.weight[5, 3] = 0.7
+            b1.mlp.down_proj.weight[0, 5] = 0.7
+
+            # Layer 3 late baseline decoy: fires strongly on constant dim 4 across ALL tokens (healthy & target)
+            # writing a huge constant baseline along dim 0, plus a tiny trigger ripple so paired_diff has +e0 sign.
+            # Uncentered Y on Layer 3 is ~7x larger than Layer 1, so uncentered C_t ranks Layer 3 #1,
+            # whereas healthy-centered (Y - Y_healthy_mean) cancels Layer 3's constant baseline and ranks Layer 1 #1!
+            b3 = self.model.layers[3]
+            b3.mlp.gate_proj.weight[0, 4] = 1.5
+            b3.mlp.up_proj.weight[0, 4] = 1.5
+            b3.mlp.gate_proj.weight[0, 3] = 0.05
+            b3.mlp.up_proj.weight[0, 3] = 0.05
+            b3.mlp.down_proj.weight[0, 0] = 1.5
+
+    def forward(self, input_ids: torch.Tensor, use_cache: bool = False) -> SimpleNamespace:
+        x = self.model.embed_tokens(input_ids)
+        for blk in self.model.layers:
+            x = blk(x)
+        return SimpleNamespace(logits=self.lm_head(x))
+
+
+def test_center_healthy_suppresses_high_baseline_late_layer_decoy() -> None:
+    model = _HighBaselineLateDecoyLM().eval()
+    seqs = [
+        [1, 2, 3, 4, 25, 25, 25, 25],
+        [2, 3, 4, 5, 25, 25, 25, 25],
+        [3, 4, 5, 6, 25, 25, 25, 25],
+        [4, 5, 6, 7, 25, 25, 25, 25],
+    ]
+    traces_old = [
+        capture_causal_trace(
+            model,
+            s,
+            target_span=(4, 8),
+            healthy_span=(0, 3),
+            grad_mode="compressed",
+            center="none",
+            healthy_cost="linear",
+            top_k_mlp=16,
+            group_size=16,
+            hadamard_block=16,
+            top_k_attn=0,
+            capture_cache=False,
+        )
+        for s in seqs
+    ]
+    traces_new = [
+        capture_causal_trace(
+            model,
+            s,
+            target_span=(4, 8),
+            healthy_span=(0, 3),
+            grad_mode="compressed",
+            center="healthy",
+            healthy_cost="fisher",
+            top_k_mlp=16,
+            group_size=16,
+            hadamard_block=16,
+            top_k_attn=0,
+            capture_cache=False,
+        )
+        for s in seqs
+    ]
+
+    # Uncentered + linear clamp is fooled by Layer 3's huge constant baseline Y
+    diag_old = diagnose_causal_traces(traces_old, center="none", healthy_cost="linear")
+    assert diag_old["summary"]["top_causal_site"] == "layers.3.mlp.down_proj"
+
+    # Healthy-centered + Fisher eliminates Layer 3's constant baseline and ranks Layer 1 #1
+    diag_new = diagnose_causal_traces(traces_new, center="healthy", healthy_cost="fisher", model_or_weights=model)
+    assert diag_new["summary"]["top_causal_site"] == "layers.1.mlp.down_proj"
+    assert diag_new["top_neurons"]["layers.1.mlp.down_proj"][0] == 5
+
+
+

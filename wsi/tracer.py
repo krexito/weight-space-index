@@ -725,6 +725,8 @@ def capture_compact(
     healthy_span: tuple[int, int] | None = None,
     grad_checkpointing: bool = True,
     pareto_betas: tuple[float, ...] = (0.0, 0.5, 1.0, 2.0, 4.0),
+    center: str = "none",
+    healthy_cost: str = "linear",
 ) -> CompactTrace:
     """Record a Pareto-optimal compressed token trace (~80-95 MiB per 1.6k tok on 0.8B):
     INT8 Hadamard-rotated residuals, adaptive or fixed Top-K FP4 bitmask/bitpack MLP units
@@ -733,8 +735,17 @@ def capture_compact(
     and INT8 KV/recurrent cache states. When ``capture_grad=True``, also runs target & healthy
     backward passes to record per-module causal summaries (and compressed token-level gradients
     when ``grad_mode="compressed"``)."""
+    if center not in ("none", "healthy"):
+        raise ValueError(f"center must be 'none' or 'healthy', got {center!r}")
+    if healthy_cost not in ("linear", "fisher"):
+        raise ValueError(f"healthy_cost must be 'linear' or 'fisher', got {healthy_cost!r}")
     if capture_grad and grad_mode not in ("compressed", "summary"):
         raise ValueError(f"grad_mode must be 'compressed' or 'summary', got {grad_mode!r}")
+    if capture_grad and healthy_cost == "fisher" and grad_mode != "compressed":
+        raise ValueError(
+            f"healthy_cost='fisher' requires per-token gradients (grad_mode='compressed'), got grad_mode={grad_mode!r}; "
+            "summary mode does not store per-token gradients"
+        )
 
     if isinstance(top_k_mlp, str):
         if top_k_mlp != "auto":
@@ -1073,11 +1084,32 @@ def capture_compact(
                 w_raw = mod.weight.detach().float().cpu()
                 W_lin = w_raw if isinstance(mod, nn.Linear) else (w_raw.t() if w_raw.dim() == 2 else w_raw)
 
+                n_h_count = max(1, hi_h - lo_h)
+                y_h_mean = y_act[lo_h:hi_h].mean(dim=0, keepdim=True) if hi_h > lo_h else torch.zeros((1, D), dtype=torch.float32)
+                h_h_mean = h_act[lo_h:hi_h].mean(dim=0, keepdim=True) if hi_h > lo_h else torch.zeros((1, U), dtype=torch.float32)
+                y_centered = y_act - y_h_mean
+                h_centered = h_act - h_h_mean
+
                 neuron_supp_attr = ((g_t @ W_lin) * h_act).sum(dim=0).float()
+                neuron_supp_centered_attr = ((g_t @ W_lin) * h_centered).sum(dim=0).float()
                 neuron_dnll_attr = (-((g_h @ W_lin) * h_act).sum(dim=0).float()) if hi_h > lo_h else torch.zeros(U, dtype=torch.float32)
+                neuron_fisher_attr = (
+                    (float(n_h_count) * (((g_h @ W_lin) * h_act) ** 2).sum(dim=0)).float()
+                    if hi_h > lo_h
+                    else torch.zeros(U, dtype=torch.float32)
+                )
 
                 C_t = 0.5 * (g_t.t() @ y_act + y_act.t() @ g_t)
+                C_t_centered = 0.5 * (g_t.t() @ y_centered + y_centered.t() @ g_t)
                 C_h = (0.5 * (g_h.t() @ y_act + y_act.t() @ g_h)) if hi_h > lo_h else torch.zeros((D, D), dtype=torch.float32)
+
+                y_sq_tok = (y_act * y_act).sum(dim=1, keepdim=True) / max(1, D)
+                y_healthy_rms_sq = float(y_sq_tok[lo_h:hi_h].mean().item()) if hi_h > lo_h else float(y_sq_tok.mean().item())
+                if hi_h > lo_h:
+                    g_h_scaled = g_h * y_sq_tok.clamp_min(0.0).sqrt()
+                    F_h = float(n_h_count) * (g_h_scaled.t() @ g_h_scaled)
+                else:
+                    F_h = torch.zeros((D, D), dtype=torch.float32)
 
                 # Restrict curvature eigendecomposition to the gradient-active subspace so massive
                 # nullspace activations (orthogonal to both g_t and g_h) cannot create cross-term decoys.
@@ -1090,35 +1122,57 @@ def capture_compact(
                     keep = keep[-min(len(keep), max(r, 1)):]
                     Q = gevecs[:, keep]
                     C_t_sub = 0.5 * (Q.t() @ (C_t + C_t.t()) @ Q)
+                    C_tc_sub = 0.5 * (Q.t() @ (C_t_centered + C_t_centered.t()) @ Q)
                     C_h_sub = 0.5 * (Q.t() @ (C_h + C_h.t()) @ Q)
+                    F_h_sub = 0.5 * (Q.t() @ (F_h + F_h.t()) @ Q)
                     evals_t, evecs_t_sub = torch.linalg.eigh(C_t_sub)
                     evecs_t = Q @ evecs_t_sub
+                    evals_tc, evecs_tc_sub = torch.linalg.eigh(C_tc_sub)
+                    evecs_tc = Q @ evecs_tc_sub
                     evals_h, evecs_h_sub = torch.linalg.eigh(C_h_sub)
                     evecs_h = Q @ evecs_h_sub
+                    evals_fh, evecs_fh_sub = torch.linalg.eigh(F_h_sub)
+                    evecs_fh = Q @ evecs_fh_sub
                 else:
                     Q = None
                     evals_t = torch.zeros(1, dtype=torch.float32)
                     evecs_t = torch.eye(D, 1, dtype=torch.float32)
+                    evals_tc = torch.zeros(1, dtype=torch.float32)
+                    evecs_tc = torch.eye(D, 1, dtype=torch.float32)
                     evals_h = torch.zeros(1, dtype=torch.float32)
                     evecs_h = torch.eye(D, 1, dtype=torch.float32)
+                    evals_fh = torch.zeros(1, dtype=torch.float32)
+                    evecs_fh = torch.eye(D, 1, dtype=torch.float32)
 
                 r_t = min(r, int(evals_t.numel()))
                 idx_t = torch.argsort(evals_t, descending=True)[:r_t]
                 c_target_eigvecs = evecs_t[:, idx_t].t().contiguous().float()
                 c_target_eigvals = evals_t[idx_t].float()
 
+                r_tc = min(r, int(evals_tc.numel()))
+                idx_tc = torch.argsort(evals_tc, descending=True)[:r_tc]
+                c_target_centered_eigvecs = evecs_tc[:, idx_tc].t().contiguous().float()
+                c_target_centered_eigvals = evals_tc[idx_tc].float()
+
                 r_h = min(r, int(evals_h.numel()))
                 idx_h = torch.argsort(evals_h.abs(), descending=True)[:r_h]
                 c_healthy_eigvecs = evecs_h[:, idx_h].t().contiguous().float()
                 c_healthy_eigvals = evals_h[idx_h].float()
 
+                r_fh = min(r, int(evals_fh.numel()))
+                idx_fh = torch.argsort(evals_fh, descending=True)[:r_fh]
+                c_fisher_eigvecs = evecs_fh[:, idx_fh].t().contiguous().float()
+                c_fisher_eigvals = evals_fh[idx_fh].float()
+
                 p_vecs = []
+                use_ct_sub = C_tc_sub if center == "healthy" else C_t_sub
                 for beta in betas:
                     if Q is not None:
-                        _, ev_p_sub = torch.linalg.eigh(C_t_sub + beta * C_h_sub)
+                        pen_sub = (-beta * F_h_sub) if healthy_cost == "fisher" else (beta * C_h_sub)
+                        _, ev_p_sub = torch.linalg.eigh(use_ct_sub + pen_sub)
                         p_vecs.append((Q @ ev_p_sub[:, -1]).contiguous().float())
                     else:
-                        p_vecs.append(evecs_t[:, 0].contiguous().float())
+                        p_vecs.append((evecs_tc if center == "healthy" else evecs_t)[:, 0].contiguous().float())
                 pareto_eigvecs = torch.stack(p_vecs, dim=0) if p_vecs else torch.empty((0, D), dtype=torch.float32)
 
                 paired_diff = (
@@ -1126,10 +1180,14 @@ def capture_compact(
                     if hi_h > lo_h
                     else y_act[lo_t:hi_t].mean(dim=0).float()
                 )
-                u0 = c_target_eigvecs[0]
-                target_supp_top1 = float(c_target_eigvals[0].item())
-                healthy_dnll_top1 = float(-(u0 @ C_h @ u0).item())
-                pareto_top1 = target_supp_top1 / max(abs(healthy_dnll_top1), 0.01)
+                u0 = c_target_centered_eigvecs[0] if center == "healthy" else c_target_eigvecs[0]
+                target_supp_top1 = float((c_target_centered_eigvals if center == "healthy" else c_target_eigvals)[0].item())
+                if healthy_cost == "fisher":
+                    healthy_dnll_top1 = float((u0 @ F_h @ u0).item())
+                    pareto_top1 = target_supp_top1 / max(healthy_dnll_top1, 1e-8)
+                else:
+                    healthy_dnll_top1 = float(-(u0 @ C_h @ u0).item())
+                    pareto_top1 = target_supp_top1 / max(abs(healthy_dnll_top1), 0.01)
 
                 grad_summary_out[mk] = {
                     "kind": meta_m["kind"],
@@ -1137,12 +1195,19 @@ def capture_compact(
                     "d_out": D,
                     "d_in": U,
                     "neuron_supp_attr": neuron_supp_attr,
+                    "neuron_supp_centered_attr": neuron_supp_centered_attr,
                     "neuron_dnll_attr": neuron_dnll_attr,
+                    "neuron_fisher_attr": neuron_fisher_attr,
                     "paired_diff": paired_diff,
                     "c_target_eigvecs": c_target_eigvecs,
                     "c_target_eigvals": c_target_eigvals,
+                    "c_target_centered_eigvecs": c_target_centered_eigvecs,
+                    "c_target_centered_eigvals": c_target_centered_eigvals,
                     "c_healthy_eigvecs": c_healthy_eigvecs,
                     "c_healthy_eigvals": c_healthy_eigvals,
+                    "c_fisher_eigvecs": c_fisher_eigvecs,
+                    "c_fisher_eigvals": c_fisher_eigvals,
+                    "y_healthy_rms_sq": round(y_healthy_rms_sq, 8),
                     "pareto_eigvecs": pareto_eigvecs,
                     "pareto_betas": betas,
                     "target_supp_top1": round(target_supp_top1, 6),
@@ -1160,6 +1225,8 @@ def capture_compact(
             trace_meta["grad_n_healthy"] = int(max(0, hi_h - lo_h))
             trace_meta["target_span"] = [int(lo_t), int(hi_t)]
             trace_meta["healthy_span"] = [int(lo_h), int(hi_h)]
+            trace_meta["grad_center"] = center
+            trace_meta["grad_healthy_cost"] = healthy_cost
         finally:
             if enabled_gc and hasattr(model, "gradient_checkpointing_disable"):
                 try:
@@ -2243,8 +2310,10 @@ def discover_compact_dirs(
     top_k_heads: int = 2,
     variant: str = "unified_top2",
     save_patch_path: str | None = None,
+    save_candidate_grid_dir: str | Path | None = None,
+    candidate_alphas: tuple[float, ...] = (4.0, 8.0, 12.0),
 ) -> dict[str, Any]:
-    """Load saved `CompactTrace` directories, run blind multi-site discovery, optionally save a `.moipatch`, and return a JSON summary."""
+    """Load saved `CompactTrace` directories, run blind multi-site discovery, optionally save a `.moipatch` (and/or the full union `candidate_grid`), and return a JSON summary."""
     traces = [CompactTrace.load(p) for p in trace_dirs]
     loop_traces = [CompactTrace.load(p) for p in loop_trace_dirs] if loop_trace_dirs else None
     res = wsi.discover_compact_circuit(
@@ -2253,11 +2322,35 @@ def discover_compact_dirs(
         alpha=float(alpha),
         top_k_neurons=int(top_k_neurons),
         top_k_heads=int(top_k_heads),
+        candidate_alphas=tuple(float(a) for a in candidate_alphas),
     )
     saved_patch = None
     if save_patch_path:
         chosen = res["patches"].get(variant) or res["patch"]
         saved_patch = str(chosen.save(save_patch_path))
+
+    saved_candidate_grid: dict[str, str] | None = None
+    if save_candidate_grid_dir:
+        gdir = Path(save_candidate_grid_dir)
+        gdir.mkdir(parents=True, exist_ok=True)
+        saved_candidate_grid = {
+            cname: str(cpatch.save(gdir / f"{cname}.moipatch"))
+            for cname, cpatch in res["candidate_grid"].items()
+        }
+
+    cd = res.get("causal_diagnosis")
+    causal_summary = None
+    if cd is not None:
+        causal_summary = {
+            "summary": cd["summary"],
+            "sites": cd["sites"],
+            "causal_rank": cd["causal_rank"][:10],
+            "passive_rank": cd["passive_rank"][:10],
+            "top_neurons": {k: v[:16] for k, v in cd["top_neurons"].items()},
+            "split_mode": cd["split_mode"],
+            "n_traces": cd["n_traces"],
+        }
+
     return {
         "split_mode": res["split_mode"],
         "fa_layers": res["fa_layers"],
@@ -2273,8 +2366,11 @@ def discover_compact_dirs(
         "wsi_fa3_layers": res["wsi_fa3_layers"],
         "wsi_resonance_table": res["wsi_resonance_table"],
         "layer_stats": res["layer_stats"],
+        "causal_diagnosis": causal_summary,
         "available_patches": list(res["patches"]),
+        "candidate_grid_names": list(res["candidate_grid"]),
         "saved_patch": saved_patch,
+        "saved_candidate_grid": saved_candidate_grid,
     }
 
 
@@ -2346,13 +2442,17 @@ def gradient_screen_candidates(
     target_seqs: list[torch.Tensor | list[int]],
     target_spans: list[tuple[int, int]] | None = None,
     max_nll_delta: float = 0.05,
+    healthy_cost: str = "linear",
 ) -> list[dict[str, Any]]:
     """Fast 1st-order gradient prefilter scoring arbitrarily many candidate `MoIPatch`es via 1 backward/seq.
 
     Runs 1 backward pass per sequence (target log-prob and healthy NLL) in the model's native dtype with
     parameter gradients disabled, caching only input activations and output gradients at the edited modules.
     Ideal as Stage 1 to narrow hundreds/thousands of layer/neuron sites down before `screen_patch_candidates`.
+    When ``healthy_cost="fisher"``, measures healthy cost via empirical Fisher $\\sum_t (g_t \\cdot \\delta y_t)^2$.
     """
+    if healthy_cost not in ("linear", "fisher"):
+        raise ValueError(f"healthy_cost must be 'linear' or 'fisher', got {healthy_cost!r}")
     items = list(candidates.items()) if isinstance(candidates, dict) else list(candidates)
     if not items:
         return []
@@ -2449,11 +2549,39 @@ def gradient_screen_candidates(
                 tot += float(-e.alpha * ((g_t @ u) * (h_t @ uw)).sum())
         return tot
 
+    @torch.no_grad()
+    def _fisher_order(patch: Any, pieces: dict[str, list[tuple[torch.Tensor, torch.Tensor]]]) -> float:
+        denom_h = float(max(1, n_h))
+        any_mod = next(iter(pieces), None)
+        n_seqs_h = len(pieces[any_mod]) if any_mod is not None else 0
+        if n_seqs_h == 0:
+            return 0.0
+        tot_sq = 0.0
+        for si in range(n_seqs_h):
+            delta_tok: torch.Tensor | None = None
+            for e in patch.edits:
+                u = e.u.detach().float().cpu()
+                uw = u @ w_cpu[e.module]
+                if e.idx is not None:
+                    m = torch.zeros_like(uw)
+                    m[e.idx.long()] = 1.0
+                    uw = uw * m
+                g_t, h_t = pieces[e.module][si]
+                term = (-float(e.alpha)) * ((g_t @ u) * (h_t @ uw))
+                delta_tok = term if delta_tok is None else (delta_tok + term)
+            if delta_tok is not None:
+                tot_sq += denom_h * float((delta_tok * delta_tok).sum().item())
+        return tot_sq
+
     rows: list[dict[str, Any]] = []
     for name, patch in items:
         grad_supp = -_first_order(patch, tgt_pieces)
-        grad_dnll = _first_order(patch, hlt_pieces)
-        grad_pareto = grad_supp / max(abs(grad_dnll), 0.01)
+        if healthy_cost == "fisher":
+            grad_dnll = _fisher_order(patch, hlt_pieces)
+            grad_pareto = grad_supp / max(grad_dnll, 1e-8)
+        else:
+            grad_dnll = _first_order(patch, hlt_pieces)
+            grad_pareto = grad_supp / max(abs(grad_dnll), 0.01)
         rows.append({
             "name": name,
             "grad_supp": round(grad_supp, 6),
@@ -2474,21 +2602,57 @@ def diagnose_causal_traces(
     healthy_penalty: float = 1.0,
     max_healthy_ratio: float = 0.5,
     betas: tuple[float, ...] = (0.0, 0.5, 1.0, 2.0, 4.0),
+    center: str = "none",
+    healthy_cost: str = "linear",
+    model_or_weights: nn.Module | dict[str, torch.Tensor] | None = None,
 ) -> dict[str, Any]:
     """Offline causal diagnosis across unified MLP & Attention sites from captured causal ``CompactTrace``s.
 
     Uses Half-A / Half-B held-out cross-validation on low-rank target & healthy curvature matrices
     ``C_target`` and ``C_healthy`` to pick the site, direction (``paired``, ``causal``, or Pareto
     Lagrangian ``C_target + beta * C_healthy``), and net causal neurons without touching any GPU.
+    When ``center="healthy"``, subtracts the healthy mean activation $\\bar{Y}_{\\text{healthy}}$ from $Y$
+    before forming target curvature $C_{\\text{target}}$. When ``healthy_cost="fisher"``, uses the per-token
+    empirical Fisher $\\sum_t (g_t \\cdot \\delta y_t)^2$ from compressed per-token healthy gradients.
     """
+    if center not in ("none", "healthy"):
+        raise ValueError(f"center must be 'none' or 'healthy', got {center!r}")
+    if healthy_cost not in ("linear", "fisher"):
+        raise ValueError(f"healthy_cost must be 'linear' or 'fisher', got {healthy_cost!r}")
     if not traces:
         raise ValueError("diagnose_causal_traces requires at least one CompactTrace")
     if not any(ct.grad_summary for ct in traces):
         raise ValueError("Traces lack grad_summary; capture with capture_compact(..., capture_grad=True)")
+    if healthy_cost == "fisher":
+        for idx_t, ct in enumerate(traces):
+            if ct.grad_mode != "compressed":
+                raise ValueError(
+                    f"healthy_cost='fisher' requires per-token gradients (grad_mode='compressed'), "
+                    f"but trace #{idx_t} has grad_mode={ct.grad_mode!r}; summary mode is not sufficient"
+                )
 
     all_mods = sorted({mk for ct in traces for mk in ct.grad_summary})
     half_a = traces[0::2] if (split_ab and len(traces) >= 2) else traces
     half_b = traces[1::2] if (split_ab and len(traces) >= 2) else traces
+
+    w_cpu_diag: dict[str, torch.Tensor] = {}
+    if model_or_weights is not None:
+        if isinstance(model_or_weights, dict):
+            w_cpu_diag = {k: v.detach().float().cpu() for k, v in model_or_weights.items()}
+        else:
+            from .moipatch import module_suffix
+            for name, mod in model_or_weights.named_modules():
+                if "mtp" in name or "visual" in name or getattr(mod, "weight", None) is None:
+                    continue
+                try:
+                    mk_s = module_suffix(name)
+                except ValueError:
+                    continue
+                if mk_s in all_mods and mk_s not in w_cpu_diag:
+                    w = mod.weight.detach().float().cpu()
+                    if not isinstance(mod, nn.Linear) and w.dim() == 2:
+                        w = w.t()
+                    w_cpu_diag[mk_s] = w
 
     def _pool_half(sub_traces: list[CompactTrace], mk: str) -> dict[str, Any]:
         items = [
@@ -2510,31 +2674,44 @@ def diagnose_causal_traces(
 
         C_t = torch.zeros((D, D), dtype=torch.float32)
         C_h = torch.zeros((D, D), dtype=torch.float32)
+        F_h = torch.zeros((D, D), dtype=torch.float32)
         paired = torch.zeros(D, dtype=torch.float32)
         n_supp = torch.zeros(U, dtype=torch.float32)
         n_dnll = torch.zeros(U, dtype=torch.float32)
 
         for gs, nt, nh in items:
             wt = (nt / tot_t) if tot_t > 0 else (1.0 / len(items))
-            vt = gs["c_target_eigvecs"].float()
-            lt = gs["c_target_eigvals"].float()
+            if center == "healthy" and "c_target_centered_eigvecs" in gs:
+                vt = gs["c_target_centered_eigvecs"].float()
+                lt = gs["c_target_centered_eigvals"].float()
+            else:
+                vt = gs["c_target_eigvecs"].float()
+                lt = gs["c_target_eigvals"].float()
             C_t += wt * (vt.t() @ (lt[:, None] * vt))
             paired += wt * gs["paired_diff"].float()
-            n_supp += wt * gs["neuron_supp_attr"].float()
+            supp_key = "neuron_supp_centered_attr" if (center == "healthy" and "neuron_supp_centered_attr" in gs) else "neuron_supp_attr"
+            n_supp += wt * gs[supp_key].float()
             if tot_h > 0 and nh > 0:
                 wh = nh / tot_h
                 vh = gs["c_healthy_eigvecs"].float()
                 lh = gs["c_healthy_eigvals"].float()
                 C_h += wh * (vh.t() @ (lh[:, None] * vh))
-                n_dnll += wh * gs["neuron_dnll_attr"].float()
+                if "c_fisher_eigvecs" in gs:
+                    vf = gs["c_fisher_eigvecs"].float()
+                    lf = gs["c_fisher_eigvals"].float()
+                    F_h += wh * (vf.t() @ (lf[:, None] * vf))
+                dnll_key = "neuron_fisher_attr" if (healthy_cost == "fisher" and "neuron_fisher_attr" in gs) else "neuron_dnll_attr"
+                n_dnll += wh * gs[dnll_key].float()
 
         C_t = 0.5 * (C_t + C_t.t())
         C_h = 0.5 * (C_h + C_h.t())
+        F_h = 0.5 * (F_h + F_h.t())
         return {
             "kind": gs0["kind"],
             "layer": gs0["layer"],
             "C_t": C_t,
             "C_h": C_h,
+            "F_h": F_h,
             "paired_diff": paired,
             "neuron_supp": n_supp,
             "neuron_dnll": n_dnll,
@@ -2549,15 +2726,17 @@ def diagnose_causal_traces(
         pb = _pool_half(half_b, mk) if half_b is not half_a else pa
         pall = _pool_half(traces, mk)
 
-        C_t_A, C_h_A, diff_A = pa["C_t"], pa["C_h"], pa["paired_diff"]
-        C_t_B, C_h_B = pb["C_t"], pb["C_h"]
+        C_t_A, C_h_A, F_h_A, diff_A = pa["C_t"], pa["C_h"], pa["F_h"], pa["paired_diff"]
+        C_t_B, C_h_B, F_h_B = pb["C_t"], pb["C_h"], pb["F_h"]
 
         # Orthonormal basis of the Half-A active subspace (all stored C_t/C_h eigenvectors)
+        t_vec_key = "c_target_centered_eigvecs" if center == "healthy" else "c_target_eigvecs"
+        h_vec_key = "c_fisher_eigvecs" if healthy_cost == "fisher" else "c_healthy_eigvecs"
         basis_rows = [
-            ct.grad_summary[mk][key].float()
+            ct.grad_summary[mk].get(key, ct.grad_summary[mk]["c_target_eigvecs" if "target" in key else "c_healthy_eigvecs"]).float()
             for ct in half_a
             if mk in ct.grad_summary
-            for key in ("c_target_eigvecs", "c_healthy_eigvecs")
+            for key in (t_vec_key, h_vec_key)
         ]
         B_mat = torch.cat(basis_rows, dim=0) if basis_rows else torch.empty((0, C_t_A.shape[0]))
         if B_mat.numel() > 0 and float(B_mat.abs().max().item()) > 1e-12:
@@ -2573,25 +2752,85 @@ def diagnose_causal_traces(
         if Q_A is not None:
             C_t_sub = 0.5 * (Q_A.t() @ (C_t_A + C_t_A.t()) @ Q_A)
             C_h_sub = 0.5 * (Q_A.t() @ (C_h_A + C_h_A.t()) @ Q_A)
+            F_h_sub = 0.5 * (Q_A.t() @ (F_h_A + F_h_A.t()) @ Q_A)
             _, ev_c = torch.linalg.eigh(C_t_sub)
             cands.append(("causal", (Q_A @ ev_c[:, -1]).contiguous().float()))
             for beta in betas:
-                _, ev_p = torch.linalg.eigh(C_t_sub + float(beta) * C_h_sub)
+                pen_sub = (-float(beta) * F_h_sub) if healthy_cost == "fisher" else (float(beta) * C_h_sub)
+                _, ev_p = torch.linalg.eigh(C_t_sub + pen_sub)
                 cands.append((f"pareto_b{beta:g}", (Q_A @ ev_p[:, -1]).contiguous().float()))
         else:
             _, ev_c = torch.linalg.eigh(C_t_A)
             cands.append(("causal", ev_c[:, -1].contiguous().float()))
 
+        # Pre-extract Half-B per-token healthy gradients (and inputs if available) when healthy_cost == "fisher"
+        b_fisher_pieces: list[tuple[float, float, torch.Tensor, Any | None]] = []
+        if healthy_cost == "fisher":
+            tot_h_b = max(1, sum(max(0, int(ct.meta.get("grad_n_healthy", 0))) for ct in half_b))
+            w_mod = w_cpu_diag.get(mk)
+            wn_mod = w_mod.norm(dim=0).clamp_min(1e-12) if w_mod is not None else None
+            for ct in half_b:
+                nh_b = max(0, int(ct.meta.get("grad_n_healthy", 0)))
+                if nh_b <= 0:
+                    continue
+                g_h_b = ct.dequant_grad(mk, "healthy")
+                if g_h_b is None:
+                    continue
+                wh_b = nh_b / tot_h_b
+                gs_b = ct.grad_summary.get(mk, {})
+                h_in_b: Any | None = None
+                if w_mod is not None:
+                    kind_b = gs_b.get("kind")
+                    layer_b = gs_b.get("layer", _layer_idx_from_name(mk))
+                    if kind_b == "mlp" or (kind_b != "attn" and layer_b is not None and layer_b in ct.mlp_topk and ".mlp." in mk):
+                        if layer_b is not None and int(layer_b) in ct.mlp_topk:
+                            idx_m, val_m = ct.dequant_mlp_topk(int(layer_b))
+                            x_m = val_m / wn_mod[idx_m]  # type: ignore[index]
+                            h_in_b = ("mlp", (idx_m, x_m, w_mod))
+                    else:
+                        head_key_map = {_safe_module_suffix(hk): hk for hk in ct.head_norms}
+                        hk = mk if mk in ct.head_norms else head_key_map.get(mk)
+                        h_dense = ct.dequant_head_in(hk) if hk is not None else None
+                        if h_dense is not None:
+                            h_in_b = ("attn", (h_dense, w_mod))
+                if h_in_b is None:
+                    y_rms_sq = float(gs_b.get("y_healthy_rms_sq", max(float(gs_b.get("paired_diff_norm", 1.0)) ** 2 / max(1, int(gs_b.get("d_out", 1))), 1e-8)))
+                    h_in_b = ("rms", max(y_rms_sq, 1e-8))
+                b_fisher_pieces.append((wh_b, float(nh_b), g_h_b, h_in_b))
+
+        def _eval_dnll_b(u_vec: torch.Tensor) -> float:
+            if healthy_cost != "fisher":
+                return float(-(u_vec @ C_h_B @ u_vec).item())
+            if not b_fisher_pieces:
+                return float((u_vec @ F_h_B @ u_vec).item())
+            tot_f = 0.0
+            for wh_b, nh_f, g_h_b, h_in_b in b_fisher_pieces:
+                g_proj = g_h_b @ u_vec
+                kind_in, pay = h_in_b
+                if kind_in == "mlp":
+                    idx_m, x_m, w_m = pay
+                    uw_m = u_vec @ w_m
+                    y_proj = (x_m * uw_m[idx_m]).sum(dim=1)
+                    tot_f += wh_b * nh_f * float(((g_proj * y_proj) ** 2).sum().item())
+                elif kind_in == "attn":
+                    h_dense, w_m = pay
+                    uw_m = u_vec @ w_m
+                    y_proj = h_dense @ uw_m
+                    tot_f += wh_b * nh_f * float(((g_proj * y_proj) ** 2).sum().item())
+                else:
+                    tot_f += wh_b * nh_f * float(pay) * float((g_proj * g_proj).sum().item())
+            return tot_f
+
         scored_cands: list[tuple[float, float, float, str, torch.Tensor]] = []
         for kind_lbl, u in cands:
             u = u / u.norm().clamp_min(1e-12)
             supp_b = float((u @ C_t_B @ u).item())
-            dnll_b = float(-(u @ C_h_B @ u).item())
-            pareto_b = supp_b / max(abs(dnll_b), 0.01)
+            dnll_b = _eval_dnll_b(u)
+            pareto_b = (supp_b / max(dnll_b, 1e-8)) if healthy_cost == "fisher" else (supp_b / max(abs(dnll_b), 0.01))
             scored_cands.append((pareto_b, supp_b, -abs(dnll_b), kind_lbl, u))
 
         best_pareto, best_supp, neg_dnll_abs, best_kind, best_u = max(scored_cands, key=lambda x: (x[0], x[1], x[2]))
-        best_dnll = float(-(best_u @ C_h_B @ best_u).item())
+        best_dnll = _eval_dnll_b(best_u)
         if float(diff_A.norm().item()) > 1e-12:
             if float((best_u @ diff_A).item()) < 0.0:
                 best_u = -best_u
@@ -2622,6 +2861,12 @@ def diagnose_causal_traces(
             "top_neuron": picked[0] if picked else None,
         })
 
+    if healthy_cost == "fisher" and sites_all:
+        pos_dnlls = sorted(r["healthy_dnll"] for r in sites_all if r["healthy_dnll"] > 1e-12)
+        fisher_floor = max(1e-8, 0.25 * pos_dnlls[len(pos_dnlls) // 2]) if pos_dnlls else 1e-8
+        for r in sites_all:
+            r["pareto_score"] = round(float(r["target_supp"]) / max(float(r["healthy_dnll"]), fisher_floor), 6)
+
     passive_rank = [r["module"] for r in sorted(sites_all, key=lambda r: (-r["passive_diff_norm"], r["module"]))]
     sites_all.sort(key=lambda r: (-r["pareto_score"], -r["target_supp"], abs(r["healthy_dnll"])))
     causal_rank = [r["module"] for r in sites_all]
@@ -2635,6 +2880,8 @@ def diagnose_causal_traces(
         "top_neurons": top_neurons,
         "split_mode": "half_ab" if (split_ab and len(traces) >= 2) else "full",
         "n_traces": len(traces),
+        "center": center,
+        "healthy_cost": healthy_cost,
         "summary": {
             "top_causal_site": sites_all[0]["module"],
             "top_causal_kind": sites_all[0]["kind"],
@@ -2652,12 +2899,17 @@ def screen_patches_from_traces(
     model_or_weights: nn.Module | dict[str, torch.Tensor],
     *,
     max_nll_delta: float = 0.05,
+    healthy_cost: str = "linear",
 ) -> list[dict[str, Any]]:
     """Purely offline first-order screening over ``CompactTrace(..., capture_grad=True, grad_mode='compressed')``.
 
     Requires zero model forward or backward passes; aggregates per-token causal sensitivities
     weighted identically to ``gradient_screen_candidates``.
+    When ``healthy_cost="fisher"``, measures healthy cost via the per-token empirical Fisher
+    $\\sum_t (g_t \\cdot \\delta y_t)^2$ across all edited modules.
     """
+    if healthy_cost not in ("linear", "fisher"):
+        raise ValueError(f"healthy_cost must be 'linear' or 'fisher', got {healthy_cost!r}")
     items = list(candidates.items()) if isinstance(candidates, dict) else list(candidates)
     if not items:
         return []
@@ -2665,9 +2917,13 @@ def screen_patches_from_traces(
         raise ValueError("screen_patches_from_traces requires at least one CompactTrace")
     for idx_t, ct in enumerate(traces):
         if ct.grad_mode != "compressed":
-            raise ValueError(
-                f"Trace #{idx_t} has grad_mode={ct.grad_mode!r}; capture with capture_grad=True, grad_mode='compressed'"
+            msg = (
+                f"healthy_cost='fisher' requires per-token gradients (grad_mode='compressed'), "
+                f"but trace #{idx_t} has grad_mode={ct.grad_mode!r}; summary mode is not sufficient"
+                if healthy_cost == "fisher"
+                else f"Trace #{idx_t} has grad_mode={ct.grad_mode!r}; capture with capture_grad=True, grad_mode='compressed'"
             )
+            raise ValueError(msg)
 
     if isinstance(model_or_weights, dict):
         w_cpu = {k: v.detach().float().cpu() for k, v in model_or_weights.items()}
@@ -2709,6 +2965,7 @@ def screen_patches_from_traces(
     for name, patch in items:
         grad_supp = 0.0
         grad_dnll = 0.0
+        edit_specs = []
         for e in patch.edits:
             u = e.u.detach().float().cpu()
             uw = u @ w_cpu[e.module]
@@ -2716,7 +2973,11 @@ def screen_patches_from_traces(
                 m = torch.zeros_like(uw)
                 m[e.idx.long()] = 1.0
                 uw = uw * m
-            for ti in range(len(traces)):
+            edit_specs.append((e, u, uw))
+
+        for ti in range(len(traces)):
+            delta_h_tok: torch.Tensor | None = None
+            for e, u, uw in edit_specs:
                 kind_in, h_obj = cached_inputs[(ti, e.module)]
                 if kind_in == "mlp":
                     idx_m, x_m = h_obj
@@ -2731,10 +2992,18 @@ def screen_patches_from_traces(
 
                 g_h = cached_gh[(ti, e.module)]
                 if g_h is not None and n_h_list[ti] > 0:
-                    wh = n_h_list[ti] / tot_h
-                    grad_dnll += wh * (-float(e.alpha)) * float(((g_h @ u) * h_dot_uw).sum().item())
+                    term_h = (-float(e.alpha)) * ((g_h @ u) * h_dot_uw)
+                    if healthy_cost == "fisher":
+                        delta_h_tok = term_h if delta_h_tok is None else (delta_h_tok + term_h)
+                    else:
+                        wh = n_h_list[ti] / tot_h
+                        grad_dnll += wh * float(term_h.sum().item())
 
-        grad_pareto = grad_supp / max(abs(grad_dnll), 0.01)
+            if healthy_cost == "fisher" and delta_h_tok is not None and n_h_list[ti] > 0:
+                wh = n_h_list[ti] / tot_h
+                grad_dnll += wh * float(n_h_list[ti]) * float((delta_h_tok * delta_h_tok).sum().item())
+
+        grad_pareto = (grad_supp / max(grad_dnll, 1e-8)) if healthy_cost == "fisher" else (grad_supp / max(abs(grad_dnll), 0.01))
         rows.append({
             "name": name,
             "grad_supp": round(grad_supp, 6),
