@@ -227,6 +227,16 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >     | MATH-500 (150, weak 1-layer patch) | `2.7%` | `17.3%` | `18.7%` | `15.3%` | `−2.0` [`−8.7`, `+4.7`], 11 / 14 |
 >
 >     Stopping a loop and resuming with the same model already gives `+24.5` / `+14.7` pts, with no weight edit, and a random direction adds nothing on top. On GSM8K the real patch adds `+20` pts more and actually prevents re-looping (loops `26%` vs `59.5%` after restart); the weak MATH patch adds nothing (loops `77%` vs `71%`). So MoI numbers must always be compared with the restart arm, not with base.
+>   * **Can a patch gate itself with its own edit direction? (idea from ERMoE, arXiv 2511.10971)** ([`results`](./benchmarks/self_gate_router/results_qwen35-08b_colab_l4.json), Colab L4, `scripts/experiment_self_gate_router.py`). ERMoE routes by cosine similarity to each expert's own basis instead of a learned gate. Here the self-gate score is cos(module output, `u`) of the p50c loop patch, read per token on saved 0.8B base answers (half A sets the threshold, half B is scored; no generation):
+>
+>     | Held-out half B | GSM8K (100, 89% loop) | MATH-500 (75, 91% loop) |
+>     |---|---|---|
+>     | self-gate, patch `u` alone (token AUC) | **`0.961`** (L19) | **`0.933`** (L15) |
+>     | trained probe, best layer | `0.983` (L15) | `0.972` (L15) |
+>     | random direction, same modules | `0.56` / `0.80` | `0.51` / `0.78` |
+>     | non-looping answers it fires on: self-gate vs text detector | **1 / 11** vs 7 / 11 | **1 / 7** vs 5 / 7 |
+>
+>     The patch's own direction is almost as good a loop detector as a trained probe, with nothing trained, and it raises far fewer false alarms on answers that would have ended fine than the 16-gram text detector. It is not an early warning: at 1% token false alarms it fires ~1,000 tokens after the text detector (median). Few non-looping answers (11 and 7), so the false-alarm counts are rough. (The `all_modules` rows in this file summed the two modules with opposite signs and cancel out; fixed in the script after this run.)
 > * **Additive MoI outside math: sycophancy** (`moi_sycophancy.py`, Qwen3.5-4B bf16, Colab A100, thinking off, scored by the probability of each answer letter, so there is no sampling). The model answers an MMLU question; the user then pushes back ("are you sure? I think it's C"). Diagnosis uses 1531 MMLU validation questions, tuning uses 300, and the test uses 1000 test questions plus one pushback and one neutral wording never seen before. The base model gives up a right answer under false pushback `85%` of the time.
 >
 >   | Arm | Keeps right answer under false pushback | Accepts a correct suggestion | Neutral follow-up unchanged | First answer accuracy |

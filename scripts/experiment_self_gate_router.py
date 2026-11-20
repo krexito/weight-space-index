@@ -231,11 +231,13 @@ def main() -> None:
         for kind in ("cos", "dot"):
             k = f"{name}_{kind}"
             res[fam][k] = evaluate([r[k] for r in raw_a], half_a, [r[k] for r in raw_b], half_b)
-    for kind in ("cos", "dot"):  # all edited modules together (sum of z-scores fitted on half A)
+    for kind in ("cos", "dot"):  # all edited modules together: sum of z-scores, each oriented by its half-A sign
         names = [n for n in dirs if n.startswith("self_")]
         stats = {n: (np.concatenate([r[f"{n}_{kind}"] for r in raw_a]).mean(),
-                     np.concatenate([r[f"{n}_{kind}"] for r in raw_a]).std() + 1e-8) for n in names}
-        comb = lambda rs: [sum((r[f"{n}_{kind}"] - stats[n][0]) / stats[n][1] for n in names) for r in rs]  # noqa: E731
+                     np.concatenate([r[f"{n}_{kind}"] for r in raw_a]).std() + 1e-8,
+                     res["self_gate"][f"{n}_{kind}"]["sign"]) for n in names}
+        comb = lambda rs: [sum(stats[n][2] * (r[f"{n}_{kind}"] - stats[n][0]) / stats[n][1] for n in names)  # noqa: E731
+                           for r in rs]
         res["self_gate"][f"all_modules_{kind}"] = evaluate(comb(raw_a), half_a, comb(raw_b), half_b)
     for li in range(n_layers):
         res["probe_by_layer"][str(li + 1)] = evaluate([p[li] for p in probe_a], half_a,
