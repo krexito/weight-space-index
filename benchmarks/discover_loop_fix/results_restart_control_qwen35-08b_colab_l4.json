@@ -1,0 +1,150 @@
+{
+ "runs": {
+  "math": {
+   "dataset": "math",
+   "model": "Qwen/Qwen3.5-0.8B",
+   "n": 150,
+   "router_fired": 0.9733333333333334,
+   "arms": {
+    "base": {
+     "correct": 0.0267,
+     "looped_killed": 0.94,
+     "truncated": 0.0267
+    },
+    "wsi_moi": {
+     "correct": 0.1533,
+     "looped_killed": 0.7733,
+     "truncated": 0.04
+    },
+    "random_moi": {
+     "correct": 0.1867,
+     "looped_killed": 0.6867,
+     "truncated": 0.12
+    },
+    "restart_moi": {
+     "correct": 0.1733,
+     "looped_killed": 0.7067,
+     "truncated": 0.1067
+    }
+   },
+   "paired": {
+    "restart_moi_vs_base": {
+     "diff": 0.1467,
+     "ci95": [
+      0.0933,
+      0.2067
+     ],
+     "a_only": 22,
+     "b_only": 0
+    },
+    "wsi_moi_vs_restart_moi": {
+     "diff": -0.02,
+     "ci95": [
+      -0.0867,
+      0.0467
+     ],
+     "a_only": 11,
+     "b_only": 14
+    },
+    "random_moi_vs_restart_moi": {
+     "diff": 0.0133,
+     "ci95": [
+      -0.04,
+      0.0667
+     ],
+     "a_only": 10,
+     "b_only": 8
+    },
+    "wsi_moi_vs_base": {
+     "diff": 0.1267,
+     "ci95": [
+      0.0798,
+      0.18
+     ],
+     "a_only": 19,
+     "b_only": 0
+    }
+   },
+   "verdict": "edit ties restart (gain is the restart)"
+  },
+  "gsm8k": {
+   "dataset": "gsm8k",
+   "model": null,
+   "n": 200,
+   "router_fired": 0.945,
+   "arms": {
+    "base": {
+     "correct": 0.11,
+     "looped_killed": 0.885,
+     "truncated": 0.005
+    },
+    "wsi_moi": {
+     "correct": 0.555,
+     "looped_killed": 0.26,
+     "truncated": 0.115
+    },
+    "random_moi": {
+     "correct": 0.32,
+     "looped_killed": 0.615,
+     "truncated": 0.055
+    },
+    "restart_moi": {
+     "correct": 0.355,
+     "looped_killed": 0.595,
+     "truncated": 0.045
+    }
+   },
+   "paired": {
+    "restart_moi_vs_base": {
+     "diff": 0.245,
+     "ci95": [
+      0.185,
+      0.31
+     ],
+     "a_only": 51,
+     "b_only": 2
+    },
+    "wsi_moi_vs_restart_moi": {
+     "diff": 0.2,
+     "ci95": [
+      0.14,
+      0.265
+     ],
+     "a_only": 44,
+     "b_only": 4
+    },
+    "random_moi_vs_restart_moi": {
+     "diff": -0.035,
+     "ci95": [
+      -0.095,
+      0.02
+     ],
+     "a_only": 14,
+     "b_only": 21
+    },
+    "wsi_moi_vs_base": {
+     "diff": 0.445,
+     "ci95": [
+      0.375,
+      0.51
+     ],
+     "a_only": 89,
+     "b_only": 0
+    }
+   },
+   "verdict": "edit adds over restart"
+  }
+ },
+ "reused": {
+  "math": "discover_math500_qwen35-08b",
+  "gsm8k": "discover_blind"
+ },
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-0.8B",
+  "commit": "11ce426b470de58805ca3a4f904947732cc50e6d",
+  "notebook": "restart_control_colab.ipynb",
+  "gpu": "NVIDIA L4",
+  "saved_utc": "2026-11-20T15:52:29+00:00"
+ }
+}
