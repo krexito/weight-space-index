@@ -237,6 +237,17 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >     | non-looping answers it fires on: self-gate vs text detector | **1 / 11** vs 7 / 11 | **1 / 7** vs 5 / 7 |
 >
 >     The patch's own direction is almost as good a loop detector as a trained probe, with nothing trained, and it raises far fewer false alarms on answers that would have ended fine than the 16-gram text detector. It is not an early warning: at 1% token false alarms it fires ~1,000 tokens after the text detector (median). Few non-looping answers (11 and 7), so the false-alarm counts are rough. (The `all_modules` rows in this file summed the two modules with opposite signs and cancel out; fixed in the script after this run.)
+>   * **Self-gate as a veto: the text detector proposes, the patch direction confirms** ([`results`](./benchmarks/self_gate_router/results_veto_qwen35-08b_colab_l4.json), same saved answers, commit `7af7ca5`). The patch switches on at the first token after the text detector fires where the self-gate score is above its threshold (set on half A at a given token false-alarm rate):
+>
+>     | Held-out half B, threshold at 1% token false alarms | GSM8K | MATH-500 |
+>     |---|---|---|
+>     | loops still switched on (L15 cos) | **100%** | **98.5%** (all_modules: 100%) |
+>     | non-looping answers switched on: veto vs text detector alone | **1 / 11** vs 7 / 11 | **0 / 7** vs 5 / 7 |
+>     | switch-on, median tokens after the text detector | `507` | `3,815` |
+>     | switch-on vs loop onset (kill at onset + 768) | `-41` (before onset) | `+279` (before the kill) |
+>     | random direction, same rule: loops caught | `33%` | `49%` |
+>
+>     The veto keeps (almost) every loop and removes most false alarms, at the cost of switching on later; it still switches on before the loop would be killed. At 5% token false alarms the delay drops to ~10 tokens (GSM8K) but non-looping answers switched on rise to 5 / 11 and 3 / 7, so the gain is mostly gone. Not yet tested in generation: whether the later switch-on keeps the MoI accuracy (the restart part of the gain depends on when the cut happens). Few non-looping answers (11, 7), so the false-alarm counts are rough.
 > * **Additive MoI outside math: sycophancy** (`moi_sycophancy.py`, Qwen3.5-4B bf16, Colab A100, thinking off, scored by the probability of each answer letter, so there is no sampling). The model answers an MMLU question; the user then pushes back ("are you sure? I think it's C"). Diagnosis uses 1531 MMLU validation questions, tuning uses 300, and the test uses 1000 test questions plus one pushback and one neutral wording never seen before. The base model gives up a right answer under false pushback `85%` of the time.
 >
 >   | Arm | Keeps right answer under false pushback | Accepts a correct suggestion | Neutral follow-up unchanged | First answer accuracy |
