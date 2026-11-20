@@ -42,8 +42,15 @@ class _TinyLM(nn.Module):
 def test_mcp_exposes_build_and_screen_tools():
     resp = mcp.handle_rpc_message({"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
     names = {t["name"] for t in resp["result"]["tools"]}
-    assert "wsi_build_moipatch" in names
-    assert "wsi_screen_candidates" in names
+    assert {
+        "wsi_build_moipatch",
+        "wsi_screen_candidates",
+        "wsi_capture_causal_traces",
+        "wsi_attribute_direction_writers",
+        "wsi_trace_direction_graph",
+        "wsi_peel_causal_circuit",
+    }.issubset(names)
+    assert len(names) == 19
 
 
 def test_mcp_build_moipatch_and_screen_candidates_end_to_end(tmp_path, monkeypatch):
@@ -125,3 +132,342 @@ def test_mcp_build_moipatch_and_screen_candidates_end_to_end(tmp_path, monkeypat
     assert {row["name"] for row in out3["ranking"]} == {"mild_L0", "strong_L1"}
     for row in out3["ranking"]:
         assert "pareto_score" in row and "target_suppression" in row and "delta_healthy_nll" in row
+
+
+def test_mcp_discover_compact_circuit_causal_union_and_screen(tmp_path, monkeypatch):
+    torch.manual_seed(7)
+    model = _TinyLM(vocab=32, hidden=12, inter=16, n_layers=2).eval()
+    ckpt = tmp_path / "toy_ckpt_causal"
+    ckpt.mkdir()
+    save_file({k: v.detach().cpu() for k, v in model.state_dict().items()}, str(ckpt / "model.safetensors"))
+    (ckpt / "config.json").write_text(
+        json.dumps({"model_type": "llama", "hidden_size": 12, "intermediate_size": 16, "num_hidden_layers": 2, "vocab_size": 32}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(mcp, "_load_model_for_screen", lambda *_a, **_kw: model)
+
+    h_seqs = [[1, 2, 3, 4, 5, 6], [2, 3, 4, 5, 6, 7]]
+    l_seqs = [[1, 2, 9, 9, 9, 9], [2, 3, 9, 9, 9, 9]]
+
+    # Step 0: Capture causal traces via the new `wsi_capture_causal_traces` MCP tool
+    r_cap_h = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_capture_causal_traces",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "output_dir": str(tmp_path / "cap_h"),
+                "sequences": h_seqs,
+                "target_spans": [[2, 6], [2, 6]],
+                "healthy_spans": [[0, 2], [0, 2]],
+                "grad_mode": "summary",
+                "top_k_mlp": 8,
+            },
+        },
+    })
+    assert r_cap_h["result"]["isError"] is False, r_cap_h["result"]["content"][0]["text"]
+    h_dirs = json.loads(r_cap_h["result"]["content"][0]["text"])["trace_dirs"]
+
+    r_cap_l = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 9,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_capture_causal_traces",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "output_dir": str(tmp_path / "cap_l"),
+                "sequences": l_seqs,
+                "target_spans": [[2, 6], [2, 6]],
+                "healthy_spans": [[0, 2], [0, 2]],
+                "grad_mode": "summary",
+                "top_k_mlp": 8,
+            },
+        },
+    })
+    assert r_cap_l["result"]["isError"] is False, r_cap_l["result"]["content"][0]["text"]
+    cap_l_out = json.loads(r_cap_l["result"]["content"][0]["text"])
+    l_dirs = cap_l_out["trace_dirs"]
+    assert "causal_diagnosis" in cap_l_out and cap_l_out["n_traces"] == 2
+
+    grid_dir = tmp_path / "grid_patches"
+    r_disc = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 10,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_discover_compact_circuit",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "trace_dirs": h_dirs,
+                "loop_trace_dirs": l_dirs,
+                "top_k_neurons": 4,
+                "save_candidate_grid_dir": str(grid_dir),
+                "candidate_alphas": [4.0, 8.0],
+            },
+        },
+    })
+    assert r_disc["result"]["isError"] is False, r_disc["result"]["content"][0]["text"]
+    disc_out = json.loads(r_disc["result"]["content"][0]["text"])
+    assert disc_out["causal_diagnosis"] is not None
+    assert "summary" in disc_out["causal_diagnosis"] and "sites" in disc_out["causal_diagnosis"]
+    saved_grid = disc_out["saved_candidate_grid"]
+    assert isinstance(saved_grid, dict) and len(saved_grid) >= 2
+    assert any(k.startswith("passive_") for k in saved_grid)
+    assert any(k.startswith("causal_") for k in saved_grid)
+
+    # Pass `saved_candidate_grid` directly into `wsi_screen_candidates` (the forward judge)
+    r_scr = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 11,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_screen_candidates",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "patch_paths": saved_grid,
+                "healthy_seqs": h_seqs,
+                "target_seqs": l_seqs,
+                "target_spans": [[2, 6], [2, 6]],
+            },
+        },
+    })
+    assert r_scr["result"]["isError"] is False, r_scr["result"]["content"][0]["text"]
+    scr_out = json.loads(r_scr["result"]["content"][0]["text"])
+    assert scr_out["total_screened"] == len(saved_grid)
+    assert scr_out["ranking"][0]["name"] in saved_grid
+
+
+
+def test_mcp_direction_tracing_graph_and_peel_end_to_end(tmp_path, monkeypatch):
+    import torch.nn.functional as F
+
+    from wsi import Edit, MoIPatch
+
+    class _DirMcpAttn(nn.Module):
+        def __init__(self, hidden: int, n_heads: int) -> None:
+            super().__init__()
+            self.num_heads = n_heads
+            self.head_dim = hidden // n_heads
+            self.q_proj = nn.Linear(hidden, hidden, bias=False)
+            self.k_proj = nn.Linear(hidden, hidden, bias=False)
+            self.v_proj = nn.Linear(hidden, hidden, bias=False)
+            self.o_proj = nn.Linear(hidden, hidden, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            B, T, H = x.shape
+            nh, hd = self.num_heads, self.head_dim
+            q = self.q_proj(x).view(B, T, nh, hd).transpose(1, 2)
+            k = self.k_proj(x).view(B, T, nh, hd).transpose(1, 2)
+            v = self.v_proj(x).view(B, T, nh, hd).transpose(1, 2)
+            scores = (q @ k.transpose(-2, -1)) / (hd ** 0.5)
+            mask = torch.triu(torch.full((T, T), float("-inf"), device=x.device, dtype=x.dtype), diagonal=1)
+            ctx = (torch.softmax(scores + mask, dim=-1) @ v).transpose(1, 2).reshape(B, T, H)
+            return self.o_proj(ctx)
+
+    class _DirMcpBlock(nn.Module):
+        def __init__(self, hidden: int, inter: int, n_heads: int) -> None:
+            super().__init__()
+            self.self_attn = _DirMcpAttn(hidden, n_heads)
+            self.mlp = nn.Module()
+            self.mlp.gate_proj = nn.Linear(hidden, inter, bias=False)
+            self.mlp.up_proj = nn.Linear(hidden, inter, bias=False)
+            self.mlp.down_proj = nn.Linear(inter, hidden, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            x = x + self.self_attn(x)
+            return x + self.mlp.down_proj(F.silu(self.mlp.gate_proj(x)) * self.mlp.up_proj(x))
+
+    class _TinyDirLM(nn.Module):
+        def __init__(self, vocab: int = 32, hidden: int = 16, inter: int = 32, n_layers: int = 2, n_heads: int = 4) -> None:
+            super().__init__()
+            self.config = SimpleNamespace(model_type="llama", hidden_size=hidden, num_attention_heads=n_heads)
+            self.model = nn.Module()
+            self.model.embed_tokens = nn.Embedding(vocab, hidden)
+            self.model.layers = nn.ModuleList([_DirMcpBlock(hidden, inter, n_heads) for _ in range(n_layers)])
+            self.model.norm = nn.LayerNorm(hidden)
+            self.lm_head = nn.Linear(hidden, vocab, bias=False)
+
+        def forward(self, input_ids: torch.Tensor, output_hidden_states: bool = False, **_kw):
+            h = self.model.embed_tokens(input_ids)
+            hs = [h] if output_hidden_states else None
+            for idx, blk in enumerate(self.model.layers):
+                h = blk(h)
+                if hs is not None and idx < len(self.model.layers) - 1:
+                    hs.append(h)
+            h_out = self.model.norm(h)
+            if hs is not None:
+                hs.append(h_out)
+            return SimpleNamespace(logits=self.lm_head(h_out), hidden_states=tuple(hs) if hs is not None else None)
+
+    model = _TinyDirLM().eval()
+    with torch.no_grad():
+        for p in model.parameters():
+            p.zero_()
+        model.model.norm.weight.fill_(1.0)
+        model.model.embed_tokens.weight[10:15, 0] = 1.0
+        model.model.embed_tokens.weight[10:15, 2] = 4.0
+        b0, b1 = model.model.layers[0], model.model.layers[1]
+        # L0.mlp writes target e3 and protected e5; also relays coord1 -> L1
+        b0.mlp.gate_proj.weight[0, 0] = 2.0
+        b0.mlp.up_proj.weight[0, 0] = 2.0
+        b0.mlp.down_proj.weight[1, 0] = 1.5
+        b0.mlp.down_proj.weight[3, 0] = 2.0
+        b0.mlp.down_proj.weight[5, 0] = 2.0
+        # L1.attn reads relay coord1 -> e3; L1.mlp reads coord2 -> e3 cleanly
+        b1.self_attn.v_proj.weight[0, 1] = 1.0
+        b1.self_attn.o_proj.weight[3, 0] = 1.2
+        b1.mlp.gate_proj.weight[0, 2] = 0.5
+        b1.mlp.up_proj.weight[0, 2] = 0.5
+        b1.mlp.down_proj.weight[3, 0] = 1.5
+        # Saturated output logit for token 0
+        model.lm_head.weight[0, 0] = 60.0
+
+    ckpt = tmp_path / "dir_ckpt"
+    ckpt.mkdir()
+    save_file({k: v.detach().cpu() for k, v in model.state_dict().items()}, str(ckpt / "model.safetensors"))
+    monkeypatch.setattr(mcp, "_load_model_for_screen", lambda *_a, **_kw: model)
+
+    tdir = torch.zeros(16)
+    tdir[3] = 1.0
+    pdir = torch.zeros(16)
+    pdir[5] = 1.0
+
+    router_patch = MoIPatch(
+        edits=[Edit(module="layers.0.mlp.down_proj", u=tdir.clone(), alpha=1.0)],
+        router={"layer": 2, "readout": "last_token", "dir": tdir, "thr": 0.0, "veto_dir": pdir, "veto_thr": 0.0},
+    )
+    router_patch.fingerprint_from_checkpoint(ckpt)
+    router_patch_path = router_patch.save(tmp_path / "router_carrier.moipatch")
+
+    seqs = [[10, 11, 12], [12, 13, 14]]
+
+    # 1. Level-1 writer attribution (inline block + patch router post-norm linearized)
+    r_attr_inline = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 20, "method": "tools/call",
+        "params": {
+            "name": "wsi_attribute_direction_writers",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "sequences": seqs,
+                "target_dir": tdir.tolist(),
+                "target_layer": 1,
+                "layer_convention": "block",
+                "report_block_gaps": True,
+            },
+        },
+    })
+    assert r_attr_inline["result"]["isError"] is False, r_attr_inline["result"]["content"][0]["text"]
+    attr_in = json.loads(r_attr_inline["result"]["content"][0]["text"])
+    assert abs(attr_in["residual_gap"]) < 1e-4
+    assert len(attr_in["block_residual_gaps"]) == 2
+    assert all(abs(g["gap"]) < 1e-4 for g in attr_in["block_residual_gaps"])
+
+    r_attr_patch = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 21, "method": "tools/call",
+        "params": {
+            "name": "wsi_attribute_direction_writers",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "sequences": seqs,
+                "target_patch_path": str(router_patch_path),
+                "target_patch_key": "veto_dir",
+            },
+        },
+    })
+    assert r_attr_patch["result"]["isError"] is False, r_attr_patch["result"]["content"][0]["text"]
+    attr_pa = json.loads(r_attr_patch["result"]["content"][0]["text"])
+    assert attr_pa["target_layer"] == 2 and attr_pa["layer_convention"] == "hidden_states"
+    assert attr_pa["final_norm_linearized"] is True
+    assert abs(attr_pa["residual_gap"]) < 1e-4
+
+    # 2. Capture causal traces with target_dir + protect_dir AND with contrast_token_ids (logit_margin)
+    r_cap_dp = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 22, "method": "tools/call",
+        "params": {
+            "name": "wsi_capture_causal_traces",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "output_dir": str(tmp_path / "cap_dir_prot"),
+                "sequences": seqs,
+                "target_dir": tdir.tolist(),
+                "target_layer": 1,
+                "target_layer_convention": "block",
+                "protect_dir": pdir.tolist(),
+                "grad_mode": "compressed",
+            },
+        },
+    })
+    assert r_cap_dp["result"]["isError"] is False, r_cap_dp["result"]["content"][0]["text"]
+    cap_dp = json.loads(r_cap_dp["result"]["content"][0]["text"])
+    assert cap_dp["grad_objective"] == "direction"
+    assert cap_dp["grad_healthy_objective"] == "direction"
+    assert "direction_summary" in cap_dp
+
+    r_cap_lm = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 23, "method": "tools/call",
+        "params": {
+            "name": "wsi_capture_causal_traces",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "output_dir": str(tmp_path / "cap_margin"),
+                "sequences": [[10, 0]],
+                "target_spans": [[0, 1]],
+                "target_token_ids": [0],
+                "contrast_token_ids": [1],
+                "grad_mode": "summary",
+            },
+        },
+    })
+    assert r_cap_lm["result"]["isError"] is False, r_cap_lm["result"]["content"][0]["text"]
+    cap_lm = json.loads(r_cap_lm["result"]["content"][0]["text"])
+    assert cap_lm["grad_objective"] == "logit_margin"
+
+    # 3. Multi-hop direction graph
+    r_graph = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 24, "method": "tools/call",
+        "params": {
+            "name": "wsi_trace_direction_graph",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "sequences": seqs,
+                "target_dir": tdir.tolist(),
+                "target_layer": 1,
+                "layer_convention": "block",
+                "depth": 2,
+                "top_k_nodes": 3,
+            },
+        },
+    })
+    assert r_graph["result"]["isError"] is False, r_graph["result"]["content"][0]["text"]
+    graph = json.loads(r_graph["result"]["content"][0]["text"])
+    assert len(graph["nodes"]) >= 3 and len(graph["edges"]) >= 2
+    assert len(graph["top_paths"]) >= 1
+    assert any("layers.0.mlp.down_proj:n0" in p["nodes"] for p in graph["top_paths"])
+
+    # 4. Iterative Hydra causal peeling + saved cumulative .moipatch
+    peeled_path = tmp_path / "peeled.moipatch"
+    r_peel = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 25, "method": "tools/call",
+        "params": {
+            "name": "wsi_peel_causal_circuit",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "sequences": seqs,
+                "n_rounds": 2,
+                "alpha": 2.0,
+                "target_dir": tdir.tolist(),
+                "target_layer": 1,
+                "target_layer_convention": "block",
+                "save_patch_path": str(peeled_path),
+            },
+        },
+    })
+    assert r_peel["result"]["isError"] is False, r_peel["result"]["content"][0]["text"]
+    peel = json.loads(r_peel["result"]["content"][0]["text"])
+    assert peel["restore_exact_ok"] is True
+    assert peel["n_rounds_completed"] == 2
+    assert peel["n_edits"] == 2 and peeled_path.exists()
+    assert MoIPatch.load(peeled_path).attach(model).fingerprint_ok() is True

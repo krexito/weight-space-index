@@ -394,6 +394,89 @@ def _validate_target_dir(target_dir: torch.Tensor, hidden: int, *, normalize: bo
     return t.contiguous()
 
 
+def _normalize_token_id_list(val: Any, name: str) -> torch.Tensor | None:
+    """Normalize ``None`` / int / list[int] / 1D tensor of token ids into a CPU ``torch.long`` tensor."""
+    if val is None:
+        return None
+    if isinstance(val, bool):
+        raise ValueError(f"{name} must be an int, list of ints, or 1D tensor, got bool")
+    if isinstance(val, int):
+        t = torch.tensor([val], dtype=torch.long)
+    elif isinstance(val, torch.Tensor):
+        if val.dim() == 0:
+            val = val.reshape(1)
+        if val.dim() != 1 or val.numel() == 0:
+            raise ValueError(f"{name} must be a non-empty 1D tensor, got shape {tuple(val.shape)}")
+        if val.is_floating_point() or val.is_complex():
+            raise ValueError(f"{name} must contain integer token ids")
+        t = val.detach().cpu().long()
+    elif isinstance(val, (list, tuple)):
+        if len(val) == 0:
+            raise ValueError(f"{name} must be non-empty")
+        if not all(isinstance(x, int) and not isinstance(x, bool) for x in val):
+            raise ValueError(f"{name} must contain only ints")
+        t = torch.tensor(list(val), dtype=torch.long)
+    else:
+        raise ValueError(f"{name} must be an int, list of ints, or 1D tensor, got {type(val).__name__}")
+    if int(t.min().item()) < 0:
+        raise ValueError(f"{name} must contain non-negative token ids")
+    return t.contiguous()
+
+
+def _linearize_final_norm_span(
+    fn_mod: nn.Module | None,
+    h_pre_2d: torch.Tensor,
+    h_post_2d: torch.Tensor,
+    tdir_cpu: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor, bool]:
+    """Frozen-scale affine pullback of ``tdir`` through a final LayerNorm/RMSNorm.
+
+    Returns per-token ``(v_eff (S, D), norm_bias (S,), ok)`` with ``h_pre[s] @ v_eff[s] + norm_bias[s]
+    == h_post[s] @ tdir`` exactly (the norm's denominator is frozen at the observed value, which keeps
+    the decomposition additive; the true Jacobian ``J^T v`` would sum to 0 for RMSNorm since it is
+    degree-0 homogeneous).
+    """
+    S, D = int(h_pre_2d.shape[0]), int(h_pre_2d.shape[1])
+    fallback = (tdir_cpu[None].expand(S, D).contiguous(), torch.zeros(S, dtype=torch.float32), False)
+    if fn_mod is None or isinstance(fn_mod, nn.Identity) or S == 0:
+        return fallback
+    eps_raw = getattr(fn_mod, "eps", None)
+    if eps_raw is None:
+        eps_raw = getattr(fn_mod, "variance_epsilon", getattr(fn_mod, "layer_norm_eps", 1e-5))
+    try:
+        eps = float(eps_raw)
+    except (TypeError, ValueError):
+        eps = 1e-5
+    w_p = getattr(fn_mod, "weight", None)
+    b_p = getattr(fn_mod, "bias", None)
+    w = w_p.detach().float().cpu() if isinstance(w_p, torch.Tensor) and w_p.numel() == D else None
+    b = b_p.detach().float().cpu() if isinstance(b_p, torch.Tensor) and b_p.numel() == D else None
+    x = h_pre_2d.float()
+    actual = h_post_2d.float() @ tdir_cpu
+    nb_affine = (b @ tdir_cpu).expand(S).clone() if b is not None else torch.zeros(S, dtype=torch.float32)
+    g = w[None] if w is not None else torch.ones((1, D), dtype=torch.float32)
+
+    cands: list[tuple[torch.Tensor, torch.Tensor]] = []
+    s_ln = (x.var(dim=-1, unbiased=False, keepdim=True) + eps).sqrt()
+    v_raw = (tdir_cpu[None] * g) / s_ln
+    cands.append((v_raw - v_raw.mean(dim=-1, keepdim=True), nb_affine))
+    s_rms = (x.pow(2).mean(dim=-1, keepdim=True) + eps).sqrt()
+    cands.append(((tdir_cpu[None] * g) / s_rms, nb_affine))
+    if w is not None:
+        cands.append(((tdir_cpu[None] * (1.0 + w[None])) / s_rms, torch.zeros(S, dtype=torch.float32)))
+
+    best: tuple[float, torch.Tensor, torch.Tensor] | None = None
+    for v_eff, nb in cands:
+        err = float(((x * v_eff).sum(dim=-1) + nb - actual).abs().max().item())
+        if best is None or err < best[0]:
+            best = (err, v_eff, nb)
+    assert best is not None
+    tol = 1e-2 * max(1.0, float(actual.abs().max().item()))
+    if best[0] <= tol:
+        return best[1].contiguous(), best[2].contiguous(), True
+    return fallback
+
+
 def _find_final_norm_module(model: nn.Module) -> nn.Module | None:
     for root in (getattr(model, "model", None), getattr(model, "transformer", None), model):
         if not isinstance(root, nn.Module):
@@ -922,6 +1005,13 @@ def capture_compact(
     target_dir: torch.Tensor | None = None,
     target_layer: int | None = None,
     target_layer_convention: str = "block",
+    protect_dir: torch.Tensor | None = None,
+    protect_layer: int | None = None,
+    protect_layer_convention: str | None = None,
+    protect_span: int | tuple[int, int] | None = None,
+    grad_objective: str = "auto",
+    target_token_ids: int | list[int] | torch.Tensor | None = None,
+    contrast_token_ids: int | list[int] | torch.Tensor | None = None,
 ) -> CompactTrace:
     """Record a Pareto-optimal compressed token trace (~80-95 MiB per 1.6k tok on 0.8B):
     INT8 Hadamard-rotated residuals, adaptive or fixed Top-K FP4 bitmask/bitpack MLP units
@@ -930,12 +1020,51 @@ def capture_compact(
     and INT8 KV/recurrent cache states. When ``capture_grad=True``, also runs target & healthy
     backward passes to record per-module causal summaries (and compressed token-level gradients
     when ``grad_mode="compressed"``). Pass ``target_dir`` + ``target_layer`` to attribute an
-    internal residual-stream direction (e.g. a router/veto vector) instead of output token NLL."""
-    dir_mode = target_dir is not None
+    internal residual-stream direction (e.g. a router/veto vector) instead of output token NLL.
+
+    Extra objectives: ``grad_objective="logit_margin"`` (auto-selected when ``target_token_ids`` or
+    ``contrast_token_ids`` is given) differentiates ``logit[target] - logit[contrast]`` without softmax,
+    so gradients do not vanish when ``P(target) -> 1``. ``protect_dir`` (+ ``protect_layer``) replaces the
+    healthy NLL pass with a backward pass on a direction to *protect*, so ``C_h`` / ``F_h`` /
+    ``neuron_dnll_attr`` / ``pareto_eigvecs`` rank sites that move ``target_dir`` while leaving
+    ``protect_dir`` untouched."""
+    t_tok_ids = _normalize_token_id_list(target_token_ids, "target_token_ids")
+    c_tok_ids = _normalize_token_id_list(contrast_token_ids, "contrast_token_ids")
+    if grad_objective not in ("auto", "token_nll", "logit_margin", "direction"):
+        raise ValueError(f"grad_objective must be 'auto', 'token_nll', 'logit_margin' or 'direction', got {grad_objective!r}")
+    if grad_objective == "auto":
+        eff_target_obj = (
+            "direction" if target_dir is not None
+            else "logit_margin" if (t_tok_ids is not None or c_tok_ids is not None)
+            else "token_nll"
+        )
+    else:
+        eff_target_obj = grad_objective
+    dir_mode = eff_target_obj == "direction"
+    if dir_mode:
+        if target_dir is None:
+            raise ValueError("grad_objective='direction' requires target_dir")
+        if t_tok_ids is not None or c_tok_ids is not None:
+            raise ValueError("target_token_ids/contrast_token_ids cannot be combined with target_dir")
+    elif target_dir is not None:
+        raise ValueError(f"target_dir cannot be combined with grad_objective={eff_target_obj!r}")
+    if eff_target_obj == "token_nll" and (t_tok_ids is not None or c_tok_ids is not None):
+        raise ValueError("target_token_ids/contrast_token_ids require grad_objective='logit_margin'")
+    if eff_target_obj == "logit_margin" and not capture_grad:
+        raise ValueError("grad_objective='logit_margin' requires capture_grad=True")
     if dir_mode and not capture_grad:
         raise ValueError("target_dir requires capture_grad=True (or use capture_causal_trace)")
     if dir_mode and target_layer is None:
         raise ValueError("target_layer is required when target_dir is provided")
+    protect_mode = protect_dir is not None
+    eff_protect_layer = protect_layer if protect_layer is not None else target_layer
+    eff_protect_conv = target_layer_convention if protect_layer_convention is None else protect_layer_convention
+    if protect_mode:
+        if not capture_grad:
+            raise ValueError("protect_dir requires capture_grad=True (or use capture_causal_trace)")
+        if eff_protect_layer is None:
+            raise ValueError("protect_layer is required when protect_dir is given without target_layer")
+    target_uses_next_tok = (eff_target_obj == "token_nll") or (eff_target_obj == "logit_margin" and t_tok_ids is None)
     if center not in ("none", "healthy"):
         raise ValueError(f"center must be 'none' or 'healthy', got {center!r}")
     if healthy_cost not in ("linear", "fisher"):
@@ -969,9 +1098,9 @@ def capture_compact(
         ids = ids[:, :max_tokens]
     T = int(ids.shape[1])
     if capture_grad:
-        if (not dir_mode or healthy_span is not None) and T < 2:
+        if (target_uses_next_tok or (not protect_mode and healthy_span is not None)) and T < 2:
             raise ValueError(f"capture_compact(capture_grad=True) requires seq_len >= 2, got {T}")
-        if dir_mode and T < 1:
+        if T < 1:
             raise ValueError(f"capture_compact(capture_grad=True, target_dir=...) requires seq_len >= 1, got {T}")
 
     _, blocks = find_blocks(model)
@@ -998,6 +1127,12 @@ def capture_compact(
         tdir_cpu = None
         stop_blk = None
         use_final_hidden = False
+    if protect_mode:
+        pdir_cpu: torch.Tensor | None = _validate_target_dir(protect_dir, hidden, normalize=False)  # type: ignore[arg-type]
+        p_stop_blk, p_use_final_hidden = _resolve_direction_layer(n_layers, int(eff_protect_layer), eff_protect_conv)  # type: ignore[arg-type]
+    else:
+        pdir_cpu = None
+        p_stop_blk, p_use_final_hidden = None, False  # type: ignore[assignment]
 
     resid_out: dict[int, dict[str, Any]] = {}
     mlp_topk_out: dict[int, dict[str, torch.Tensor]] = {}
@@ -1181,15 +1316,20 @@ def capture_compact(
 
     if capture_grad:
         eff_grad_mode = grad_mode
-        if dir_mode:
+        if not target_uses_next_tok:
             lo_t, hi_t = _resolve_hidden_span(T, target_span)
+        else:
+            lo_t, hi_t = _resolve_target_span(T, target_span if isinstance(target_span, tuple) or target_span is None else (int(target_span), int(target_span) + 1))
+        if protect_mode:
+            p_span_spec = protect_span if protect_span is not None else (healthy_span if healthy_span is not None else (lo_t, hi_t))
+            lo_h, hi_h = _resolve_hidden_span(T, p_span_spec)
+        elif not target_uses_next_tok:
             if healthy_span is not None:
                 lo_h = max(0, min(T - 2, int(healthy_span[0])))
                 hi_h = max(lo_h, min(T - 1, int(healthy_span[1])))
             else:
                 lo_h, hi_h = 0, 0
         else:
-            lo_t, hi_t = _resolve_target_span(T, target_span if isinstance(target_span, tuple) or target_span is None else (int(target_span), int(target_span) + 1))
             if healthy_span is not None:
                 lo_h = max(0, min(T - 2, int(healthy_span[0])))
                 hi_h = max(lo_h, min(T - 1, int(healthy_span[1])))
@@ -1211,7 +1351,7 @@ def capture_compact(
                 "layer": int(li) if li is not None else None,
                 "n_heads": int(nh),
             }
-        if dir_mode and hi_h <= lo_h and stop_blk is not None:
+        if dir_mode and stop_blk is not None and (hi_h <= lo_h or protect_mode):
             grad_mods = {
                 mk: meta_m
                 for mk, meta_m in grad_mods.items()
@@ -1235,7 +1375,18 @@ def capture_compact(
         ids_dev = ids.to(dev)
 
         def _run_backward(
-            lo: int, hi: int, sign: float, *, capture_acts: bool, objective: str = "token_nll"
+            lo: int,
+            hi: int,
+            sign: float,
+            *,
+            capture_acts: bool,
+            objective: str = "token_nll",
+            dir_vec: torch.Tensor | None = None,
+            dir_stop_blk: int | None = None,
+            dir_use_final: bool = False,
+            dir_layer_label: int | None = None,
+            tok_targets: torch.Tensor | None = None,
+            tok_contrasts: torch.Tensor | None = None,
         ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor], float]:
             st_h: dict[str, torch.Tensor] = {}
             st_y: dict[str, torch.Tensor] = {}
@@ -1311,9 +1462,9 @@ def capture_compact(
             try:
                 with torch.enable_grad():
                     if objective == "direction":
-                        assert tdir_cpu is not None and stop_blk is not None
-                        if not use_final_hidden:
-                            if stop_blk == -1:
+                        assert dir_vec is not None and dir_stop_blk is not None
+                        if not dir_use_final:
+                            if dir_stop_blk == -1:
                                 def _t_pre_hook(_m, inp):
                                     h = inp[0] if isinstance(inp, tuple) and inp else inp
                                     if torch.is_grad_enabled() and isinstance(h, torch.Tensor) and h.requires_grad:
@@ -1329,8 +1480,8 @@ def capture_compact(
                                         captured_h["val"] = t
                                         raise _DirectionTargetCaptured()
 
-                                target_hooks.append(blocks[stop_blk].register_forward_hook(_t_blk_hook))
-                                if stop_blk == n_layers - 1:
+                                target_hooks.append(blocks[dir_stop_blk].register_forward_hook(_t_blk_hook))
+                                if dir_stop_blk == n_layers - 1:
                                     fn_mod = _find_final_norm_module(model)
                                     if fn_mod is not None:
                                         def _t_fn_pre(_m, inp):
@@ -1355,34 +1506,53 @@ def capture_compact(
                         hs = getattr(out_dir, "hidden_states", None) if out_dir is not None else None
                         if "val" in captured_h:
                             h_t = captured_h["val"]
-                        elif use_final_hidden:
+                        elif dir_use_final:
                             if hs is None or len(hs) <= n_layers:
                                 raise RuntimeError(
-                                    f"Model did not return hidden_states[{n_layers}] needed for target_layer={target_layer}"
+                                    f"Model did not return hidden_states[{n_layers}] needed for target_layer={dir_layer_label}"
                                 )
                             h_t = hs[n_layers]
-                        elif stop_blk == -1:
+                        elif dir_stop_blk == -1:
                             if hs is None or len(hs) == 0:
                                 raise RuntimeError("Model did not return hidden_states[0] for target_layer=0")
                             h_t = hs[0]
-                        elif stop_blk < n_layers - 1:
-                            if hs is None or len(hs) <= stop_blk + 1:
+                        elif dir_stop_blk < n_layers - 1:
+                            if hs is None or len(hs) <= dir_stop_blk + 1:
                                 raise RuntimeError(
-                                    f"Model did not return hidden_states[{stop_blk + 1}] for block {stop_blk}"
+                                    f"Model did not return hidden_states[{dir_stop_blk + 1}] for block {dir_stop_blk}"
                                 )
-                            h_t = hs[stop_blk + 1]
+                            h_t = hs[dir_stop_blk + 1]
                         elif "pre_final_norm" in captured_h:
                             h_t = captured_h["pre_final_norm"]
                         elif hs is not None and len(hs) > 0:
                             h_t = hs[-1]
                         else:
-                            raise RuntimeError(f"Failed to capture hidden state for block {stop_blk}")
+                            raise RuntimeError(f"Failed to capture hidden state for block {dir_stop_blk}")
 
                         h_2d = (h_t[0] if h_t.dim() == 3 else h_t).float()
-                        tdir_dev = tdir_cpu.to(device=h_2d.device, dtype=torch.float32)
+                        tdir_dev = dir_vec.to(device=h_2d.device, dtype=torch.float32)
                         dir_score_t = (h_2d[lo:hi] @ tdir_dev).mean()
                         obj_val = float(dir_score_t.detach().item())
                         obj = sign * dir_score_t
+                        if obj.requires_grad:
+                            obj.backward()
+                    elif objective == "logit_margin":
+                        logits = _tail_logits(model, ids_dev, lo)[: hi - lo].float()
+                        V = int(logits.shape[-1])
+                        for _tt in (tok_targets, tok_contrasts):
+                            if _tt is not None and int(_tt.max().item()) >= V:
+                                raise ValueError(f"token id {int(_tt.max().item())} out of range for vocab size {V}")
+                        if tok_targets is not None:
+                            t_logit = logits.index_select(1, tok_targets.to(logits.device)).mean(dim=-1)
+                        else:
+                            t_logit = logits.gather(1, ids_dev[0, lo + 1 : hi + 1, None]).squeeze(1)
+                        if tok_contrasts is not None:
+                            c_logit = logits.index_select(1, tok_contrasts.to(logits.device)).mean(dim=-1)
+                        else:
+                            c_logit = logits.mean(dim=-1)
+                        margin = (t_logit - c_logit).mean()
+                        obj_val = float(margin.detach().item())
+                        obj = sign * margin
                         if obj.requires_grad:
                             obj.backward()
                     else:
@@ -1416,12 +1586,32 @@ def capture_compact(
 
         try:
             acts_h, acts_y, g_target_map, token_attr_out, target_obj_val = _run_backward(
-                lo_t, hi_t, 1.0, capture_acts=True, objective=("direction" if dir_mode else "token_nll")
+                lo_t, hi_t, 1.0,
+                capture_acts=True,
+                objective=eff_target_obj,
+                dir_vec=tdir_cpu,
+                dir_stop_blk=stop_blk,
+                dir_use_final=use_final_hidden,
+                dir_layer_label=int(target_layer) if dir_mode else None,  # type: ignore[arg-type]
+                tok_targets=t_tok_ids,
+                tok_contrasts=c_tok_ids,
             )
+            protect_obj_val: float | None = None
             if hi_h > lo_h:
-                _, _, g_healthy_map, _, _ = _run_backward(
-                    lo_h, hi_h, -1.0, capture_acts=False, objective="token_nll"
-                )
+                if protect_mode:
+                    _, _, g_healthy_map, _, protect_obj_val = _run_backward(
+                        lo_h, hi_h, -1.0,
+                        capture_acts=False,
+                        objective="direction",
+                        dir_vec=pdir_cpu,
+                        dir_stop_blk=p_stop_blk,
+                        dir_use_final=p_use_final_hidden,
+                        dir_layer_label=int(eff_protect_layer),  # type: ignore[arg-type]
+                    )
+                else:
+                    _, _, g_healthy_map, _, _ = _run_backward(
+                        lo_h, hi_h, -1.0, capture_acts=False, objective="token_nll"
+                    )
             else:
                 g_healthy_map = {}
 
@@ -1437,8 +1627,11 @@ def capture_compact(
                 D = int(y_act.shape[-1])
                 U = int(h_act.shape[-1])
 
-                w_raw = mod.weight.detach().float().cpu()
-                W_lin = w_raw if isinstance(mod, nn.Linear) else (w_raw.t() if w_raw.dim() == 2 else w_raw)
+                w_raw_dev = mod.weight.detach()
+                w_dev = w_raw_dev.device
+                w_lin_f32 = (
+                    w_raw_dev if isinstance(mod, nn.Linear) else (w_raw_dev.t() if w_raw_dev.dim() == 2 else w_raw_dev)
+                ).float()
 
                 n_h_count = max(1, hi_h - lo_h)
                 y_h_mean = y_act[lo_h:hi_h].mean(dim=0, keepdim=True) if hi_h > lo_h else torch.zeros((1, D), dtype=torch.float32)
@@ -1446,41 +1639,65 @@ def capture_compact(
                 y_centered = y_act - y_h_mean
                 h_centered = h_act - h_h_mean
 
-                neuron_supp_attr = ((g_t @ W_lin) * h_act).sum(dim=0).float()
-                neuron_supp_centered_attr = ((g_t @ W_lin) * h_centered).sum(dim=0).float()
-                neuron_dnll_attr = (-((g_h @ W_lin) * h_act).sum(dim=0).float()) if hi_h > lo_h else torch.zeros(U, dtype=torch.float32)
-                neuron_fisher_attr = (
-                    (float(n_h_count) * (((g_h @ W_lin) * h_act) ** 2).sum(dim=0)).float()
-                    if hi_h > lo_h
-                    else torch.zeros(U, dtype=torch.float32)
-                )
-
-                C_t = 0.5 * (g_t.t() @ y_act + y_act.t() @ g_t)
-                C_t_centered = 0.5 * (g_t.t() @ y_centered + y_centered.t() @ g_t)
-                C_h = (0.5 * (g_h.t() @ y_act + y_act.t() @ g_h)) if hi_h > lo_h else torch.zeros((D, D), dtype=torch.float32)
+                g_t_w = (g_t.to(device=w_dev, dtype=torch.float32) @ w_lin_f32).cpu()
+                neuron_supp_attr = (g_t_w * h_act).sum(dim=0).float()
+                neuron_supp_centered_attr = (g_t_w * h_centered).sum(dim=0).float()
+                if hi_h > lo_h:
+                    g_h_w = (g_h.to(device=w_dev, dtype=torch.float32) @ w_lin_f32).cpu()
+                    neuron_dnll_attr = (-(g_h_w * h_act).sum(dim=0).float())
+                    neuron_fisher_attr = (float(n_h_count) * ((g_h_w * h_act) ** 2).sum(dim=0)).float()
+                else:
+                    neuron_dnll_attr = torch.zeros(U, dtype=torch.float32)
+                    neuron_fisher_attr = torch.zeros(U, dtype=torch.float32)
+                del w_lin_f32
 
                 y_sq_tok = (y_act * y_act).sum(dim=1, keepdim=True) / max(1, D)
                 y_healthy_rms_sq = float(y_sq_tok[lo_h:hi_h].mean().item()) if hi_h > lo_h else float(y_sq_tok.mean().item())
                 if hi_h > lo_h:
                     g_h_scaled = g_h * y_sq_tok.clamp_min(0.0).sqrt()
-                    F_h = float(n_h_count) * (g_h_scaled.t() @ g_h_scaled)
-                else:
-                    F_h = torch.zeros((D, D), dtype=torch.float32)
 
-                # Restrict curvature eigendecomposition to the gradient-active subspace so massive
-                # nullspace activations (orthogonal to both g_t and g_h) cannot create cross-term decoys.
-                G_gram = g_t.t() @ g_t + ((g_h.t() @ g_h) if hi_h > lo_h else 0.0)
-                gevals, gevecs = torch.linalg.eigh(0.5 * (G_gram + G_gram.t()))
-                g_max = float(gevals[-1].item())
+                # Restrict curvature eigendecomposition to the gradient-active subspace via thin SVD
+                # when T <= D (or GPU Gram eigh otherwise), avoiding D x D CPU eigendecompositions.
+                G_mat = torch.cat([g_t, g_h], dim=0) if hi_h > lo_h else g_t
                 r = min(max(1, int(grad_rank)), D)
-                if g_max > 1e-12:
-                    keep = (gevals >= 1e-3 * g_max).nonzero(as_tuple=True)[0]
-                    keep = keep[-min(len(keep), max(r, 1)):]
-                    Q = gevecs[:, keep]
-                    C_t_sub = 0.5 * (Q.t() @ (C_t + C_t.t()) @ Q)
-                    C_tc_sub = 0.5 * (Q.t() @ (C_t_centered + C_t_centered.t()) @ Q)
-                    C_h_sub = 0.5 * (Q.t() @ (C_h + C_h.t()) @ Q)
-                    F_h_sub = 0.5 * (Q.t() @ (F_h + F_h.t()) @ Q)
+                if G_mat.shape[0] <= D:
+                    _, s_vals, vh_mat = torch.linalg.svd(G_mat, full_matrices=False)
+                    gevals_desc = s_vals * s_vals
+                    g_max = float(gevals_desc[0].item()) if gevals_desc.numel() > 0 else 0.0
+                    if g_max > 1e-12:
+                        keep = (gevals_desc >= 1e-3 * g_max).nonzero(as_tuple=True)[0][: max(r, 1)]
+                        Q: torch.Tensor | None = vh_mat[keep].t().contiguous()
+                    else:
+                        Q = None
+                else:
+                    G_dev = G_mat.to(dev)
+                    G_gram = G_dev.t() @ G_dev
+                    gevals, gevecs = torch.linalg.eigh(0.5 * (G_gram + G_gram.t()))
+                    g_max = float(gevals[-1].item())
+                    if g_max > 1e-12:
+                        keep = (gevals >= 1e-3 * g_max).nonzero(as_tuple=True)[0]
+                        keep = keep[-min(len(keep), max(r, 1)):]
+                        Q = gevecs[:, keep].cpu().contiguous()
+                    else:
+                        Q = None
+                    del G_dev, G_gram, gevals, gevecs
+
+                if Q is not None:
+                    gt_q = g_t @ Q
+                    y_q = y_act @ Q
+                    yc_q = y_centered @ Q
+                    C_t_sub = 0.5 * (gt_q.t() @ y_q + y_q.t() @ gt_q)
+                    C_tc_sub = 0.5 * (gt_q.t() @ yc_q + yc_q.t() @ gt_q)
+                    if hi_h > lo_h:
+                        gh_q = g_h @ Q
+                        ghs_q = g_h_scaled @ Q
+                        C_h_sub = 0.5 * (gh_q.t() @ y_q + y_q.t() @ gh_q)
+                        fh_raw = float(n_h_count) * (ghs_q.t() @ ghs_q)
+                        F_h_sub = 0.5 * (fh_raw + fh_raw.t())
+                    else:
+                        k_q = int(Q.shape[1])
+                        C_h_sub = torch.zeros((k_q, k_q), dtype=torch.float32)
+                        F_h_sub = torch.zeros((k_q, k_q), dtype=torch.float32)
                     evals_t, evecs_t_sub = torch.linalg.eigh(C_t_sub)
                     evecs_t = Q @ evecs_t_sub
                     evals_tc, evecs_tc_sub = torch.linalg.eigh(C_tc_sub)
@@ -1490,7 +1707,6 @@ def capture_compact(
                     evals_fh, evecs_fh_sub = torch.linalg.eigh(F_h_sub)
                     evecs_fh = Q @ evecs_fh_sub
                 else:
-                    Q = None
                     evals_t = torch.zeros(1, dtype=torch.float32)
                     evecs_t = torch.eye(D, 1, dtype=torch.float32)
                     evals_tc = torch.zeros(1, dtype=torch.float32)
@@ -1521,7 +1737,7 @@ def capture_compact(
                 c_fisher_eigvals = evals_fh[idx_fh].float()
 
                 p_vecs = []
-                use_ct_sub = C_tc_sub if center == "healthy" else C_t_sub
+                use_ct_sub = (C_tc_sub if center == "healthy" else C_t_sub) if Q is not None else None
                 for beta in betas:
                     if Q is not None:
                         pen_sub = (-beta * F_h_sub) if healthy_cost == "fisher" else (beta * C_h_sub)
@@ -1533,16 +1749,16 @@ def capture_compact(
 
                 paired_diff = (
                     (y_act[lo_t:hi_t].mean(dim=0) - y_act[lo_h:hi_h].mean(dim=0)).float()
-                    if hi_h > lo_h
+                    if (hi_h > lo_h and (not protect_mode or (lo_h, hi_h) != (lo_t, hi_t)))
                     else y_act[lo_t:hi_t].mean(dim=0).float()
                 )
                 u0 = c_target_centered_eigvecs[0] if center == "healthy" else c_target_eigvecs[0]
                 target_supp_top1 = float((c_target_centered_eigvals if center == "healthy" else c_target_eigvals)[0].item())
                 if healthy_cost == "fisher":
-                    healthy_dnll_top1 = float((u0 @ F_h @ u0).item())
+                    healthy_dnll_top1 = float(n_h_count) * float(((g_h_scaled @ u0) ** 2).sum().item()) if hi_h > lo_h else 0.0
                     pareto_top1 = target_supp_top1 / max(healthy_dnll_top1, 1e-8)
                 else:
-                    healthy_dnll_top1 = float(-(u0 @ C_h @ u0).item())
+                    healthy_dnll_top1 = float(-((g_h @ u0) * (y_act @ u0)).sum().item()) if hi_h > lo_h else 0.0
                     pareto_top1 = target_supp_top1 / max(abs(healthy_dnll_top1), 0.01)
 
                 causal_attr = float((g_t * y_act).sum().item())
@@ -1595,7 +1811,23 @@ def capture_compact(
             trace_meta["healthy_span"] = [int(lo_h), int(hi_h)]
             trace_meta["grad_center"] = center
             trace_meta["grad_healthy_cost"] = healthy_cost
-            trace_meta["grad_objective"] = "direction" if dir_mode else "token_nll"
+            trace_meta["grad_objective"] = eff_target_obj
+            trace_meta["target_obj_score"] = round(float(target_obj_val), 6)
+            trace_meta["grad_healthy_objective"] = (
+                "direction" if (protect_mode and hi_h > lo_h) else ("token_nll" if hi_h > lo_h else "none")
+            )
+            if t_tok_ids is not None:
+                trace_meta["target_token_ids"] = [int(x) for x in t_tok_ids.tolist()]
+            if c_tok_ids is not None:
+                trace_meta["contrast_token_ids"] = [int(x) for x in c_tok_ids.tolist()]
+            if protect_mode and pdir_cpu is not None:
+                trace_meta["protect_layer"] = int(eff_protect_layer)  # type: ignore[arg-type]
+                trace_meta["protect_layer_convention"] = eff_protect_conv
+                trace_meta["protect_stop_block"] = int(p_stop_blk)  # type: ignore[arg-type]
+                trace_meta["protect_use_final_hidden"] = bool(p_use_final_hidden)
+                trace_meta["protect_dir_norm"] = round(float(pdir_cpu.norm().item()), 6)
+                if protect_obj_val is not None:
+                    trace_meta["protect_dir_score"] = round(float(protect_obj_val), 6)
             if dir_mode and tdir_cpu is not None and stop_blk is not None:
                 trace_meta["target_layer"] = int(target_layer)  # type: ignore[arg-type]
                 trace_meta["target_layer_convention"] = target_layer_convention
@@ -1636,6 +1868,13 @@ def capture_causal_trace(
     target_dir: torch.Tensor | None = None,
     target_layer: int | None = None,
     target_layer_convention: str = "block",
+    protect_dir: torch.Tensor | None = None,
+    protect_layer: int | None = None,
+    protect_layer_convention: str | None = None,
+    protect_span: int | tuple[int, int] | None = None,
+    grad_objective: str = "auto",
+    target_token_ids: int | list[int] | torch.Tensor | None = None,
+    contrast_token_ids: int | list[int] | torch.Tensor | None = None,
     **kwargs: Any,
 ) -> CompactTrace:
     """Convenience wrapper calling ``capture_compact(..., capture_grad=True)``."""
@@ -1649,6 +1888,13 @@ def capture_causal_trace(
         target_dir=target_dir,
         target_layer=target_layer,
         target_layer_convention=target_layer_convention,
+        protect_dir=protect_dir,
+        protect_layer=protect_layer,
+        protect_layer_convention=protect_layer_convention,
+        protect_span=protect_span,
+        grad_objective=grad_objective,
+        target_token_ids=target_token_ids,
+        contrast_token_ids=contrast_token_ids,
         **kwargs,
     )
 
@@ -3143,8 +3389,11 @@ def diagnose_causal_traces(
                 _, ev_p = torch.linalg.eigh(C_t_sub + pen_sub)
                 cands.append((f"pareto_b{beta:g}", (Q_A @ ev_p[:, -1]).contiguous().float()))
         else:
-            _, ev_c = torch.linalg.eigh(C_t_A)
-            cands.append(("causal", ev_c[:, -1].contiguous().float()))
+            if float(C_t_A.abs().max().item()) <= 1e-12:
+                cands.append(("causal", torch.eye(C_t_A.shape[0], 1, dtype=torch.float32)[:, 0].contiguous()))
+            else:
+                _, ev_c = torch.linalg.eigh(C_t_A)
+                cands.append(("causal", ev_c[:, -1].contiguous().float()))
 
         # Pre-extract Half-B per-token healthy gradients (and inputs if available) when healthy_cost == "fisher"
         b_fisher_pieces: list[tuple[float, float, torch.Tensor, Any | None]] = []
@@ -3685,6 +3934,8 @@ def attribute_direction_writers(
     top_k_neurons: int = 16,
     top_k_heads: int = 16,
     normalize_dir: bool = False,
+    linearize_final_norm: bool = True,
+    report_block_gaps: bool = False,
 ) -> dict[str, Any]:
     """Level-1 zero-backward direct linear attribution onto an internal direction ``target_dir``.
 
@@ -3692,8 +3943,14 @@ def attribute_direction_writers(
     projections), individual attention heads, and individual MLP neurons by exact linear
     projection onto ``target_dir`` at ``target_layer`` (optionally contrasting ``inputs``
     against ``contrast_inputs``). Residual additivity guarantees
-    ``embed_contrib + sum(module contribs) == target_score`` (up to final LayerNorm when
-    ``layer_convention='hidden_states'`` and ``target_layer == n_layers``).
+    ``embed_contrib + sum(module contribs) == target_score``.
+
+    For post-final-norm targets (``layer_convention='hidden_states'`` and ``target_layer == n_layers``)
+    ``linearize_final_norm=True`` pulls ``target_dir`` back through the final LayerNorm/RMSNorm with
+    the observed (frozen) per-token scale, so the decomposition stays exact
+    (``embed + writers + final_norm_bias_contrib == target_score``). ``report_block_gaps=True``
+    adds ``block_residual_gaps``: per block, ``(block_out - block_in) . v`` minus the sum of hooked
+    writers inside that block (non-zero gaps flag post-sublayer norms / residual scaling).
     """
     seqs = _normalize_seq_list(inputs)
     cseqs = _normalize_seq_list(contrast_inputs) if contrast_inputs is not None else None
@@ -3730,17 +3987,20 @@ def attribute_direction_writers(
         if layer is not None and layer > stop_blk:
             return
         mk = _safe_module_suffix(full_name)
-        w_raw = mod.weight.detach().float().cpu()
-        w_lin = w_raw if isinstance(mod, nn.Linear) else (w_raw.t() if w_raw.dim() == 2 else w_raw)
-        w_dot = (tdir_cpu @ w_lin).contiguous().float()
+        w_raw = mod.weight.detach()
+        w_lin_f32 = (w_raw if isinstance(mod, nn.Linear) else (w_raw.t() if w_raw.dim() == 2 else w_raw)).float()
+        w_dot = (tdir_cpu.to(device=w_raw.device, dtype=torch.float32) @ w_lin_f32).cpu().contiguous()
+        del w_lin_f32
         bias = getattr(mod, "bias", None)
-        bias_contrib = float((bias.detach().float().cpu() @ tdir_cpu).item()) if isinstance(bias, torch.Tensor) else 0.0
+        bias_vec = bias.detach().float().cpu() if isinstance(bias, torch.Tensor) else None
+        bias_contrib = float((bias_vec @ tdir_cpu).item()) if bias_vec is not None else 0.0
         writers[mk] = {
             "mod": mod,
             "kind": kind,
             "layer": layer,
             "n_heads": int(n_heads),
             "w_dot": w_dot,
+            "bias_vec": bias_vec,
             "bias_contrib": bias_contrib,
         }
 
@@ -3750,26 +4010,38 @@ def attribute_direction_writers(
         li = _layer_idx_from_name(aname)
         _register_writer(aname, am, _writer_kind(aname, False), int(li) if li is not None else None, nh)
 
+    fn_mod = _find_final_norm_module(model) if use_final_hidden else None
+    gap_layers = list(range(0, stop_blk + 1)) if (report_block_gaps and stop_blk >= 0) else []
+
+    def _span2d(t: torch.Tensor, lo: int, hi: int) -> torch.Tensor:
+        return (t[0] if t.dim() == 3 else t).detach().float().cpu()[lo:hi]
+
     def _run_group(group_seqs: list[torch.Tensor]) -> dict[str, Any]:
         sum_target = 0.0
         sum_embed = 0.0
+        sum_norm_bias = 0.0
         sum_y_dot: dict[str, float] = {mk: 0.0 for mk in writers}
+        sum_bias_dot: dict[str, float] = {mk: 0.0 for mk in writers}
         sum_x_in: dict[str, torch.Tensor] = {}
+        sum_neuron: dict[str, torch.Tensor] = {}
+        blk_acc: dict[int, list[float]] = {}
+        any_lin = False
         n_seq = len(group_seqs)
 
         for s_ids in group_seqs:
             t_len = int(s_ids.shape[1])
             lo, hi = _resolve_hidden_span(t_len, pos)
-            cur: dict[str, Any] = {"embed": None, "target": None}
-            cur_y: dict[str, float] = {}
+            cur: dict[str, Any] = {"embed": None, "target": None, "h_pre": None}
             cur_x: dict[str, torch.Tensor] = {}
+            cur_y: dict[str, torch.Tensor] = {}
+            blk_in: dict[int, torch.Tensor] = {}
+            blk_out: dict[int, torch.Tensor] = {}
             hooks = []
 
             def _pre_blk0(_m, inp):
                 h = inp[0] if isinstance(inp, tuple) and inp else inp
-                if isinstance(h, torch.Tensor):
-                    h_vec = (h[0] if h.dim() == 3 else h).detach().float().cpu()[lo:hi].mean(dim=0)
-                    cur["embed"] = float((h_vec @ tdir_cpu).item())
+                if isinstance(h, torch.Tensor) and cur["embed"] is None:
+                    cur["embed"] = _span2d(h, lo, hi)
                     if stop_blk == -1 and not use_final_hidden:
                         cur["target"] = cur["embed"]
                         raise _DirectionTargetCaptured()
@@ -3783,19 +4055,47 @@ def attribute_direction_writers(
                     x_in = inp[0] if isinstance(inp, tuple) and inp else inp
                     y_out = out[0] if isinstance(out, (tuple, list)) else out
                     if isinstance(x_in, torch.Tensor) and mk not in cur_x:
-                        cur_x[mk] = (x_in[0] if x_in.dim() == 3 else x_in).detach().float().cpu()[lo:hi].mean(dim=0)
+                        cur_x[mk] = _span2d(x_in, lo, hi)
                     if isinstance(y_out, torch.Tensor) and mk not in cur_y:
-                        y_vec = (y_out[0] if y_out.dim() == 3 else y_out).detach().float().cpu()[lo:hi].mean(dim=0)
-                        cur_y[mk] = float((y_vec @ tdir_cpu).item())
+                        cur_y[mk] = _span2d(y_out, lo, hi)
 
                 hooks.append(mod.register_forward_hook(_whook))
+
+            for gl in gap_layers:
+                def _gpre(_m, inp, gl=gl):
+                    h = inp[0] if isinstance(inp, tuple) and inp else inp
+                    if isinstance(h, torch.Tensor) and gl not in blk_in:
+                        blk_in[gl] = _span2d(h, lo, hi)
+
+                def _gpost(_m, _inp, out, gl=gl):
+                    t = out[0] if isinstance(out, (tuple, list)) else out
+                    if isinstance(t, torch.Tensor) and gl not in blk_out:
+                        blk_out[gl] = _span2d(t, lo, hi)
+
+                hooks.append(blocks[gl].register_forward_pre_hook(_gpre))
+                hooks.append(blocks[gl].register_forward_hook(_gpost))
+
+            if use_final_hidden:
+                if fn_mod is not None:
+                    def _fn_pre(_m, inp):
+                        h = inp[0] if isinstance(inp, tuple) and inp else inp
+                        if isinstance(h, torch.Tensor) and cur["h_pre"] is None:
+                            cur["h_pre"] = _span2d(h, lo, hi)
+
+                    hooks.append(fn_mod.register_forward_pre_hook(_fn_pre))
+                else:
+                    def _last_blk(_m, _inp, out):
+                        t = out[0] if isinstance(out, (tuple, list)) else out
+                        if isinstance(t, torch.Tensor) and cur["h_pre"] is None:
+                            cur["h_pre"] = _span2d(t, lo, hi)
+
+                    hooks.append(blocks[n_layers - 1].register_forward_hook(_last_blk))
 
             if not use_final_hidden and stop_blk >= 0:
                 def _stop_hook(_m, _inp, out):
                     t = out[0] if isinstance(out, (tuple, list)) else out
                     if isinstance(t, torch.Tensor):
-                        t_vec = (t[0] if t.dim() == 3 else t).detach().float().cpu()[lo:hi].mean(dim=0)
-                        cur["target"] = float((t_vec @ tdir_cpu).item())
+                        cur["target"] = _span2d(t, lo, hi)
                         raise _DirectionTargetCaptured()
 
                 hooks.append(blocks[stop_blk].register_forward_hook(_stop_hook))
@@ -3826,34 +4126,76 @@ def attribute_direction_writers(
                     if hs is None or len(hs) <= stop_blk + 1:
                         raise RuntimeError(f"Failed to capture block {stop_blk} hidden state")
                     t_hs = hs[stop_blk + 1]
-                t_vec = (t_hs[0] if t_hs.dim() == 3 else t_hs).detach().float().cpu()[lo:hi].mean(dim=0)
-                cur["target"] = float((t_vec @ tdir_cpu).item())
-
-            if cur["embed"] is None:
-                cur["embed"] = cur["target"] if stop_blk == -1 else 0.0
-
-            sum_target += float(cur["target"])
-            sum_embed += float(cur["embed"])
-            for mk in writers:
-                sum_y_dot[mk] += cur_y.get(mk, 0.0)
-                if mk in cur_x:
-                    sum_x_in[mk] = sum_x_in[mk] + cur_x[mk] if mk in sum_x_in else cur_x[mk].clone()
+                cur["target"] = _span2d(t_hs, lo, hi)
             del out
 
+            t_span: torch.Tensor = cur["target"]
+            S = int(t_span.shape[0])
+            target_val = float((t_span @ tdir_cpu).mean().item())
+
+            if use_final_hidden and linearize_final_norm and cur["h_pre"] is not None:
+                v_eff, nb_span, lin_ok = _linearize_final_norm_span(fn_mod, cur["h_pre"], t_span, tdir_cpu)
+            else:
+                v_eff, nb_span, lin_ok = tdir_cpu[None].expand(S, -1), torch.zeros(S, dtype=torch.float32), False
+            any_lin = any_lin or lin_ok
+
+            if cur["embed"] is not None:
+                embed_val = float((cur["embed"] * v_eff).sum(dim=-1).mean().item())
+            else:
+                embed_val = target_val if stop_blk == -1 else 0.0
+            norm_bias_val = float(nb_span.mean().item()) if lin_ok else 0.0
+
+            sum_target += target_val
+            sum_embed += embed_val
+            sum_norm_bias += norm_bias_val
+            y_dot_seq: dict[str, float] = {}
+            for mk, meta_w in writers.items():
+                if mk in cur_y:
+                    y_dot_seq[mk] = float((cur_y[mk] * v_eff).sum(dim=-1).mean().item())
+                    sum_y_dot[mk] += y_dot_seq[mk]
+                bv = meta_w["bias_vec"]
+                if bv is not None:
+                    sum_bias_dot[mk] += float((v_eff @ bv).mean().item()) if lin_ok else meta_w["bias_contrib"]
+                if mk in cur_x:
+                    xs = cur_x[mk]
+                    xm = xs.mean(dim=0)
+                    sum_x_in[mk] = sum_x_in[mk] + xm if mk in sum_x_in else xm.clone()
+                    if lin_ok:
+                        w_raw_m = meta_w["mod"].weight.detach()
+                        w_lin_m = (w_raw_m if isinstance(meta_w["mod"], nn.Linear) else (w_raw_m.t() if w_raw_m.dim() == 2 else w_raw_m)).float()
+                        nc = (xs * (v_eff.to(device=w_raw_m.device, dtype=torch.float32) @ w_lin_m).cpu()).mean(dim=0)
+                        del w_lin_m
+                    else:
+                        nc = xm * meta_w["w_dot"]
+                    sum_neuron[mk] = sum_neuron[mk] + nc if mk in sum_neuron else nc.clone()
+            for gl in gap_layers:
+                if gl in blk_in and gl in blk_out:
+                    bd = float(((blk_out[gl] - blk_in[gl]) * v_eff).sum(dim=-1).mean().item())
+                    ws = sum(v for mk, v in y_dot_seq.items() if writers[mk]["layer"] == gl)
+                    acc = blk_acc.setdefault(gl, [0.0, 0.0, 0.0])
+                    acc[0] += bd
+                    acc[1] += ws
+                    acc[2] += 1.0
+
         mod_contribs = {mk: sum_y_dot[mk] / n_seq for mk in writers}
+        bias_contribs = {mk: sum_bias_dot[mk] / n_seq for mk in writers}
         x_means = {mk: (sum_x_in[mk] / n_seq) for mk in sum_x_in}
+        n_means = {mk: (sum_neuron[mk] / n_seq) for mk in sum_neuron}
         embed_mean = sum_embed / n_seq
         target_mean = sum_target / n_seq
-        comp_sum = embed_mean + sum(mod_contribs.values())
+        norm_bias_mean = sum_norm_bias / n_seq
+        comp_sum = embed_mean + sum(mod_contribs.values()) + norm_bias_mean
 
         mlp_act: dict[str, torch.Tensor] = {}
         mlp_neurons: dict[str, torch.Tensor] = {}
         attn_heads: dict[str, torch.Tensor] = {}
+        w_dot_eff: dict[str, torch.Tensor] = {}
         for mk, meta_w in writers.items():
             xm = x_means.get(mk)
             if xm is None:
                 continue
-            full_c = xm * meta_w["w_dot"]
+            full_c = n_means[mk]
+            w_dot_eff[mk] = torch.where(xm.abs() > 1e-12, full_c / xm.where(xm.abs() > 1e-12, torch.ones_like(xm)), meta_w["w_dot"])
             if meta_w["kind"] == "mlp":
                 mlp_act[mk] = xm
                 mlp_neurons[mk] = full_c
@@ -3862,15 +4204,31 @@ def attribute_direction_writers(
                 if nh >= 1 and full_c.numel() % nh == 0:
                     attn_heads[mk] = full_c.reshape(nh, full_c.numel() // nh).sum(dim=1)
 
+        block_gaps = []
+        for gl in sorted(blk_acc):
+            bd, ws, cnt = blk_acc[gl]
+            cnt = max(cnt, 1.0)
+            block_gaps.append({
+                "layer": int(gl),
+                "block_delta": round(bd / cnt, 7),
+                "writers_sum": round(ws / cnt, 7),
+                "gap": round((bd - ws) / cnt, 7),
+            })
+
         return {
             "target_score": target_mean,
             "embed_contrib": embed_mean,
+            "norm_bias_contrib": norm_bias_mean,
             "sum_components": comp_sum,
             "residual_gap": target_mean - comp_sum,
             "mod_contribs": mod_contribs,
+            "bias_contribs": bias_contribs,
             "mlp_act": mlp_act,
             "mlp_neurons": mlp_neurons,
+            "w_dot_eff": w_dot_eff,
             "attn_heads": attn_heads,
+            "block_gaps": block_gaps,
+            "lin_ok": any_lin,
         }
 
     was_training = bool(model.training)
@@ -3892,7 +4250,7 @@ def attribute_direction_writers(
             "layer": meta_w["layer"],
             "contrib": round(c_pos, 7),
             "abs_contrib": round(abs(c_pos), 7),
-            "bias_contrib": round(meta_w["bias_contrib"], 7),
+            "bias_contrib": round(g_pos["bias_contribs"][mk], 7),
         }
         if contrast:
             c_neg = g_neg["mod_contribs"][mk]  # type: ignore[index]
@@ -3938,7 +4296,7 @@ def attribute_direction_writers(
             continue
         np_vec = g_pos["mlp_neurons"][mk]
         ap_vec = g_pos["mlp_act"][mk]
-        wd_vec = meta_w["w_dot"]
+        wd_vec = g_pos["w_dot_eff"].get(mk, meta_w["w_dot"])
         nn_vec = g_neg["mlp_neurons"].get(mk) if contrast else None  # type: ignore[index]
         an_vec = g_neg["mlp_act"].get(mk) if contrast else None  # type: ignore[index]
         score_vec = (np_vec - nn_vec).abs() if (contrast and nn_vec is not None) else np_vec.abs()
@@ -3979,6 +4337,8 @@ def attribute_direction_writers(
         "embed_contrib": round(g_pos["embed_contrib"], 7),
         "sum_components": round(g_pos["sum_components"], 7),
         "residual_gap": round(g_pos["residual_gap"], 7),
+        "final_norm_linearized": bool(g_pos["lin_ok"] or (g_neg is not None and g_neg["lin_ok"])),
+        "final_norm_bias_contrib": round(g_pos["norm_bias_contrib"], 7),
         "modules": mod_rows,
         "module_contribs": {r["module"]: r["contrib"] for r in mod_rows},
         "top_heads": head_rows[: max(0, int(top_k_heads))],
@@ -3997,6 +4357,12 @@ def attribute_direction_writers(
         out_dict["contrast_residual_gap"] = round(g_neg["residual_gap"], 7)
         out_dict["delta_residual_gap"] = round(d_target - d_sum, 7)
         out_dict["module_delta_contribs"] = {r["module"]: r["delta_contrib"] for r in mod_rows}
+        out_dict["contrast_final_norm_bias_contrib"] = round(g_neg["norm_bias_contrib"], 7)
+        out_dict["delta_final_norm_bias_contrib"] = round(g_pos["norm_bias_contrib"] - g_neg["norm_bias_contrib"], 7)
+    if report_block_gaps:
+        out_dict["block_residual_gaps"] = g_pos["block_gaps"]
+        if contrast and g_neg is not None:
+            out_dict["contrast_block_residual_gaps"] = g_neg["block_gaps"]
     return out_dict
 
 
@@ -4194,3 +4560,738 @@ def summarize_direction_traces(
         else:
             out_summary["delta_target_score"] = None
     return out_summary
+
+
+# ----------------------------------------------------------------------------------------------- multi-hop direction graph
+_MLP_INPUT_NORM_ATTRS = ("pre_feedforward_layernorm", "ffn_norm", "ln_2", "post_attention_layernorm")
+
+
+def trace_direction_graph(
+    model: nn.Module,
+    inputs: torch.Tensor | list[int] | list[torch.Tensor | list[int]],
+    *,
+    target_dir: torch.Tensor,
+    target_layer: int,
+    layer_convention: str = "block",
+    pos: int | tuple[int, int] | None = -1,
+    depth: int = 2,
+    top_k_nodes: int = 3,
+    min_layer: int = 0,
+    min_edge_weight: float = 1e-6,
+    normalize_dir: bool = False,
+) -> dict[str, Any]:
+    """Multi-hop circuit graph (nodes + directed edges) behind an internal direction ``target_dir``.
+
+    Hop 0 is the root ``dir:L{target_layer}``. Each expanded node gets the exact gradient of its own
+    scalar readout (MLP neuron ``x[:, j] * (g . W[:, j])``, attention head ``x[:, head] . (g @ W_O_head)``,
+    or a whole conv/out-proj module ``y . g``) with respect to the residual stream entering its sublayer.
+    Upstream writers are scored by their *direct* (residual-path) effect on that readout
+    (``g_sub_in . y_writer``, split per neuron / per head) and the top ``top_k_nodes`` become parents.
+    The readout differentiates through norms, SwiGLU gating and attention exactly (no approximations).
+
+    Returns ``{root, nodes, edges, top_paths, per_input_top_tokens, ...}`` (JSON-serializable).
+    """
+    if int(depth) < 1:
+        raise ValueError(f"depth must be >= 1, got {depth}")
+    if int(top_k_nodes) < 1:
+        raise ValueError(f"top_k_nodes must be >= 1, got {top_k_nodes}")
+    seqs = _normalize_seq_list(inputs)
+    dev = next(model.parameters()).device
+    _, blocks = find_blocks(model)
+    n_layers = len(blocks)
+    mods = dict(model.named_modules())
+    mlps = find_mlps(model)
+    if mlps:
+        d0 = mods[mlps[0].down]
+        hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
+    else:
+        cfg = getattr(getattr(model, "config", None), "text_config", getattr(model, "config", None))
+        hidden = int(getattr(cfg, "hidden_size", 0) or 0)
+        if hidden <= 0:
+            raise ValueError("Cannot infer hidden_size")
+    tdir_cpu = _validate_target_dir(target_dir, hidden, normalize=normalize_dir)
+    stop_blk, use_final_hidden = _resolve_direction_layer(n_layers, int(target_layer), layer_convention)
+    root_id = f"dir:L{int(target_layer)}"
+
+    writers: dict[str, dict[str, Any]] = {}
+
+    def _reg(full_name: str, mod: nn.Module, kind: str, layer: int | None, nh: int) -> None:
+        if stop_blk < 0 or (layer is not None and layer > stop_blk):
+            return
+        w_raw = mod.weight
+        d_in_w = int(w_raw.shape[1] if isinstance(mod, nn.Linear) else w_raw.shape[0])
+        writers[_safe_module_suffix(full_name)] = {"mod": mod, "kind": kind, "layer": layer, "n_heads": int(nh), "d_in": d_in_w}
+
+    for g in mlps:
+        li = _layer_idx_from_name(g.down)
+        _reg(g.down, mods[g.down], "mlp", li, 0)
+    for aname, (am, nh) in _find_attn_out_projs(model, hidden).items():
+        li = _layer_idx_from_name(aname)
+        _reg(aname, am, _writer_kind(aname, False), li, nh)
+
+    base_out: dict[str, Any] = {
+        "root": root_id,
+        "target_layer": int(target_layer),
+        "layer_convention": layer_convention,
+        "stop_block": int(stop_blk),
+        "depth": int(depth),
+        "top_k_nodes": int(top_k_nodes),
+        "n_inputs": len(seqs),
+    }
+    if not writers:
+        base_out.update({
+            "root_score": None,
+            "nodes": [{"id": root_id, "kind": "direction", "layer": int(target_layer), "hop": 0}],
+            "edges": [],
+            "top_paths": [],
+            "per_input_top_tokens": [],
+        })
+        return base_out
+
+    fn_mod = _find_final_norm_module(model) if use_final_hidden else None
+    emb_mod = model.get_input_embeddings() if hasattr(model, "get_input_embeddings") else getattr(getattr(model, "model", model), "embed_tokens", None)
+
+    orig_req = [(p, p.requires_grad) for p in model.parameters()]
+    was_training = bool(model.training)
+    was_gc = bool(getattr(model, "is_gradient_checkpointing", False))
+    disabled_gc = False
+
+    def _first_tensor(args: Any, kwargs: dict | None = None) -> torch.Tensor | None:
+        if isinstance(args, tuple) and args and isinstance(args[0], torch.Tensor):
+            return args[0]
+        if isinstance(args, torch.Tensor):
+            return args
+        if kwargs:
+            hs_kw = kwargs.get("hidden_states")
+            if isinstance(hs_kw, torch.Tensor):
+                return hs_kw
+        return None
+
+    def _two_d(t: torch.Tensor) -> torch.Tensor:
+        return t[0] if t.dim() == 3 else t
+
+    def _trace_once(node: dict[str, Any], g_targets: list[torch.Tensor] | None) -> dict[str, Any]:
+        is_root = node["kind"] == "direction"
+        dst_mk = node.get("module")
+        dst_layer = node.get("layer")
+        acc: dict[str, list[torch.Tensor]] = {}  # mk -> [direct, causal] (vector per neuron/head or scalar tensor)
+        embed_direct = 0.0
+        score_sum = 0.0
+        g_sub_list: list[torch.Tensor] = []
+        tok_rows: list[list[dict[str, Any]]] = []
+        exec_index: dict[str, int] = {}
+
+        for s_idx, s_ids in enumerate(seqs):
+            ids_dev = s_ids.to(dev)
+            T_s = int(s_ids.shape[1])
+            lo, hi = _resolve_hidden_span(T_s, pos)
+            exec_order: list[str] = []
+            st_x: dict[str, torch.Tensor] = {}
+            st_y: dict[str, torch.Tensor] = {}
+            st_g: dict[str, torch.Tensor] = {}
+            emb: dict[str, torch.Tensor] = {}
+            cap: dict[str, Any] = {}
+            hooks = []
+
+            def _track_emb(t: torch.Tensor) -> torch.Tensor:
+                if "x" not in emb:
+                    emb["x"] = _two_d(t).detach().float().cpu()
+                if not t.requires_grad:
+                    t = t.detach().requires_grad_(True)
+
+                def _sg(grad: torch.Tensor) -> None:
+                    emb["g"] = _two_d(grad).detach().float().cpu()
+
+                t.register_hook(_sg)
+                return t
+
+            if emb_mod is not None:
+                def _emb_hook(_m, _inp, out):
+                    t = out[0] if isinstance(out, tuple) else out
+                    if isinstance(t, torch.Tensor) and "x" not in emb:
+                        t2 = _track_emb(t)
+                        if t2 is not t:
+                            return (t2, *out[1:]) if isinstance(out, tuple) else t2
+                    return out
+
+                hooks.append(emb_mod.register_forward_hook(_emb_hook))
+            else:
+                def _emb_pre(_m, args, kwargs):
+                    x0 = _first_tensor(args, kwargs)
+                    if x0 is not None and "x" not in emb:
+                        x2 = _track_emb(x0)
+                        if isinstance(args, tuple) and args and args[0] is x0:
+                            return (x2, *args[1:]), kwargs
+                        if kwargs.get("hidden_states") is x0:
+                            kwargs = dict(kwargs)
+                            kwargs["hidden_states"] = x2
+                            return args, kwargs
+                    return None
+
+                hooks.append(blocks[0].register_forward_pre_hook(_emb_pre, with_kwargs=True))
+
+            g_dst_cpu = None if is_root else g_targets[s_idx]  # type: ignore[index]
+
+            for mk, meta_w in writers.items():
+                def _whook(_m, inp, out, mk=mk, meta_w=meta_w):
+                    if mk in st_y or mk in cap.get("done", ()):
+                        return None
+                    x_in = _first_tensor(inp)
+                    y = out[0] if isinstance(out, (tuple, list)) else out
+                    if not isinstance(y, torch.Tensor) or x_in is None:
+                        return None
+                    if (not is_root) and mk == dst_mk:
+                        g_dev = g_dst_cpu.to(device=y.device, dtype=torch.float32)  # type: ignore[union-attr]
+                        x2 = _two_d(x_in).float()
+                        mod_dst = meta_w["mod"]
+                        w_raw = mod_dst.weight.detach()
+                        if node["kind"] == "mlp_neuron":
+                            j = int(node["unit"])
+                            w_col = (w_raw[:, j] if isinstance(mod_dst, nn.Linear) else w_raw[j, :]).to(device=y.device, dtype=torch.float32)
+                            coef = g_dev @ w_col
+                            s_val = (x2[:, j] * coef).sum()
+                        elif node["kind"] == "attn_head":
+                            nh_d = int(node["n_heads"])
+                            hd = x2.shape[-1] // nh_d
+                            sl = slice(int(node["head"]) * hd, (int(node["head"]) + 1) * hd)
+                            w_h = (w_raw[:, sl] if isinstance(mod_dst, nn.Linear) else w_raw[sl, :].t()).to(device=y.device, dtype=torch.float32)
+                            coef = g_dev @ w_h
+                            s_val = (x2[:, sl] * coef).sum()
+                        else:
+                            s_val = (_two_d(y).float() * g_dev).sum()
+                        cap["val"] = s_val
+                        cap["done"] = (mk,)
+                        raise _DirectionTargetCaptured()
+                    exec_order.append(mk)
+                    st_x[mk] = _two_d(x_in).detach().float().cpu()
+                    st_y[mk] = _two_d(y).detach().float().cpu()
+                    if y.requires_grad:
+                        def _sg(grad: torch.Tensor, mk=mk) -> None:
+                            st_g[mk] = _two_d(grad).detach().float().cpu()
+
+                        y.register_hook(_sg)
+                    return None
+
+                hooks.append(meta_w["mod"].register_forward_hook(_whook))
+
+            # Where to read g_sub_in for non-root destinations
+            sub_mode = None
+            if not is_root:
+                blk = blocks[int(dst_layer)] if dst_layer is not None and 0 <= int(dst_layer) < n_layers else None
+                norm_m = None
+                if node["kind"] == "mlp_neuron" and blk is not None:
+                    norm_m = next((getattr(blk, a) for a in _MLP_INPUT_NORM_ATTRS if isinstance(getattr(blk, a, None), nn.Module)), None)
+                if norm_m is not None:
+                    sub_mode = "norm"
+
+                    def _norm_pre(_m, inp):
+                        h = _first_tensor(inp)
+                        if h is not None and h.requires_grad and "sub_g_hooked" not in cap:
+                            cap["sub_g_hooked"] = True
+
+                            def _sg(grad: torch.Tensor) -> None:
+                                cap["g_sub"] = _two_d(grad).detach().float().cpu()
+
+                            h.register_hook(_sg)
+
+                    hooks.append(norm_m.register_forward_pre_hook(_norm_pre))
+                elif blk is not None:
+                    sub_mode = "earlier_or_block" if node["kind"] == "mlp_neuron" else "block"
+
+                    def _blk_pre(_m, args, kwargs):
+                        h = _first_tensor(args, kwargs)
+                        if h is not None and h.requires_grad and "blk_g_hooked" not in cap:
+                            cap["blk_g_hooked"] = True
+
+                            def _sg(grad: torch.Tensor) -> None:
+                                cap["g_blk"] = _two_d(grad).detach().float().cpu()
+
+                            h.register_hook(_sg)
+                        return None
+
+                    hooks.append(blk.register_forward_pre_hook(_blk_pre, with_kwargs=True))
+            else:
+                if not use_final_hidden:
+                    def _stop(_m, _inp, out):
+                        t = out[0] if isinstance(out, (tuple, list)) else out
+                        if isinstance(t, torch.Tensor):
+                            cap["h_t"] = t
+                            raise _DirectionTargetCaptured()
+
+                    hooks.append(blocks[stop_blk].register_forward_hook(_stop))
+                elif fn_mod is not None:
+                    def _fn_pre(_m, inp):
+                        h = _first_tensor(inp)
+                        if h is not None and "h_pre" not in cap:
+                            cap["h_pre"] = _two_d(h).detach().float().cpu()
+
+                    hooks.append(fn_mod.register_forward_pre_hook(_fn_pre))
+
+            out = None
+            try:
+                with torch.enable_grad():
+                    try:
+                        out = _forward_for_hidden(model, ids_dev, need_hidden_states=(is_root and use_final_hidden))
+                    except _DirectionTargetCaptured:
+                        pass
+                    finally:
+                        for h in hooks:
+                            h.remove()
+                    if is_root:
+                        if "h_t" in cap:
+                            h_t = cap["h_t"]
+                        else:
+                            hs = getattr(out, "hidden_states", None) if out is not None else None
+                            if hs is None or len(hs) <= n_layers:
+                                raise RuntimeError(f"Model did not return hidden_states[{n_layers}] for target_layer={target_layer}")
+                            h_t = hs[n_layers]
+                        h2 = _two_d(h_t).float()
+                        obj = (h2[lo:hi] @ tdir_cpu.to(h2.device)).mean()
+                        cap["val"] = obj
+                        S = hi - lo
+                        if use_final_hidden and "h_pre" in cap:
+                            v_eff, _, _ = _linearize_final_norm_span(fn_mod, cap["h_pre"][lo:hi], h2[lo:hi].detach().cpu(), tdir_cpu)
+                        else:
+                            v_eff = tdir_cpu[None].expand(S, -1)
+                        g_sub = torch.zeros((T_s, hidden), dtype=torch.float32)
+                        g_sub[lo:hi] = v_eff / float(S)
+                    s_val = cap.get("val")
+                    if isinstance(s_val, torch.Tensor):
+                        score_sum += float(s_val.detach().item())
+                        if s_val.requires_grad:
+                            s_val.backward()
+            finally:
+                del out
+                cap.pop("h_t", None)
+                cap.pop("val", None)
+
+            if not is_root:
+                g_sub = None  # type: ignore[assignment]
+                if sub_mode == "norm":
+                    g_sub = cap.get("g_sub")
+                elif sub_mode == "earlier_or_block":
+                    earlier = [mk for mk in exec_order if writers[mk]["layer"] == dst_layer]
+                    if earlier:
+                        g_sub = st_g.get(earlier[-1], torch.zeros((T_s, hidden), dtype=torch.float32))
+                    else:
+                        g_sub = cap.get("g_blk")
+                elif sub_mode == "block":
+                    g_sub = cap.get("g_blk")
+                if g_sub is None:
+                    g_sub = torch.zeros((T_s, hidden), dtype=torch.float32)
+            g_sub_list.append(g_sub)
+
+            if s_idx == 0:
+                exec_index = {mk: i for i, mk in enumerate(exec_order)}
+            if "x" in emb:
+                embed_direct += float((g_sub * emb["x"]).sum().item())
+                if is_root and "g" in emb:
+                    gxi = (emb["g"] * emb["x"]).sum(dim=-1)
+                    order = torch.argsort(gxi.abs(), descending=True)[: min(5, T_s)].tolist()
+                    ids_l = s_ids.reshape(-1).tolist()
+                    tok_rows.append([
+                        {"pos": int(p), "token_id": int(ids_l[p]), "grad_x_input": round(float(gxi[p].item()), 6)} for p in order
+                    ])
+
+            for mk in exec_order:
+                lay = writers[mk]["layer"]
+                if lay is not None and int(lay) < int(min_layer):
+                    continue
+                y = st_y[mk]
+                gf = st_g.get(mk, torch.zeros_like(y))
+                kind = writers[mk]["kind"]
+                mod_w = writers[mk]["mod"]
+                nh = writers[mk]["n_heads"]
+                x = st_x[mk]
+                if kind == "mlp" or (kind == "attn" and nh >= 1 and x.shape[-1] % nh == 0):
+                    w_raw = mod_w.weight.detach()
+                    w_dev_t = w_raw.device
+                    w_lin_f32 = (w_raw if isinstance(mod_w, nn.Linear) else (w_raw.t() if w_raw.dim() == 2 else w_raw)).float()
+                    n_dir = ((g_sub.to(device=w_dev_t, dtype=torch.float32) @ w_lin_f32).cpu() * x).sum(dim=0)
+                    n_cau = ((gf.to(device=w_dev_t, dtype=torch.float32) @ w_lin_f32).cpu() * x).sum(dim=0)
+                    del w_lin_f32
+                    if kind == "attn":
+                        n_dir = n_dir.reshape(nh, -1).sum(dim=1)
+                        n_cau = n_cau.reshape(nh, -1).sum(dim=1)
+                else:
+                    n_dir = (g_sub * y).sum().reshape(1)
+                    n_cau = (gf * y).sum().reshape(1)
+                if mk in acc:
+                    acc[mk][0] += n_dir
+                    acc[mk][1] += n_cau
+                else:
+                    acc[mk] = [n_dir.clone(), n_cau.clone()]
+
+        n_seq = float(len(seqs))
+        for mk in acc:
+            acc[mk][0] /= n_seq
+            acc[mk][1] /= n_seq
+        return {
+            "acc": acc,
+            "score": score_sum / n_seq,
+            "embed_direct": embed_direct / n_seq,
+            "g_sub": g_sub_list,
+            "tokens": tok_rows,
+            "exec_index": exec_index,
+        }
+
+    def _cand_spec(mk: str, i: int) -> dict[str, Any]:
+        meta_w = writers[mk]
+        kind = meta_w["kind"]
+        base = {"module": mk, "layer": meta_w["layer"]}
+        if kind == "mlp":
+            return {**base, "id": f"{mk}:n{i}", "kind": "mlp_neuron", "unit": int(i)}
+        if kind == "attn" and meta_w["n_heads"] >= 1 and meta_w["d_in"] % meta_w["n_heads"] == 0:
+            return {**base, "id": f"{mk}:h{i}", "kind": "attn_head", "head": int(i), "n_heads": int(meta_w["n_heads"])}
+        return {**base, "id": mk, "kind": "conv_module"}
+
+    def _select_parents(acc: dict[str, list[torch.Tensor]]) -> list[tuple[dict[str, Any], float, float, float]]:
+        if not acc:
+            return []
+        gmax_dir = max(float(v[0].abs().max().item()) for v in acc.values())
+        use_dir = gmax_dir >= float(min_edge_weight)
+        den_dir = sum(float(v[0].abs().sum().item()) for v in acc.values())
+        den_cau = sum(float(v[1].abs().sum().item()) for v in acc.values())
+        cands: list[tuple[float, str, int]] = []
+        for mk, (vd, vc) in acc.items():
+            rank = vd if use_dir else vc
+            k = min(int(top_k_nodes), int(rank.numel()))
+            top = torch.argsort(rank.abs(), descending=True)[:k].tolist()
+            for i in top:
+                cands.append((abs(float(rank[i].item())), mk, int(i)))
+        cands.sort(key=lambda r: (-r[0], r[1], r[2]))
+        out_sel = []
+        for score, mk, i in cands:
+            if score < float(min_edge_weight):
+                continue
+            d = float(acc[mk][0][i].item())
+            c = float(acc[mk][1][i].item())
+            share = (abs(d) / den_dir) if (use_dir and den_dir > 1e-12) else (abs(c) / max(den_cau, 1e-12))
+            out_sel.append((_cand_spec(mk, i), d, c, share))
+            if len(out_sel) >= int(top_k_nodes):
+                break
+        return out_sel
+
+    try:
+        for p, _ in orig_req:
+            p.requires_grad_(False)
+        model.eval()
+        if was_gc and hasattr(model, "gradient_checkpointing_disable"):
+            try:
+                model.gradient_checkpointing_disable()
+                disabled_gc = True
+            except Exception:
+                disabled_gc = False
+
+        root_node = {"id": root_id, "kind": "direction", "layer": int(target_layer)}
+        root_res = _trace_once(root_node, None)
+        exec_idx = root_res["exec_index"]
+        root_acc = root_res["acc"]
+
+        def _to_root(spec: dict[str, Any]) -> tuple[float | None, float | None]:
+            a = root_acc.get(spec["module"])
+            if a is None:
+                return None, None
+            i = int(spec.get("unit", spec.get("head", 0)))
+            if i >= a[0].numel():
+                i = 0
+            return float(a[0][i].item()), float(a[1][i].item())
+
+        nodes_by_id: dict[str, dict[str, Any]] = {
+            root_id: {
+                "id": root_id, "kind": "direction", "layer": int(target_layer), "hop": 0,
+                "exec_index": None, "score": round(root_res["score"], 6),
+                "embed_direct": round(root_res["embed_direct"], 6),
+            }
+        }
+        edges: list[dict[str, Any]] = []
+        frontier: list[tuple[str, dict[str, Any], list[torch.Tensor] | None, dict[str, Any] | None]] = [(root_id, root_node, None, root_res)]
+        expanded: set[str] = set()
+
+        for hop in range(1, int(depth) + 1):
+            next_frontier = []
+            for dst_id, dst_spec, g_t, pre_res in frontier:
+                if dst_id in expanded:
+                    continue
+                expanded.add(dst_id)
+                res = pre_res if pre_res is not None else _trace_once(dst_spec, g_t)
+                if dst_id != root_id:
+                    nodes_by_id[dst_id]["readout_score"] = round(res["score"], 6)
+                    nodes_by_id[dst_id]["embed_direct"] = round(res["embed_direct"], 6)
+                for spec, d, c, share in _select_parents(res["acc"]):
+                    sid = spec["id"]
+                    if sid not in nodes_by_id:
+                        dr, cr = _to_root(spec)
+                        nodes_by_id[sid] = {
+                            **spec,
+                            "hop": hop,
+                            "exec_index": exec_idx.get(spec["module"]),
+                            "direct_to_root": round(dr, 6) if dr is not None else None,
+                            "causal_to_root": round(cr, 6) if cr is not None else None,
+                        }
+                    edges.append({
+                        "src": sid,
+                        "dst": dst_id,
+                        "direct_weight": round(d, 6),
+                        "causal_weight": round(c, 6),
+                        "edge_share": round(share, 6),
+                        "hop": hop,
+                    })
+                    if hop < int(depth) and sid not in expanded:
+                        next_frontier.append((sid, spec, res["g_sub"], None))
+            frontier = next_frontier
+            if not frontier:
+                break
+    finally:
+        if disabled_gc and hasattr(model, "gradient_checkpointing_enable"):
+            try:
+                model.gradient_checkpointing_enable()
+            except Exception:
+                pass
+        if was_training:
+            model.train()
+        for p, req in orig_req:
+            p.requires_grad_(req)
+
+    incoming: dict[str, list[dict[str, Any]]] = {}
+    for e in edges:
+        incoming.setdefault(e["dst"], []).append(e)
+
+    def _paths(nid: str, seen: frozenset) -> list[tuple[list[str], list[dict[str, Any]]]]:
+        ins = [e for e in incoming.get(nid, []) if e["src"] not in seen]
+        if not ins:
+            return [([nid], [])]
+        res_p = []
+        for e in ins:
+            for pn, pe in _paths(e["src"], seen | {e["src"]}):
+                res_p.append((pn + [nid], pe + [e]))
+        return res_p
+
+    top_paths = []
+    for pn, pe in _paths(root_id, frozenset({root_id})):
+        if not pe:
+            continue
+        share = 1.0
+        for e in pe:
+            share *= float(e["edge_share"])
+        top_paths.append({
+            "nodes": pn,
+            "edge_weights": [e["direct_weight"] for e in pe],
+            "path_share": round(share, 6),
+            "min_edge_direct": round(min(abs(float(e["direct_weight"])) for e in pe), 6),
+            "length": len(pe),
+        })
+    top_paths.sort(key=lambda r: (-r["path_share"], -r["min_edge_direct"]))
+
+    base_out.update({
+        "root_score": round(root_res["score"], 6),
+        "nodes": list(nodes_by_id.values()),
+        "edges": edges,
+        "top_paths": top_paths[:20],
+        "per_input_top_tokens": root_res["tokens"],
+    })
+    return base_out
+
+
+# ----------------------------------------------------------------------------------------------- iterative peeling (Hydra)
+def peel_causal_circuit(
+    model: nn.Module,
+    inputs: torch.Tensor | list[int] | list[torch.Tensor | list[int]],
+    *,
+    n_rounds: int = 2,
+    alpha: float = 4.0,
+    sites_per_round: int = 1,
+    top_k_sites: int = 6,
+    top_n_neurons: int | None = None,
+    allow_repeat_modules: bool = False,
+    target_dir: torch.Tensor | None = None,
+    target_layer: int | None = None,
+    target_layer_convention: str = "block",
+    protect_dir: torch.Tensor | None = None,
+    protect_layer: int | None = None,
+    protect_layer_convention: str | None = None,
+    target_spans: list[int | tuple[int, int] | None] | None = None,
+    healthy_spans: list[tuple[int, int] | None] | None = None,
+    grad_objective: str = "auto",
+    target_token_ids: int | list[int] | torch.Tensor | None = None,
+    contrast_token_ids: int | list[int] | torch.Tensor | None = None,
+    healthy_cost: str = "linear",
+    center: str = "none",
+    grad_mode: str = "summary",
+    grad_checkpointing: bool = True,
+) -> dict[str, Any]:
+    """Iterative causal peeling to expose backup ("Hydra") circuits.
+
+    Each round captures causal traces under the patches of all previous rounds (attached in memory),
+    runs ``diagnose_causal_traces``, ablates the top new site(s) with an ``MoIPatch`` edit and records
+    how much of the target objective is left. Backup modules that only wake up once the primary
+    site is removed show up in later rounds. All base weights are restored bit-identically on exit.
+    Note: with ``allow_repeat_modules=True`` a module can be edited twice in memory, but the returned
+    ``cumulative_patch`` applies each edit from base weights (the later edit wins on that module).
+    """
+    from .moipatch import Edit, MoIPatch, _sha256
+
+    if int(n_rounds) < 1:
+        raise ValueError(f"n_rounds must be >= 1, got {n_rounds}")
+    if int(sites_per_round) < 1:
+        raise ValueError(f"sites_per_round must be >= 1, got {sites_per_round}")
+    seqs = _normalize_seq_list(inputs)
+    eff_grad_mode = "compressed" if healthy_cost == "fisher" else grad_mode
+
+    mods = dict(model.named_modules())
+    mlps = find_mlps(model)
+    if not mlps:
+        raise ValueError("peel_causal_circuit requires a model with MLP blocks")
+    d0 = mods[mlps[0].down]
+    hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
+    mod_by_mk: dict[str, nn.Module] = {}
+    base_meta: dict[str, dict[str, Any]] = {}
+    base_hash: dict[str, str] = {}
+    for full in [g.down for g in mlps] + list(_find_attn_out_projs(model, hidden)):
+        mk = _safe_module_suffix(full)
+        m = mods[full]
+        mod_by_mk[mk] = m
+        base_meta[mk] = _weight_fingerprint(full, m.weight.detach())
+        base_hash[mk] = _sha256(m.weight.detach())
+
+    def _capture_all() -> list[CompactTrace]:
+        out_t = []
+        for i, seq in enumerate(seqs):
+            out_t.append(capture_causal_trace(
+                model,
+                seq.reshape(-1),
+                target_span=(target_spans[i] if target_spans is not None and i < len(target_spans) else None),
+                healthy_span=(healthy_spans[i] if healthy_spans is not None and i < len(healthy_spans) else None),
+                grad_mode=eff_grad_mode,
+                target_dir=target_dir,
+                target_layer=target_layer,
+                target_layer_convention=target_layer_convention,
+                protect_dir=protect_dir,
+                protect_layer=protect_layer,
+                protect_layer_convention=protect_layer_convention,
+                grad_objective=grad_objective,
+                target_token_ids=target_token_ids,
+                contrast_token_ids=contrast_token_ids,
+                healthy_cost=healthy_cost,
+                center=center,
+                grad_checkpointing=grad_checkpointing,
+                top_k_attn=0,
+                capture_cache=False,
+            ))
+        return out_t
+
+    def _scores(ts: list[CompactTrace]) -> tuple[float, float | None]:
+        sc = sum(float(ct.meta["target_obj_score"]) for ct in ts) / len(ts)
+        ps = [float(ct.meta["protect_dir_score"]) for ct in ts if "protect_dir_score" in ct.meta]
+        return sc, (sum(ps) / len(ps) if ps else None)
+
+    active_handles: list[Any] = []
+    cumulative_edits: list[Edit] = []
+    used_modules: set[str] = set()
+    rounds_out: list[dict[str, Any]] = []
+    score_traj: list[float] = []
+    protect_traj: list[float] = []
+    restore_exact_ok = False
+    try:
+        traces = _capture_all()
+        for r in range(int(n_rounds)):
+            pre_score, pre_prot = _scores(traces)
+            if r == 0:
+                score_traj.append(round(pre_score, 6))
+                if pre_prot is not None:
+                    protect_traj.append(round(pre_prot, 6))
+            diag = diagnose_causal_traces(
+                traces,
+                split_ab=len(traces) >= 2,
+                top_k_sites=max(int(top_k_sites), int(sites_per_round) + len(used_modules)),
+                top_n_neurons=int(top_n_neurons or 64),
+                healthy_cost=healthy_cost,
+                center=center,
+                model_or_weights=model,
+            )
+            picked = []
+            for s_row in diag["all_sites"]:
+                mk = s_row["module"]
+                if float(s_row["target_supp"]) <= 1e-8 or mk not in base_meta:
+                    continue
+                if (not allow_repeat_modules) and mk in used_modules:
+                    continue
+                picked.append(mk)
+                if len(picked) >= int(sites_per_round):
+                    break
+            if not picked:
+                break
+            round_edits = []
+            for mk in picked:
+                bm = base_meta[mk]
+                idx = (
+                    torch.tensor(diag["top_neurons"][mk][: int(top_n_neurons)], dtype=torch.long)
+                    if top_n_neurons is not None and diag["top_neurons"].get(mk)
+                    else None
+                )
+                round_edits.append(Edit(
+                    module=mk,
+                    u=diag["directions"][mk].double(),
+                    alpha=float(alpha),
+                    idx=idx,
+                    base_sha256=bm["base_sha256"],
+                    base_dtype=bm["base_dtype"],
+                    shape=bm["shape"],
+                ))
+            handle = MoIPatch(edits=round_edits, meta={"round": r}).attach(
+                model, verify_fingerprint=not allow_repeat_modules
+            )
+            handle.on()
+            active_handles.append(handle)
+            cumulative_edits.extend(round_edits)
+            used_modules.update(picked)
+
+            traces = _capture_all()
+            post_score, post_prot = _scores(traces)
+            score_traj.append(round(post_score, 6))
+            if post_prot is not None:
+                protect_traj.append(round(post_prot, 6))
+            entry: dict[str, Any] = {
+                "round": r,
+                "pre_score": round(pre_score, 6),
+                "post_score": round(post_score, 6),
+                "score_drop": round(pre_score - post_score, 6),
+                "selected_modules": picked,
+                "top_sites": diag["sites"][: int(top_k_sites)],
+                "split_mode": diag["split_mode"],
+            }
+            if pre_prot is not None:
+                entry["pre_protect_score"] = round(pre_prot, 6)
+            if post_prot is not None:
+                entry["post_protect_score"] = round(post_prot, 6)
+            rounds_out.append(entry)
+    finally:
+        for h in reversed(active_handles):
+            h.off()
+        restore_exact_ok = all(_sha256(mod_by_mk[mk].weight.detach()) == base_hash[mk] for mk in base_hash)
+
+    cumulative_patch = MoIPatch(
+        edits=list(cumulative_edits),
+        meta={
+            "source": "peel_causal_circuit",
+            "n_rounds": len(rounds_out),
+            "alpha": float(alpha),
+            "selected_modules": [e.module for e in cumulative_edits],
+        },
+    )
+    base_score = score_traj[0] if score_traj else None
+    final_score = score_traj[-1] if score_traj else None
+    return {
+        "n_rounds_requested": int(n_rounds),
+        "n_rounds_completed": len(rounds_out),
+        "alpha": float(alpha),
+        "score_trajectory": score_traj,
+        "protect_trajectory": protect_traj,
+        "base_score": base_score,
+        "final_score": final_score,
+        "total_score_drop": (round(base_score - final_score, 6) if base_score is not None and final_score is not None else None),
+        "rounds": rounds_out,
+        "selected_modules": [e.module for e in cumulative_edits],
+        "cumulative_patch": cumulative_patch,
+        "restore_exact_ok": bool(restore_exact_ok),
+    }

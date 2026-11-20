@@ -15,7 +15,17 @@ from typing import Any
 
 from .moipatch import Edit, MoIPatch
 from .query import WeightSpaceIndex
-from .tracer import CompactTrace, discover_compact_dirs, screen_patch_candidates
+from .tracer import (
+    CompactTrace,
+    attribute_direction_writers,
+    capture_causal_trace,
+    diagnose_causal_traces,
+    discover_compact_dirs,
+    peel_causal_circuit,
+    screen_patch_candidates,
+    summarize_direction_traces,
+    trace_direction_graph,
+)
 
 # Cache of open WeightSpaceIndex instances by (model_dir, index_dir)
 _INDEX_CACHE: dict[tuple[str, str], WeightSpaceIndex] = {}
@@ -227,10 +237,33 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
                 "alpha": {"type": "number", "default": 6.0},
                 "top_k_neurons": {"type": "integer", "default": 64},
                 "save_patch_path": {"type": "string", "description": "Optional output path for the synthesized .moipatch file"},
+                "save_candidate_grid_dir": {
+                    "type": "string",
+                    "description": "Optional output directory to save the deduplicated union candidate grid (Top Passive + Top Causal across candidate_alphas) as `.moipatch` files ready for `wsi_screen_candidates`",
+                },
+                "candidate_alphas": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "default": [4.0, 8.0, 12.0],
+                    "description": "Alpha values to expand each passive and causal template into inside the candidate grid",
+                },
                 "patch_variant": {
                     "type": "string",
                     "default": "unified_top2",
-                    "enum": ["unified_top2", "blind_top2", "attn_top2", "wsi_top3", "wsi_fa3", "wsi_pair", "mlp_top3", "mlp_fa3"],
+                    "enum": [
+                        "unified_top2",
+                        "blind_top2",
+                        "attn_top2",
+                        "wsi_top3",
+                        "wsi_fa3",
+                        "wsi_pair",
+                        "mlp_top3",
+                        "mlp_fa3",
+                        "causal_top1",
+                        "causal_top1_all",
+                        "causal_top2",
+                        "causal_attn_top1",
+                    ],
                 },
             },
             "required": ["model_dir", "trace_dirs"],
@@ -332,6 +365,176 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             "required": ["model_dir", "patch_paths"],
         },
     },
+    {
+        "name": "wsi_capture_causal_traces",
+        "description": "Capture forward+backward causal CompactTraces (`capture_causal_trace`) on target sequences, save them to `output_dir`, and return `trace_dirs` plus an immediate causal diagnosis report (MLP + Attention). Supports optional `target_dir` (internal direction), `protect_dir` (protected direction), and `contrast_token_ids` (`logit_margin` without softmax saturation).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the HuggingFace model checkpoint directory"},
+                "output_dir": {"type": "string", "description": "Directory where `trace_0`, `trace_1`, ... will be saved"},
+                "sequences": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "integer"}},
+                    "description": "Token ID sequences exhibiting the target behavior (optional if `texts` is provided)",
+                },
+                "texts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Raw text strings to tokenize and capture (optional if `sequences` is provided)",
+                },
+                "target_spans": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                    "description": "Optional per-sequence `[start, end]` target failure spans (defaults to second half `[T//2, T]`, or last token in `target_dir` mode)",
+                },
+                "healthy_spans": {
+                    "type": "array",
+                    "items": {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2},
+                    "description": "Optional per-sequence `[start, end]` healthy prefix spans (defaults to `[0, target_start]`)",
+                },
+                "grad_mode": {
+                    "type": "string",
+                    "default": "compressed",
+                    "enum": ["compressed", "summary"],
+                    "description": "'compressed' saves both grad_summary and int4 per-token gradients (for offline screening); 'summary' saves only the ~5MB causal summary",
+                },
+                "grad_objective": {
+                    "type": "string",
+                    "default": "auto",
+                    "enum": ["auto", "token_nll", "logit_margin", "direction"],
+                    "description": "Backward objective ('auto' selects 'direction' when `target_dir*` is given, 'logit_margin' when token IDs are given, else 'token_nll')",
+                },
+                "target_dir": {"type": "array", "items": {"type": "number"}, "description": "Optional internal direction vector `[D]` to trace causally"},
+                "target_dir_npz": {"type": "string", "description": "Optional `.npz` path storing `target_dir`"},
+                "target_dir_key": {"type": "string", "description": "Array key inside `target_dir_npz`"},
+                "target_patch_path": {"type": "string", "description": "Optional `.moipatch` file whose router vector (`dir`/`veto_dir`) supplies `target_dir` and `target_layer`"},
+                "target_patch_key": {"type": "string", "default": "dir", "description": "Router key inside `target_patch_path` (e.g. 'dir' or 'veto_dir')"},
+                "target_layer": {"type": "integer", "description": "Layer index where `target_dir` is read"},
+                "target_layer_convention": {"type": "string", "default": "block", "enum": ["block", "hidden_states"]},
+                "protect_dir": {"type": "array", "items": {"type": "number"}, "description": "Optional protected direction vector `[D]` to preserve during causal diagnosis"},
+                "protect_dir_npz": {"type": "string", "description": "Optional `.npz` path storing `protect_dir`"},
+                "protect_dir_key": {"type": "string", "description": "Array key inside `protect_dir_npz`"},
+                "protect_patch_path": {"type": "string", "description": "Optional `.moipatch` file supplying `protect_dir` (defaults to router `veto_dir`)"},
+                "protect_patch_key": {"type": "string", "default": "veto_dir"},
+                "protect_layer": {"type": "integer", "description": "Optional layer index for `protect_dir` (defaults to `target_layer`)"},
+                "protect_layer_convention": {"type": "string", "enum": ["block", "hidden_states"]},
+                "target_token_ids": {"type": "array", "items": {"type": "integer"}, "description": "Optional target token IDs for `logit_margin` objective"},
+                "contrast_token_ids": {"type": "array", "items": {"type": "integer"}, "description": "Optional contrast token IDs for `logit_margin` objective"},
+                "healthy_cost": {"type": "string", "default": "linear", "enum": ["linear", "fisher"]},
+                "top_k_mlp": {"type": "integer", "default": 32},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir", "output_dir"],
+        },
+    },
+    {
+        "name": "wsi_attribute_direction_writers",
+        "description": "Zero-backward Level-1 linear attribution showing which embeddings, attention heads, MLP neurons, and conv/linear-attn modules directly write into an internal direction `target_dir` (with exact frozen-scale final-norm linearization and optional per-block residual gap checks).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the HuggingFace model checkpoint directory"},
+                "sequences": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
+                "texts": {"type": "array", "items": {"type": "string"}},
+                "contrast_sequences": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
+                "contrast_texts": {"type": "array", "items": {"type": "string"}},
+                "target_dir": {"type": "array", "items": {"type": "number"}},
+                "target_dir_npz": {"type": "string"},
+                "target_dir_key": {"type": "string"},
+                "target_patch_path": {"type": "string"},
+                "target_patch_key": {"type": "string", "default": "dir"},
+                "target_layer": {"type": "integer", "description": "Layer index where `target_dir` lives (auto-inferred if `target_patch_path` has a router)"},
+                "layer_convention": {"type": "string", "enum": ["block", "hidden_states"]},
+                "pos": {
+                    "description": "Integer token index (default -1) or `[start, end]` span",
+                    "oneOf": [{"type": "integer"}, {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}],
+                },
+                "top_k_neurons": {"type": "integer", "default": 16},
+                "top_k_heads": {"type": "integer", "default": 16},
+                "normalize_dir": {"type": "boolean", "default": False},
+                "linearize_final_norm": {"type": "boolean", "default": True},
+                "report_block_gaps": {"type": "boolean", "default": False},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir"],
+        },
+    },
+    {
+        "name": "wsi_trace_direction_graph",
+        "description": "Trace a multi-hop directed circuit graph (upstream MLP neurons, attention heads, conv modules -> root `target_dir`) with exact per-hop direct and causal edge weights and ranked root-terminated `top_paths`.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the HuggingFace model checkpoint directory"},
+                "sequences": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
+                "texts": {"type": "array", "items": {"type": "string"}},
+                "target_dir": {"type": "array", "items": {"type": "number"}},
+                "target_dir_npz": {"type": "string"},
+                "target_dir_key": {"type": "string"},
+                "target_patch_path": {"type": "string"},
+                "target_patch_key": {"type": "string", "default": "dir"},
+                "target_layer": {"type": "integer"},
+                "layer_convention": {"type": "string", "enum": ["block", "hidden_states"]},
+                "pos": {
+                    "oneOf": [{"type": "integer"}, {"type": "array", "items": {"type": "integer"}, "minItems": 2, "maxItems": 2}],
+                },
+                "depth": {"type": "integer", "default": 2},
+                "top_k_nodes": {"type": "integer", "default": 3},
+                "min_layer": {"type": "integer", "default": 0},
+                "min_edge_weight": {"type": "number", "default": 1e-6},
+                "normalize_dir": {"type": "boolean", "default": False},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir"],
+        },
+    },
+    {
+        "name": "wsi_peel_causal_circuit",
+        "description": "Iteratively peel top causal sites over `n_rounds` rounds (attaching each round's edit in memory and re-tracing residual behavior) to uncover backup ('Hydra') circuits. Restores exact base weights on exit and optionally saves the cumulative `.moipatch`.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string"},
+                "sequences": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
+                "texts": {"type": "array", "items": {"type": "string"}},
+                "n_rounds": {"type": "integer", "default": 2},
+                "alpha": {"type": "number", "default": 4.0},
+                "sites_per_round": {"type": "integer", "default": 1},
+                "top_k_sites": {"type": "integer", "default": 6},
+                "top_n_neurons": {"type": "integer"},
+                "allow_repeat_modules": {"type": "boolean", "default": False},
+                "target_dir": {"type": "array", "items": {"type": "number"}},
+                "target_dir_npz": {"type": "string"},
+                "target_dir_key": {"type": "string"},
+                "target_patch_path": {"type": "string"},
+                "target_patch_key": {"type": "string", "default": "dir"},
+                "target_layer": {"type": "integer"},
+                "target_layer_convention": {"type": "string", "enum": ["block", "hidden_states"]},
+                "protect_dir": {"type": "array", "items": {"type": "number"}},
+                "protect_dir_npz": {"type": "string"},
+                "protect_dir_key": {"type": "string"},
+                "protect_patch_path": {"type": "string"},
+                "protect_patch_key": {"type": "string", "default": "veto_dir"},
+                "protect_layer": {"type": "integer"},
+                "protect_layer_convention": {"type": "string", "enum": ["block", "hidden_states"]},
+                "target_spans": {"type": "array"},
+                "healthy_spans": {"type": "array"},
+                "grad_objective": {"type": "string", "default": "auto", "enum": ["auto", "token_nll", "logit_margin", "direction"]},
+                "target_token_ids": {"type": "array", "items": {"type": "integer"}},
+                "contrast_token_ids": {"type": "array", "items": {"type": "integer"}},
+                "healthy_cost": {"type": "string", "default": "linear", "enum": ["linear", "fisher"]},
+                "center": {"type": "string", "default": "none", "enum": ["none", "healthy"]},
+                "save_patch_path": {"type": "string", "description": "Optional output `.moipatch` path for the cumulative peeled patch"},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir"],
+        },
+    },
 ]
 
 
@@ -344,10 +547,13 @@ def _load_model_for_screen(model_dir: str, dtype_name: str = "auto", device_map:
         dtype: Any = "auto"
     else:
         dtype = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[dtype_name]
-    kw: dict[str, Any] = {"torch_dtype": dtype}
+    base_kw: dict[str, Any] = {}
     if device_map and torch.cuda.is_available():
-        kw["device_map"] = device_map
-    model = AutoModelForCausalLM.from_pretrained(model_dir, **kw)
+        base_kw["device_map"] = device_map
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model_dir, dtype=dtype, **base_kw)
+    except TypeError:
+        model = AutoModelForCausalLM.from_pretrained(model_dir, torch_dtype=dtype, **base_kw)
     model.eval()
     return model
 
@@ -464,6 +670,360 @@ def _screen_candidates_tool(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _resolve_sequences_arg(
+    args: dict[str, Any],
+    model_dir: str,
+    *,
+    seq_key: str = "sequences",
+    text_key: str = "texts",
+    required: bool = True,
+) -> list[list[int]] | None:
+    raw_seqs = args.get(seq_key)
+    if raw_seqs is not None:
+        seqs = [[int(x) for x in s] for s in raw_seqs]
+        if required and not seqs:
+            raise ValueError(f"At least one sequence is required in `{seq_key}`")
+        return seqs
+    raw_texts = args.get(text_key)
+    if raw_texts:
+        from transformers import AutoTokenizer
+
+        tok = AutoTokenizer.from_pretrained(model_dir)
+        seqs = [tok.encode(t, add_special_tokens=False) for t in raw_texts]
+        if required and not seqs:
+            raise ValueError(f"At least one text is required in `{text_key}`")
+        return seqs
+    if required:
+        raise ValueError(f"Provide either `{seq_key}` or `{text_key}`")
+    return None
+
+
+def _load_direction_arg(
+    args: dict[str, Any],
+    prefix: str = "target",
+    *,
+    layer_key: str | None = None,
+    conv_key: str | None = None,
+) -> tuple[Any, int | None, str | None]:
+    import numpy as np
+    import torch
+
+    l_key = layer_key or f"{prefix}_layer"
+    c_key = conv_key or f"{prefix}_layer_convention"
+    raw_layer = args.get(l_key)
+    eff_layer = int(raw_layer) if raw_layer is not None else None
+    raw_conv = args.get(c_key) or (args.get("target_layer_convention") if prefix == "target" and c_key != "target_layer_convention" else None)
+    eff_conv = str(raw_conv) if raw_conv is not None else None
+
+    if args.get(f"{prefix}_dir") is not None:
+        vec = torch.tensor(args[f"{prefix}_dir"], dtype=torch.float32)
+        return vec, eff_layer, eff_conv
+    if args.get(f"{prefix}_dir_npz"):
+        npz_path = str(args[f"{prefix}_dir_npz"])
+        npz = np.load(npz_path)
+        key = args.get(f"{prefix}_dir_key")
+        if not key:
+            if len(npz.files) == 1:
+                key = npz.files[0]
+            else:
+                raise KeyError(f"Specify `{prefix}_dir_key` for `{npz_path}` (keys: {npz.files})")
+        if key not in npz:
+            raise KeyError(f"Direction key `{key}` not found in {npz_path}")
+        vec = torch.from_numpy(np.asarray(npz[key], dtype=np.float32))
+        return vec, eff_layer, eff_conv
+    if args.get(f"{prefix}_patch_path"):
+        patch = MoIPatch.load(str(args[f"{prefix}_patch_path"]))
+        pkey = str(args.get(f"{prefix}_patch_key") or ("veto_dir" if prefix == "protect" else "dir"))
+        if patch.router is not None and pkey in patch.router and patch.router[pkey] is not None:
+            vec = torch.as_tensor(patch.router[pkey], dtype=torch.float32)
+            if eff_layer is None and patch.router.get("layer") is not None:
+                eff_layer = int(patch.router["layer"])
+            if eff_conv is None:
+                eff_conv = "hidden_states"
+            return vec, eff_layer, eff_conv
+        if pkey == "dir" and patch.router is None and patch.edits:
+            vec = patch.edits[0].u.detach().float()
+            return vec, eff_layer, eff_conv
+        raise KeyError(f"Direction key `{pkey}` not found in patch {args[f'{prefix}_patch_path']}")
+    return None, eff_layer, eff_conv
+
+
+def _parse_pos_arg(raw_pos: Any) -> int | tuple[int, int] | None:
+    if raw_pos is None:
+        return -1
+    if isinstance(raw_pos, (list, tuple)) and len(raw_pos) == 2:
+        return (int(raw_pos[0]), int(raw_pos[1]))
+    return int(raw_pos)
+
+
+def _capture_causal_traces_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+    from pathlib import Path
+
+    import torch
+
+    seqs = _resolve_sequences_arg(args, args["model_dir"], required=True)
+    assert seqs is not None
+
+    t_dir, t_layer, t_conv = _load_direction_arg(args, "target")
+    p_dir, p_layer, p_conv = _load_direction_arg(args, "protect")
+    eff_t_conv = t_conv or "block"
+    grad_objective = str(args.get("grad_objective", "auto"))
+    t_tok_ids = [int(x) for x in args["target_token_ids"]] if args.get("target_token_ids") is not None else None
+    c_tok_ids = [int(x) for x in args["contrast_token_ids"]] if args.get("contrast_token_ids") is not None else None
+    healthy_cost = str(args.get("healthy_cost", "linear"))
+
+    raw_tspans = args.get("target_spans")
+    raw_hspans = args.get("healthy_spans")
+    grad_mode = str(args.get("grad_mode", "compressed"))
+    top_k_mlp = int(args.get("top_k_mlp", 32))
+    out_root = Path(args["output_dir"])
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    model = _load_model_for_screen(
+        args["model_dir"],
+        dtype_name=str(args.get("dtype", "auto")),
+        device_map=str(args.get("device_map", "auto")),
+    )
+    traces: list[CompactTrace] = []
+    trace_dirs: list[str] = []
+    try:
+        for i, ids in enumerate(seqs):
+            T = len(ids)
+            t_span: int | tuple[int, int] | None
+            h_span: tuple[int, int] | None
+            if raw_tspans and i < len(raw_tspans) and raw_tspans[i] is not None:
+                t_span = (int(raw_tspans[i][0]), int(raw_tspans[i][1]))
+            elif t_dir is not None or t_tok_ids is not None:
+                t_span = None
+            else:
+                t_span = (max(1, T // 2), T)
+            if raw_hspans and i < len(raw_hspans) and raw_hspans[i] is not None:
+                h_span = (int(raw_hspans[i][0]), int(raw_hspans[i][1]))
+            elif p_dir is not None or t_dir is not None or t_tok_ids is not None:
+                h_span = None
+            else:
+                base_t = t_span[0] if isinstance(t_span, tuple) else max(1, T - 1)
+                h_span = (0, max(1, base_t))
+            ct = capture_causal_trace(
+                model,
+                ids,
+                target_span=t_span,
+                healthy_span=h_span,
+                grad_mode=grad_mode,
+                target_dir=t_dir,
+                target_layer=t_layer,
+                target_layer_convention=eff_t_conv,
+                protect_dir=p_dir,
+                protect_layer=p_layer,
+                protect_layer_convention=p_conv,
+                grad_objective=grad_objective,
+                target_token_ids=t_tok_ids,
+                contrast_token_ids=c_tok_ids,
+                healthy_cost=healthy_cost,
+                grad_checkpointing=True,
+                top_k_mlp=top_k_mlp,
+                top_k_attn=0,
+                capture_cache=False,
+            )
+            d = out_root / f"trace_{i}"
+            ct.save(d)
+            traces.append(ct)
+            trace_dirs.append(str(d))
+        diag = diagnose_causal_traces(
+            traces,
+            split_ab=len(traces) >= 2,
+            top_k_sites=6,
+            top_n_neurons=64,
+            healthy_cost=healthy_cost,
+            model_or_weights=(model if healthy_cost == "fisher" else None),
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    out: dict[str, Any] = {
+        "n_traces": len(traces),
+        "grad_mode": grad_mode,
+        "grad_objective": traces[0].meta.get("grad_objective"),
+        "grad_healthy_objective": traces[0].meta.get("grad_healthy_objective"),
+        "trace_dirs": trace_dirs,
+        "causal_diagnosis": {
+            "summary": diag["summary"],
+            "sites": diag["sites"],
+            "causal_rank": diag["causal_rank"][:10],
+            "passive_rank": diag["passive_rank"][:10],
+            "top_neurons": {k: v[:16] for k, v in diag["top_neurons"].items()},
+        },
+    }
+    if t_dir is not None:
+        out["direction_summary"] = summarize_direction_traces(
+            traces, top_k_modules=10, top_k_heads=10, top_k_neurons=10
+        )
+    return out
+
+
+def _attribute_direction_writers_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+
+    import torch
+
+    seqs = _resolve_sequences_arg(args, args["model_dir"], required=True)
+    assert seqs is not None
+    cseqs = _resolve_sequences_arg(
+        args, args["model_dir"], seq_key="contrast_sequences", text_key="contrast_texts", required=False
+    )
+    t_dir, t_layer, t_conv = _load_direction_arg(args, "target", conv_key="layer_convention")
+    if t_dir is None:
+        raise ValueError("Provide `target_dir`, `target_dir_npz`, or `target_patch_path`")
+    if t_layer is None:
+        raise ValueError("Provide `target_layer` (or use `target_patch_path` containing router layer)")
+    model = _load_model_for_screen(
+        args["model_dir"],
+        dtype_name=str(args.get("dtype", "auto")),
+        device_map=str(args.get("device_map", "auto")),
+    )
+    try:
+        return attribute_direction_writers(
+            model,
+            seqs,
+            target_dir=t_dir,
+            target_layer=t_layer,
+            layer_convention=t_conv or "block",
+            pos=_parse_pos_arg(args.get("pos")),
+            contrast_inputs=cseqs,
+            top_k_neurons=int(args.get("top_k_neurons", 16)),
+            top_k_heads=int(args.get("top_k_heads", 16)),
+            normalize_dir=bool(args.get("normalize_dir", False)),
+            linearize_final_norm=bool(args.get("linearize_final_norm", True)),
+            report_block_gaps=bool(args.get("report_block_gaps", False)),
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
+def _trace_direction_graph_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+
+    import torch
+
+    seqs = _resolve_sequences_arg(args, args["model_dir"], required=True)
+    assert seqs is not None
+    t_dir, t_layer, t_conv = _load_direction_arg(args, "target", conv_key="layer_convention")
+    if t_dir is None:
+        raise ValueError("Provide `target_dir`, `target_dir_npz`, or `target_patch_path`")
+    if t_layer is None:
+        raise ValueError("Provide `target_layer` (or use `target_patch_path` containing router layer)")
+    model = _load_model_for_screen(
+        args["model_dir"],
+        dtype_name=str(args.get("dtype", "auto")),
+        device_map=str(args.get("device_map", "auto")),
+    )
+    try:
+        return trace_direction_graph(
+            model,
+            seqs,
+            target_dir=t_dir,
+            target_layer=t_layer,
+            layer_convention=t_conv or "block",
+            pos=_parse_pos_arg(args.get("pos")),
+            depth=int(args.get("depth", 2)),
+            top_k_nodes=int(args.get("top_k_nodes", 3)),
+            min_layer=int(args.get("min_layer", 0)),
+            min_edge_weight=float(args.get("min_edge_weight", 1e-6)),
+            normalize_dir=bool(args.get("normalize_dir", False)),
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
+def _peel_causal_circuit_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+    from pathlib import Path
+
+    import torch
+
+    seqs = _resolve_sequences_arg(args, args["model_dir"], required=True)
+    assert seqs is not None
+    t_dir, t_layer, t_conv = _load_direction_arg(args, "target")
+    p_dir, p_layer, p_conv = _load_direction_arg(args, "protect")
+
+    def _norm_spans(raw: Any, is_target: bool) -> list[Any] | None:
+        if not raw:
+            return None
+        out_s: list[Any] = []
+        for sp in raw:
+            if sp is None:
+                out_s.append(None)
+            elif isinstance(sp, (list, tuple)):
+                out_s.append((int(sp[0]), int(sp[1])))
+            elif is_target:
+                out_s.append(int(sp))
+            else:
+                raise ValueError(f"Invalid healthy_span {sp!r}; expected [start, end] or null")
+        return out_s
+
+    tspans = _norm_spans(args.get("target_spans"), is_target=True)
+    hspans = _norm_spans(args.get("healthy_spans"), is_target=False)
+    t_tok_ids = [int(x) for x in args["target_token_ids"]] if args.get("target_token_ids") is not None else None
+    c_tok_ids = [int(x) for x in args["contrast_token_ids"]] if args.get("contrast_token_ids") is not None else None
+    top_n_neurons = int(args["top_n_neurons"]) if args.get("top_n_neurons") is not None else None
+
+    model = _load_model_for_screen(
+        args["model_dir"],
+        dtype_name=str(args.get("dtype", "auto")),
+        device_map=str(args.get("device_map", "auto")),
+    )
+    try:
+        res = peel_causal_circuit(
+            model,
+            seqs,
+            n_rounds=int(args.get("n_rounds", 2)),
+            alpha=float(args.get("alpha", 4.0)),
+            sites_per_round=int(args.get("sites_per_round", 1)),
+            top_k_sites=int(args.get("top_k_sites", 6)),
+            top_n_neurons=top_n_neurons,
+            allow_repeat_modules=bool(args.get("allow_repeat_modules", False)),
+            target_dir=t_dir,
+            target_layer=t_layer,
+            target_layer_convention=t_conv or "block",
+            protect_dir=p_dir,
+            protect_layer=p_layer,
+            protect_layer_convention=p_conv,
+            target_spans=tspans,
+            healthy_spans=hspans,
+            grad_objective=str(args.get("grad_objective", "auto")),
+            target_token_ids=t_tok_ids,
+            contrast_token_ids=c_tok_ids,
+            healthy_cost=str(args.get("healthy_cost", "linear")),
+            center=str(args.get("center", "none")),
+            grad_checkpointing=True,
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    patch = res.pop("cumulative_patch")
+    saved_patch = None
+    if args.get("save_patch_path"):
+        spath = Path(str(args["save_patch_path"]))
+        spath.parent.mkdir(parents=True, exist_ok=True)
+        saved_patch = str(patch.save(spath))
+    res["saved_patch"] = saved_patch
+    res["n_edits"] = len(patch.edits)
+    return res
+
+
 def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Dispatch an MCP tool call to `WeightSpaceIndex`."""
     if name == "wsi_overview":
@@ -554,6 +1114,7 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         )
     if name == "wsi_discover_compact_circuit":
         idx = _get_wsi(args["model_dir"])
+        c_alphas = tuple(float(x) for x in args.get("candidate_alphas", (4.0, 8.0, 12.0)))
         return discover_compact_dirs(
             idx,
             args["trace_dirs"],
@@ -562,11 +1123,21 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             top_k_neurons=int(args.get("top_k_neurons", 64)),
             variant=str(args.get("patch_variant", "unified_top2")),
             save_patch_path=args.get("save_patch_path"),
+            save_candidate_grid_dir=args.get("save_candidate_grid_dir"),
+            candidate_alphas=c_alphas,
         )
     if name == "wsi_build_moipatch":
         return _build_moipatch_tool(args)
     if name == "wsi_screen_candidates":
         return _screen_candidates_tool(args)
+    if name == "wsi_capture_causal_traces":
+        return _capture_causal_traces_tool(args)
+    if name == "wsi_attribute_direction_writers":
+        return _attribute_direction_writers_tool(args)
+    if name == "wsi_trace_direction_graph":
+        return _trace_direction_graph_tool(args)
+    if name == "wsi_peel_causal_circuit":
+        return _peel_causal_circuit_tool(args)
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
 
 

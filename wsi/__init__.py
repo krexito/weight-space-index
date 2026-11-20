@@ -43,6 +43,7 @@ from .tracer import (
     discover_compact_circuit,
     gradient_screen_candidates,
     hadamard_transform,
+    peel_causal_circuit,
     quantization_error,
     quantize_block_fp4,
     quantize_block_int4,
@@ -51,6 +52,7 @@ from .tracer import (
     screen_patch_candidates,
     screen_patches_from_traces,
     summarize_direction_traces,
+    trace_direction_graph,
 )
 
 __all__ = [
@@ -84,6 +86,7 @@ __all__ = [
     "greedy_generate_reference",
     "hadamard_transform",
     "load_base_drafts_jsonl",
+    "peel_causal_circuit",
     "quantization_error",
     "quantize_block_fp4",
     "quantize_block_int4",
@@ -94,6 +97,7 @@ __all__ = [
     "speculative_generate_with_base",
     "summarize_direction_traces",
     "trace_all",
+    "trace_direction_graph",
     "DynamicCircuitPager",
     "MixtureOfIndexes",
     "WeightSpaceIndex",

@@ -504,8 +504,17 @@ def test_discover_compact_circuit() -> None:
 
             list_resp = handle_rpc_message({"jsonrpc": "2.0", "id": 10, "method": "tools/list"})
             t_names = {t["name"] for t in list_resp["result"]["tools"]}
-            assert {"wsi_diff_compact", "wsi_discover_compact_circuit", "wsi_build_moipatch", "wsi_screen_candidates"}.issubset(t_names)
-            assert len(t_names) == 15
+            assert {
+                "wsi_diff_compact",
+                "wsi_discover_compact_circuit",
+                "wsi_build_moipatch",
+                "wsi_screen_candidates",
+                "wsi_capture_causal_traces",
+                "wsi_attribute_direction_writers",
+                "wsi_trace_direction_graph",
+                "wsi_peel_causal_circuit",
+            }.issubset(t_names)
+            assert len(t_names) == 19
 
             mcp_dc = handle_rpc_message({
                 "jsonrpc": "2.0", "id": 11, "method": "tools/call",

@@ -24,7 +24,9 @@ from wsi import (  # noqa: E402
     attribute_direction_writers,
     capture_causal_trace,
     diagnose_causal_traces,
+    peel_causal_circuit,
     summarize_direction_traces,
+    trace_direction_graph,
 )
 
 
@@ -492,3 +494,229 @@ def test_hybrid_lfm3_moipatch_veto_dir_integration() -> None:
     assert "layers.3.feed_forward.w2" not in ct.grad_summary
     assert len(ct.token_attr["grad_x_input"]) == len(tox_seq)
     assert ct.top_input_tokens(tox_seq, top_k=2)[0]["pos"] == len(tox_seq) - 1
+
+
+# ----------------------------------------------------------------------------------------------- tracer upgrades
+class _RMSNorm(nn.Module):
+    def __init__(self, hidden: int, eps: float = 1e-6) -> None:
+        super().__init__()
+        self.weight = nn.Parameter(torch.ones(hidden))
+        self.eps = eps
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x * torch.rsqrt(x.pow(2).mean(dim=-1, keepdim=True) + self.eps) * self.weight
+
+
+class _HalfBlock(_DirBlock):
+    """Block with a planted non-additive residual scale (output * 0.5)."""
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return 0.5 * super().forward(x)
+
+
+def _zero_model(**kw) -> _DirToyLM:
+    m = _DirToyLM(**kw).eval()
+    with torch.no_grad():
+        for p in m.parameters():
+            p.zero_()
+    return m
+
+
+def test_protect_dir_separates_shared_vs_clean_site() -> None:
+    m = _zero_model(vocab=32, hidden=16, inter=32, n_layers=2, n_heads=4)
+    with torch.no_grad():
+        m.model.embed_tokens.weight[10:15, 0] = 1.0
+        m.model.embed_tokens.weight[10:15, 2] = 4.0
+        b0, b1 = m.model.layers[0], m.model.layers[1]
+        # L0 neuron 0: coord0 -> writes BOTH target e3 and protected e5
+        b0.mlp.gate_proj.weight[0, 0] = 2.0
+        b0.mlp.up_proj.weight[0, 0] = 2.0
+        b0.mlp.down_proj.weight[3, 0] = 2.0
+        b0.mlp.down_proj.weight[5, 0] = 2.0
+        # L1 neuron 0: clean target writer coord2 -> e3 only (smaller than L0)
+        b1.mlp.gate_proj.weight[0, 2] = 0.5
+        b1.mlp.up_proj.weight[0, 2] = 0.5
+        b1.mlp.down_proj.weight[3, 0] = 1.5
+    tdir = torch.zeros(16)
+    tdir[3] = 1.0
+    pdir = torch.zeros(16)
+    pdir[5] = 1.0
+    seqs = [[10, 11, 12], [12, 13, 14]]
+
+    plain = [capture_causal_trace(m, s, target_dir=tdir, target_layer=1) for s in seqs]
+    d_plain = diagnose_causal_traces(plain, split_ab=True, top_k_sites=4, model_or_weights=m)
+    assert d_plain["summary"]["top_causal_site"] == "layers.0.mlp.down_proj", d_plain["sites"]
+
+    for cost in ("linear", "fisher"):
+        prot = [
+            capture_causal_trace(
+                m, s, target_dir=tdir, target_layer=1, protect_dir=pdir,
+                healthy_cost=cost, grad_mode="compressed",
+            )
+            for s in seqs
+        ]
+        assert prot[0].meta["grad_healthy_objective"] == "direction"
+        assert prot[0].meta["protect_layer"] == 1 and prot[0].meta["protect_dir_score"] > 0.1
+        d_prot = diagnose_causal_traces(prot, split_ab=True, top_k_sites=4, healthy_cost=cost, model_or_weights=m)
+        rank = d_prot["causal_rank"]
+        assert rank[0] == "layers.1.mlp.down_proj", (cost, d_prot["sites"])
+        assert rank.index("layers.1.mlp.down_proj") < rank.index("layers.0.mlp.down_proj")
+
+
+def test_logit_margin_avoids_softmax_saturation_and_matches_fd() -> None:
+    m = _zero_model(vocab=8, hidden=8, inter=16, n_layers=1, n_heads=2)
+    with torch.no_grad():
+        m.model.embed_tokens.weight[:, 0] = 1.0
+        b0 = m.model.layers[0]
+        b0.mlp.gate_proj.weight[0, 0] = 1.0
+        b0.mlp.up_proj.weight[0, 0] = 1.0
+        b0.mlp.down_proj.weight[0, 0] = 0.5
+        m.lm_head.weight[0, 0] = 60.0
+    ids = [2, 0]
+    mk = "layers.0.mlp.down_proj"
+
+    ct_nll = capture_causal_trace(m, ids, grad_mode="summary")
+    assert ct_nll.meta["grad_objective"] == "token_nll"
+    assert abs(ct_nll.grad_summary[mk]["causal_attr"]) < 1e-6  # softmax saturated: gradient vanished
+
+    eps = 1e-3
+    ids_t = torch.tensor([ids])
+
+    def _margin(pos: int, scale: float) -> float:
+        h = m.model.layers[0].mlp.down_proj.register_forward_hook(lambda _m, _i, o: o * scale)
+        try:
+            with torch.no_grad():
+                lg = m(ids_t).logits[0, pos].double()
+        finally:
+            h.remove()
+        return float(lg[0] - lg[1])
+
+    for kw, pos in (({"target_token_ids": [0], "contrast_token_ids": [1]}, 1), ({"contrast_token_ids": [1]}, 0)):
+        ct = capture_causal_trace(m, ids, grad_mode="summary", **kw)
+        assert ct.meta["grad_objective"] == "logit_margin"
+        c = ct.grad_summary[mk]["causal_attr"]
+        assert abs(c) > 1.0
+        fd = (_margin(pos, 1.0) - _margin(pos, 1.0 - eps)) / eps
+        assert abs(fd - c) < 1e-2 * max(1.0, abs(c)), (kw, fd, c)
+        assert abs(ct.meta["target_obj_score"] - _margin(pos, 1.0)) < 1e-3 * max(1.0, abs(_margin(pos, 1.0)))
+
+
+def test_attribute_direction_writers_linearized_final_norm_and_block_gaps() -> None:
+    ids = [1, 4, 7, 11, 15]
+    cids = [2, 5, 9, 13, 17]
+    tdir = torch.randn(24, generator=torch.Generator().manual_seed(4))
+    for norm_kind in ("layernorm", "rmsnorm"):
+        m = _DirToyLM(vocab=32, hidden=24, inter=48, n_layers=3, n_heads=4, bias=True, final_norm=True).eval()
+        if norm_kind == "rmsnorm":
+            m.model.norm = _RMSNorm(24)
+        _rand_init(m, seed=13, std=0.18)
+        with torch.no_grad():
+            m.model.norm.weight.add_(1.0)
+        off = attribute_direction_writers(
+            m, ids, target_dir=tdir, target_layer=3, layer_convention="hidden_states", linearize_final_norm=False
+        )
+        assert off["final_norm_linearized"] is False
+        assert abs(off["residual_gap"]) > 0.05, (norm_kind, off["residual_gap"])
+        for pos in (-1, (1, 4)):
+            on = attribute_direction_writers(
+                m, ids, target_dir=tdir, target_layer=3, layer_convention="hidden_states",
+                pos=pos, contrast_inputs=[cids], top_k_neurons=9999, top_k_heads=9999,
+            )
+            assert on["final_norm_linearized"] is True
+            assert abs(on["residual_gap"]) < 1e-4, (norm_kind, pos, on["residual_gap"])
+            assert abs(on["delta_residual_gap"]) < 1e-4
+            assert abs(on["target_score"] - off["target_score"]) < 1e-5 or pos != -1
+            for row in on["modules"]:
+                mk = row["module"]
+                if row["kind"] == "mlp":
+                    s = sum(n["contrib"] for n in on["top_neurons"] if n["module"] == mk)
+                else:
+                    s = sum(h["contrib"] for h in on["top_heads"] if h["module"] == mk)
+                assert abs(s + row["bias_contrib"] - row["contrib"]) < 1e-4, (norm_kind, mk, s, row)
+
+    m2 = _DirToyLM(vocab=32, hidden=24, inter=48, n_layers=3, n_heads=4).eval()
+    m2.model.layers[1] = _HalfBlock(24, 48, 4)
+    _rand_init(m2, seed=21, std=0.2)
+    gaps = attribute_direction_writers(m2, ids, target_dir=tdir, target_layer=2, report_block_gaps=True)
+    by_l = {g["layer"]: g for g in gaps["block_residual_gaps"]}
+    assert set(by_l) == {0, 1, 2}
+    assert abs(by_l[0]["gap"]) < 1e-4 and abs(by_l[2]["gap"]) < 1e-4
+    assert abs(by_l[1]["gap"]) > 0.05, by_l
+
+
+def _chain_model(use_ckpt: bool) -> _DirToyLM:
+    m = _zero_model(vocab=32, hidden=16, inter=32, n_layers=3, n_heads=4, use_ckpt=use_ckpt)
+    with torch.no_grad():
+        m.model.embed_tokens.weight[10:15, 0] = 1.0
+        m.model.embed_tokens.weight[15, 2] = 2.0
+        b0, b1, b2 = m.model.layers
+        b0.mlp.gate_proj.weight[0, 2] = 2.0
+        b0.mlp.up_proj.weight[0, 2] = 2.0
+        b0.mlp.down_proj.weight[1, 0] = 1.5
+        b1.self_attn.v_proj.weight[0, 1] = 2.0
+        b1.self_attn.o_proj.weight[1, 0] = 1.5
+        b2.mlp.gate_proj.weight[0, 1] = 0.2
+        b2.mlp.up_proj.weight[0, 1] = 0.2
+        b2.mlp.down_proj.weight[3, 0] = 2.0
+    return m
+
+
+def test_trace_direction_graph_recovers_multihop_chain_and_gc_safe() -> None:
+    ids = [10, 11, 15, 12]
+    tdir = torch.zeros(16)
+    tdir[3] = 1.0
+    expected = [
+        "layers.0.mlp.down_proj:n0",
+        "layers.1.self_attn.o_proj:h0",
+        "layers.2.mlp.down_proj:n0",
+        "dir:L2",
+    ]
+    for use_ckpt in (False, True):
+        m = _chain_model(use_ckpt)
+        g = trace_direction_graph(m, ids, target_dir=tdir, target_layer=2, depth=3, top_k_nodes=2)
+        assert bool(m.is_gradient_checkpointing) is use_ckpt
+        assert g["root_score"] > 0.1
+        best = g["top_paths"][0]
+        assert best["nodes"] == expected, g["top_paths"][:3]
+        assert all(w > 0 for w in best["edge_weights"])
+        assert best["path_share"] > 0.5
+        nodes = {n["id"]: n for n in g["nodes"]}
+        for e in g["edges"]:
+            si, di = nodes[e["src"]]["exec_index"], nodes[e["dst"]]["exec_index"]
+            if di is not None:
+                assert si is not None and si < di, e
+        assert nodes["layers.0.mlp.down_proj:n0"]["causal_to_root"] > 0.1
+        assert abs(nodes["layers.0.mlp.down_proj:n0"]["direct_to_root"]) < 1e-5
+        assert g["per_input_top_tokens"][0][0]["pos"] == 2
+
+
+def test_peel_causal_circuit_exposes_hydra_backup_and_restores_weights() -> None:
+    m = _zero_model(vocab=32, hidden=16, inter=32, n_layers=2, n_heads=4)
+    with torch.no_grad():
+        m.model.embed_tokens.weight[10:15, 0] = 1.0
+        b0, b1 = m.model.layers
+        # Primary: L0 neuron 0 writes the target e3
+        b0.mlp.gate_proj.weight[0, 0] = 2.0
+        b0.mlp.up_proj.weight[0, 0] = 2.0
+        b0.mlp.down_proj.weight[3, 0] = 1.0
+        # Hydra backup: L1 neuron 0 is suppressed while e3 is high and wakes up to restore e3 when it drops
+        b1.mlp.gate_proj.weight[0, 0] = 1.0
+        b1.mlp.gate_proj.weight[0, 3] = -1.0
+        b1.mlp.up_proj.weight[0, 0] = 1.0
+        b1.mlp.down_proj.weight[3, 0] = 2.0
+    tdir = torch.zeros(16)
+    tdir[3] = 1.0
+    snap = {k: v.detach().clone() for k, v in m.state_dict().items()}
+
+    res = peel_causal_circuit(m, [[10, 11, 12], [12, 13, 14]], target_dir=tdir, target_layer=1, n_rounds=2, alpha=4.0)
+    assert res["n_rounds_completed"] == 2
+    assert res["rounds"][0]["selected_modules"] == ["layers.0.mlp.down_proj"]
+    assert res["rounds"][1]["selected_modules"] == ["layers.1.mlp.down_proj"]
+    # The backup wakes up after round 0 (score rises), round 1 removes it
+    assert res["rounds"][0]["post_score"] > res["rounds"][0]["pre_score"]
+    assert res["final_score"] < res["base_score"]
+    assert res["restore_exact_ok"] is True
+    for k, v in m.state_dict().items():
+        assert torch.equal(v, snap[k]), k
+    h = res["cumulative_patch"].attach(m)
+    assert h.fingerprint_ok()
