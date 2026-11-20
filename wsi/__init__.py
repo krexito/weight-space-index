@@ -31,10 +31,12 @@ from .spec_eval import (
 )
 from .tracer import (
     CompactTrace,
+    capture_causal_trace,
     capture_compact,
     dequantize_block_fp4,
     dequantize_block_int4,
     dequantize_block_ternary,
+    diagnose_causal_traces,
     diff_compact,
     diff_traces,
     discover_compact_circuit,
@@ -46,6 +48,7 @@ from .tracer import (
     quantize_block_ternary,
     resolve_mlp_idx_mode,
     screen_patch_candidates,
+    screen_patches_from_traces,
 )
 
 __all__ = [
@@ -61,11 +64,13 @@ __all__ = [
     "TaskRouter",
     "apply_selection",
     "capture_base_drafts",
+    "capture_causal_trace",
     "capture_compact",
     "capture_index",
     "dequantize_block_fp4",
     "dequantize_block_int4",
     "dequantize_block_ternary",
+    "diagnose_causal_traces",
     "diff_compact",
     "diff_traces",
     "discover_compact_circuit",
@@ -81,6 +86,7 @@ __all__ = [
     "quantize_block_ternary",
     "resolve_mlp_idx_mode",
     "screen_patch_candidates",
+    "screen_patches_from_traces",
     "speculative_generate_with_base",
     "trace_all",
     "DynamicCircuitPager",

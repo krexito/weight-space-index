@@ -365,9 +365,24 @@ class CompactTrace:
     cache: dict[str, dict[str, Any]] = field(default_factory=dict)
     head_quant: str = "int8"
     meta: dict[str, Any] = field(default_factory=dict)
+    grad_quant: str = "int8"
+    grad_mode: str = "none"
+    grad_target: dict[str, dict[str, Any]] = field(default_factory=dict)
+    grad_healthy: dict[str, dict[str, Any]] = field(default_factory=dict)
+    grad_summary: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def dequant_resid(self, layer: int) -> torch.Tensor:
         return _decode_resid(self.resid[layer], self.resid_quant, self.group_size, self.hadamard_block)
+
+    def dequant_grad(self, mod_suffix: str, kind: str = "target") -> torch.Tensor | None:
+        """Reconstruct a compressed `(T, D) float32` output gradient tensor for ``mod_suffix``."""
+        src = self.grad_target if kind == "target" else self.grad_healthy if kind == "healthy" else None
+        if src is None:
+            raise ValueError(f"kind must be 'target' or 'healthy', got {kind!r}")
+        entry = src.get(mod_suffix)
+        if not entry:
+            return None
+        return _decode_resid(entry, self.grad_quant, self.group_size, self.hadamard_block)
 
     def dequant_head_in(self, mod: str) -> torch.Tensor | None:
         """Reconstruct pre-output-projection head activations `(T, n_heads * head_dim) float32` if stored."""
@@ -426,13 +441,21 @@ class CompactTrace:
         attn_b = sum(_tbytes(t) for a in self.attn_topk.values() for t in a.values())
         cache_b = sum(_tbytes(c["data"]) + (_tbytes(c["scales"]) if c["scales"] is not None else 0)
                       for c in self.cache.values())
+        grad_b = (
+            sum(_tbytes(g["data"]) + (_tbytes(g["scales"]) if g.get("scales") is not None else 0)
+                for g in self.grad_target.values())
+            + sum(_tbytes(g["data"]) + (_tbytes(g["scales"]) if g.get("scales") is not None else 0)
+                  for g in self.grad_healthy.values())
+            + sum(_tbytes(v) for s in self.grad_summary.values() for v in s.values() if isinstance(v, torch.Tensor))
+        )
         return {
             "resid": resid_b,
             "mlp_topk": mlp_b,
             "head_norms": head_b,
             "attn_topk": attn_b,
             "cache": cache_b,
-            "total": resid_b + mlp_b + head_b + attn_b + cache_b,
+            "grad": grad_b,
+            "total": resid_b + mlp_b + head_b + attn_b + cache_b + grad_b,
         }
 
     def size_bytes(self) -> int:
@@ -546,6 +569,32 @@ class CompactTrace:
             if c["scales"] is not None:
                 flat[f"cache.{idx}.scales"] = c["scales"].contiguous()
             cache_meta[str(idx)] = {"key": ck, "shape": list(c["shape"])}
+        grad_target_meta: dict[str, Any] = {}
+        for idx, (mk, g) in enumerate(self.grad_target.items()):
+            flat[f"grad_t.{idx}.data"] = g["data"].contiguous()
+            if g.get("scales") is not None:
+                flat[f"grad_t.{idx}.scales"] = g["scales"].contiguous()
+            grad_target_meta[str(idx)] = {"module": mk, "shape": list(g["shape"])}
+        grad_healthy_meta: dict[str, Any] = {}
+        for idx, (mk, g) in enumerate(self.grad_healthy.items()):
+            flat[f"grad_h.{idx}.data"] = g["data"].contiguous()
+            if g.get("scales") is not None:
+                flat[f"grad_h.{idx}.scales"] = g["scales"].contiguous()
+            grad_healthy_meta[str(idx)] = {"module": mk, "shape": list(g["shape"])}
+        grad_summary_meta: dict[str, Any] = {}
+        for idx, (mk, gs) in enumerate(self.grad_summary.items()):
+            tkeys = []
+            smeta: dict[str, Any] = {"module": mk}
+            for k, v in gs.items():
+                if isinstance(v, torch.Tensor):
+                    flat[f"grad_s.{idx}.{k}"] = v.detach().cpu().contiguous()
+                    tkeys.append(k)
+                elif isinstance(v, tuple):
+                    smeta[k] = list(v)
+                else:
+                    smeta[k] = v
+            smeta["tensor_keys"] = tkeys
+            grad_summary_meta[str(idx)] = smeta
         save_file(flat, str(p / "compact_trace.safetensors"))
         (p / "compact_trace.json").write_text(json.dumps({
             "seq_len": self.seq_len, "n_layers": self.n_layers, "hidden_size": self.hidden_size,
@@ -556,6 +605,9 @@ class CompactTrace:
             "top_k_attn": self.top_k_attn, "attn_layers": sorted(self.attn_topk),
             "cache_quant": self.cache_quant, "cache_meta": cache_meta,
             "head_quant": self.head_quant, "resid_shapes": resid_shapes, "heads": head_meta, "meta": self.meta,
+            "grad_quant": self.grad_quant, "grad_mode": self.grad_mode,
+            "grad_target_meta": grad_target_meta, "grad_healthy_meta": grad_healthy_meta,
+            "grad_summary_meta": grad_summary_meta,
         }, indent=2), encoding="utf-8")
         return p
 
@@ -591,6 +643,31 @@ class CompactTrace:
                 "scales": tens.get(f"cache.{idx}.scales"),
                 "shape": cm["shape"],
             }
+        grad_target: dict[str, dict[str, Any]] = {}
+        for idx, gm in info.get("grad_target_meta", {}).items():
+            grad_target[gm["module"]] = {
+                "data": tens[f"grad_t.{idx}.data"],
+                "scales": tens.get(f"grad_t.{idx}.scales"),
+                "shape": gm["shape"],
+            }
+        grad_healthy: dict[str, dict[str, Any]] = {}
+        for idx, gm in info.get("grad_healthy_meta", {}).items():
+            grad_healthy[gm["module"]] = {
+                "data": tens[f"grad_h.{idx}.data"],
+                "scales": tens.get(f"grad_h.{idx}.scales"),
+                "shape": gm["shape"],
+            }
+        grad_summary: dict[str, dict[str, Any]] = {}
+        for idx, sm in info.get("grad_summary_meta", {}).items():
+            mod = sm["module"]
+            entry: dict[str, Any] = {
+                k: v for k, v in sm.items() if k not in ("module", "tensor_keys")
+            }
+            if "pareto_betas" in entry and isinstance(entry["pareto_betas"], list):
+                entry["pareto_betas"] = tuple(entry["pareto_betas"])
+            for tk in sm.get("tensor_keys", ()):
+                entry[tk] = tens[f"grad_s.{idx}.{tk}"]
+            grad_summary[mod] = entry
         mlp_meta = {int(ls): m for ls, m in info.get("mlp_meta", {}).items()}
         return cls(
             info["seq_len"], info["n_layers"], info["hidden_size"], info["resid_quant"],
@@ -606,10 +683,23 @@ class CompactTrace:
             cache=cache,
             head_quant=info.get("head_quant", "norm"),
             meta=info.get("meta", {}),
+            grad_quant=info.get("grad_quant", "int8"),
+            grad_mode=info.get("grad_mode", "none"),
+            grad_target=grad_target,
+            grad_healthy=grad_healthy,
+            grad_summary=grad_summary,
         )
 
 
-@torch.no_grad()
+def _safe_module_suffix(name: str) -> str:
+    from .moipatch import module_suffix
+
+    try:
+        return module_suffix(name)
+    except ValueError:
+        return name
+
+
 def capture_compact(
     model: nn.Module,
     input_ids: torch.Tensor | list[int],
@@ -627,12 +717,25 @@ def capture_compact(
     cache_quant: str = "int8",
     head_quant: str = "int8",
     max_tokens: int | None = None,
+    capture_grad: bool = False,
+    grad_mode: str = "compressed",
+    grad_quant: str = "int8",
+    grad_rank: int = 8,
+    target_span: tuple[int, int] | None = None,
+    healthy_span: tuple[int, int] | None = None,
+    grad_checkpointing: bool = True,
+    pareto_betas: tuple[float, ...] = (0.0, 0.5, 1.0, 2.0, 4.0),
 ) -> CompactTrace:
     """Record a Pareto-optimal compressed token trace (~80-95 MiB per 1.6k tok on 0.8B):
     INT8 Hadamard-rotated residuals, adaptive or fixed Top-K FP4 bitmask/bitpack MLP units
     (default `top_k_mlp="auto"` picks per-layer `K` to reach `mlp_energy_target=0.95`),
     `head_quant` pre-`W_O` head vectors + post-`W_O` L2 norms, sparse Top-16 attention targets,
-    and INT8 KV/recurrent cache states."""
+    and INT8 KV/recurrent cache states. When ``capture_grad=True``, also runs target & healthy
+    backward passes to record per-module causal summaries (and compressed token-level gradients
+    when ``grad_mode="compressed"``)."""
+    if capture_grad and grad_mode not in ("compressed", "summary"):
+        raise ValueError(f"grad_mode must be 'compressed' or 'summary', got {grad_mode!r}")
+
     if isinstance(top_k_mlp, str):
         if top_k_mlp != "auto":
             raise ValueError(f"Unsupported top_k_mlp string {top_k_mlp!r}; expected 'auto', int, or (0, 1] fraction")
@@ -652,7 +755,9 @@ def capture_compact(
     ids = (input_ids if isinstance(input_ids, torch.Tensor) else torch.tensor(input_ids)).reshape(1, -1)
     if max_tokens is not None:
         ids = ids[:, :max_tokens]
-    T = ids.shape[1]
+    T = int(ids.shape[1])
+    if capture_grad and T < 2:
+        raise ValueError(f"capture_compact(capture_grad=True) requires seq_len >= 2, got {T}")
 
     _, blocks = find_blocks(model)
     n_layers = len(blocks)
@@ -776,24 +881,25 @@ def capture_compact(
 
     out = None
     try:
-        try:
-            out = model(input_ids=ids.to(dev), output_attentions=(top_k_attn > 0), use_cache=capture_cache)
-        except (TypeError, ValueError, NotImplementedError):
-            resid_out.clear()
-            mlp_topk_out.clear()
-            mlp_meta_out.clear()
-            head_out.clear()
-            if top_k_attn > 0:
-                try:
-                    out = model(input_ids=ids.to(dev), use_cache=capture_cache)
-                except (TypeError, ValueError, NotImplementedError):
-                    resid_out.clear()
-                    mlp_topk_out.clear()
-                    mlp_meta_out.clear()
-                    head_out.clear()
+        with torch.no_grad():
+            try:
+                out = model(input_ids=ids.to(dev), output_attentions=(top_k_attn > 0), use_cache=capture_cache)
+            except (TypeError, ValueError, NotImplementedError):
+                resid_out.clear()
+                mlp_topk_out.clear()
+                mlp_meta_out.clear()
+                head_out.clear()
+                if top_k_attn > 0:
+                    try:
+                        out = model(input_ids=ids.to(dev), use_cache=capture_cache)
+                    except (TypeError, ValueError, NotImplementedError):
+                        resid_out.clear()
+                        mlp_topk_out.clear()
+                        mlp_meta_out.clear()
+                        head_out.clear()
+                        out = model(input_ids=ids.to(dev), use_cache=False)
+                else:
                     out = model(input_ids=ids.to(dev), use_cache=False)
-            else:
-                out = model(input_ids=ids.to(dev), use_cache=False)
     finally:
         for h in handles:
             h.remove()
@@ -826,11 +932,14 @@ def capture_compact(
     if capture_cache and out is not None:
         for ck, cv in _extract_cache_tensors(getattr(out, "past_key_values", None)).items():
             cache_out[ck] = _encode_resid(cv, cache_quant, group_size, 0)
+    del out
+    if dev.type == "cuda":
+        torch.cuda.empty_cache()
 
     modes = {m["mode"] for m in mlp_meta_out.values()}
     eff_idx_mode = next(iter(modes)) if len(modes) == 1 else mlp_idx_mode
     eff_top_k_mlp = round(sum(m["k"] for m in mlp_meta_out.values()) / len(mlp_meta_out)) if (auto_mlp and mlp_meta_out) else (0 if auto_mlp else int(top_k_mlp))
-    trace_meta = {
+    trace_meta: dict[str, Any] = {
         "top_k_mlp_mode": "auto" if auto_mlp else "fixed",
         "mlp_energy_target": round(float(target_ef), 4) if auto_mlp else None,
         "mlp_k_min": min((m["k"] for m in mlp_meta_out.values()), default=0),
@@ -840,12 +949,257 @@ def capture_compact(
             sum(m["mean_energy_frac"] for m in mlp_meta_out.values()) / max(1, len(mlp_meta_out)), 5
         ),
     }
+
+    grad_target_out: dict[str, dict[str, Any]] = {}
+    grad_healthy_out: dict[str, dict[str, Any]] = {}
+    grad_summary_out: dict[str, dict[str, Any]] = {}
+    eff_grad_mode = "none"
+
+    if capture_grad:
+        eff_grad_mode = grad_mode
+        lo_t, hi_t = _resolve_target_span(T, target_span)
+        if healthy_span is not None:
+            lo_h = max(0, min(T - 2, int(healthy_span[0])))
+            hi_h = max(lo_h, min(T - 1, int(healthy_span[1])))
+        elif lo_t >= 1:
+            lo_h, hi_h = 0, lo_t
+        else:
+            lo_h, hi_h = 0, 0
+
+        grad_mods: dict[str, dict[str, Any]] = {}
+        for dname, li in mlp_by_down.items():
+            mk = _safe_module_suffix(dname)
+            grad_mods[mk] = {"mod": mods[dname], "kind": "mlp", "layer": int(li)}
+        for aname, (am, _nh) in attns.items():
+            mk = _safe_module_suffix(aname)
+            li = _layer_idx_from_name(aname)
+            grad_mods[mk] = {"mod": am, "kind": "attn", "layer": int(li) if li is not None else None}
+
+        orig_req = [(p, p.requires_grad) for p in model.parameters()]
+        was_training = bool(model.training)
+        was_gc = bool(getattr(model, "is_gradient_checkpointing", False))
+        enabled_gc = False
+        for p, _ in orig_req:
+            p.requires_grad_(False)
+        model.eval()
+        if grad_checkpointing and not was_gc and hasattr(model, "gradient_checkpointing_enable"):
+            try:
+                model.gradient_checkpointing_enable()
+                enabled_gc = True
+            except Exception:
+                enabled_gc = False
+
+        ids_dev = ids.to(dev)
+
+        def _run_backward(lo: int, hi: int, sign: float, *, capture_acts: bool) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor]]:
+            st_h: dict[str, torch.Tensor] = {}
+            st_y: dict[str, torch.Tensor] = {}
+            st_g: dict[str, torch.Tensor] = {}
+            ghandles = []
+
+            emb_mod = model.get_input_embeddings() if hasattr(model, "get_input_embeddings") else getattr(getattr(model, "model", model), "embed_tokens", None)
+            if emb_mod is not None:
+                def _emb_hook(_m, _inp, emb_out):
+                    if torch.is_grad_enabled() and isinstance(emb_out, torch.Tensor) and not emb_out.requires_grad:
+                        return emb_out.detach().requires_grad_(True)
+                    return emb_out
+                ghandles.append(emb_mod.register_forward_hook(_emb_hook))
+
+            for mk, meta_m in grad_mods.items():
+                mod = meta_m["mod"]
+
+                def _mod_hook(_m, inp, mod_out, mk=mk):
+                    if capture_acts and mk not in st_h:
+                        x_in = inp[0] if isinstance(inp, tuple) else inp
+                        st_h[mk] = (x_in[0] if x_in.dim() == 3 else x_in).detach().float().cpu()
+                    t = mod_out[0] if isinstance(mod_out, tuple) else mod_out
+                    if capture_acts and mk not in st_y:
+                        st_y[mk] = (t[0] if t.dim() == 3 else t).detach().float().cpu()
+                    if torch.is_grad_enabled() and isinstance(t, torch.Tensor):
+                        need_replace = False
+                        if not t.requires_grad:
+                            t = t.detach().requires_grad_(True)
+                            need_replace = True
+
+                        def _save_g(grad, mk=mk):
+                            st_g[mk] = (grad[0] if grad.dim() == 3 else grad).detach().float().cpu()
+
+                        t.register_hook(_save_g)
+                        if need_replace:
+                            return (t, *mod_out[1:]) if isinstance(mod_out, tuple) else t
+                    return mod_out
+
+                ghandles.append(mod.register_forward_hook(_mod_hook))
+
+            logits = lp = obj = None
+            try:
+                with torch.enable_grad():
+                    logits = _tail_logits(model, ids_dev, lo)[: hi - lo].float()
+                    lp = F.log_softmax(logits, dim=-1).gather(1, ids_dev[0, lo + 1 : hi + 1, None]).squeeze(1)
+                    obj = sign * lp.mean()
+                    if obj.requires_grad:
+                        obj.backward()
+            finally:
+                for gh in ghandles:
+                    gh.remove()
+                del logits, lp, obj
+                if dev.type == "cuda":
+                    torch.cuda.empty_cache()
+
+            for mk in grad_mods:
+                if mk in st_y and mk not in st_g:
+                    st_g[mk] = torch.zeros_like(st_y[mk])
+            return st_h, st_y, st_g
+
+        try:
+            acts_h, acts_y, g_target_map = _run_backward(lo_t, hi_t, 1.0, capture_acts=True)
+            if hi_h > lo_h:
+                _, _, g_healthy_map = _run_backward(lo_h, hi_h, -1.0, capture_acts=False)
+            else:
+                g_healthy_map = {}
+
+            betas = tuple(float(b) for b in pareto_betas)
+            for mk, meta_m in grad_mods.items():
+                if mk not in acts_y or mk not in acts_h:
+                    continue
+                mod = meta_m["mod"]
+                h_act = acts_h[mk]
+                y_act = acts_y[mk]
+                g_t = g_target_map.get(mk, torch.zeros_like(y_act))
+                g_h = g_healthy_map.get(mk, torch.zeros_like(y_act))
+                D = int(y_act.shape[-1])
+                U = int(h_act.shape[-1])
+
+                w_raw = mod.weight.detach().float().cpu()
+                W_lin = w_raw if isinstance(mod, nn.Linear) else (w_raw.t() if w_raw.dim() == 2 else w_raw)
+
+                neuron_supp_attr = ((g_t @ W_lin) * h_act).sum(dim=0).float()
+                neuron_dnll_attr = (-((g_h @ W_lin) * h_act).sum(dim=0).float()) if hi_h > lo_h else torch.zeros(U, dtype=torch.float32)
+
+                C_t = 0.5 * (g_t.t() @ y_act + y_act.t() @ g_t)
+                C_h = (0.5 * (g_h.t() @ y_act + y_act.t() @ g_h)) if hi_h > lo_h else torch.zeros((D, D), dtype=torch.float32)
+
+                # Restrict curvature eigendecomposition to the gradient-active subspace so massive
+                # nullspace activations (orthogonal to both g_t and g_h) cannot create cross-term decoys.
+                G_gram = g_t.t() @ g_t + ((g_h.t() @ g_h) if hi_h > lo_h else 0.0)
+                gevals, gevecs = torch.linalg.eigh(0.5 * (G_gram + G_gram.t()))
+                g_max = float(gevals[-1].item())
+                r = min(max(1, int(grad_rank)), D)
+                if g_max > 1e-12:
+                    keep = (gevals >= 1e-3 * g_max).nonzero(as_tuple=True)[0]
+                    keep = keep[-min(len(keep), max(r, 1)):]
+                    Q = gevecs[:, keep]
+                    C_t_sub = 0.5 * (Q.t() @ (C_t + C_t.t()) @ Q)
+                    C_h_sub = 0.5 * (Q.t() @ (C_h + C_h.t()) @ Q)
+                    evals_t, evecs_t_sub = torch.linalg.eigh(C_t_sub)
+                    evecs_t = Q @ evecs_t_sub
+                    evals_h, evecs_h_sub = torch.linalg.eigh(C_h_sub)
+                    evecs_h = Q @ evecs_h_sub
+                else:
+                    Q = None
+                    evals_t = torch.zeros(1, dtype=torch.float32)
+                    evecs_t = torch.eye(D, 1, dtype=torch.float32)
+                    evals_h = torch.zeros(1, dtype=torch.float32)
+                    evecs_h = torch.eye(D, 1, dtype=torch.float32)
+
+                r_t = min(r, int(evals_t.numel()))
+                idx_t = torch.argsort(evals_t, descending=True)[:r_t]
+                c_target_eigvecs = evecs_t[:, idx_t].t().contiguous().float()
+                c_target_eigvals = evals_t[idx_t].float()
+
+                r_h = min(r, int(evals_h.numel()))
+                idx_h = torch.argsort(evals_h.abs(), descending=True)[:r_h]
+                c_healthy_eigvecs = evecs_h[:, idx_h].t().contiguous().float()
+                c_healthy_eigvals = evals_h[idx_h].float()
+
+                p_vecs = []
+                for beta in betas:
+                    if Q is not None:
+                        _, ev_p_sub = torch.linalg.eigh(C_t_sub + beta * C_h_sub)
+                        p_vecs.append((Q @ ev_p_sub[:, -1]).contiguous().float())
+                    else:
+                        p_vecs.append(evecs_t[:, 0].contiguous().float())
+                pareto_eigvecs = torch.stack(p_vecs, dim=0) if p_vecs else torch.empty((0, D), dtype=torch.float32)
+
+                paired_diff = (
+                    (y_act[lo_t:hi_t].mean(dim=0) - y_act[lo_h:hi_h].mean(dim=0)).float()
+                    if hi_h > lo_h
+                    else y_act[lo_t:hi_t].mean(dim=0).float()
+                )
+                u0 = c_target_eigvecs[0]
+                target_supp_top1 = float(c_target_eigvals[0].item())
+                healthy_dnll_top1 = float(-(u0 @ C_h @ u0).item())
+                pareto_top1 = target_supp_top1 / max(abs(healthy_dnll_top1), 0.01)
+
+                grad_summary_out[mk] = {
+                    "kind": meta_m["kind"],
+                    "layer": meta_m["layer"],
+                    "d_out": D,
+                    "d_in": U,
+                    "neuron_supp_attr": neuron_supp_attr,
+                    "neuron_dnll_attr": neuron_dnll_attr,
+                    "paired_diff": paired_diff,
+                    "c_target_eigvecs": c_target_eigvecs,
+                    "c_target_eigvals": c_target_eigvals,
+                    "c_healthy_eigvecs": c_healthy_eigvecs,
+                    "c_healthy_eigvals": c_healthy_eigvals,
+                    "pareto_eigvecs": pareto_eigvecs,
+                    "pareto_betas": betas,
+                    "target_supp_top1": round(target_supp_top1, 6),
+                    "healthy_dnll_top1": round(healthy_dnll_top1, 6),
+                    "pareto_top1": round(pareto_top1, 6),
+                    "paired_diff_norm": round(float(paired_diff.norm().item()), 6),
+                }
+
+                if grad_mode == "compressed":
+                    grad_target_out[mk] = _encode_resid(g_t, grad_quant, group_size, hadamard_block)
+                    if hi_h > lo_h:
+                        grad_healthy_out[mk] = _encode_resid(g_h, grad_quant, group_size, hadamard_block)
+
+            trace_meta["grad_n_target"] = int(hi_t - lo_t)
+            trace_meta["grad_n_healthy"] = int(max(0, hi_h - lo_h))
+            trace_meta["target_span"] = [int(lo_t), int(hi_t)]
+            trace_meta["healthy_span"] = [int(lo_h), int(hi_h)]
+        finally:
+            if enabled_gc and hasattr(model, "gradient_checkpointing_disable"):
+                try:
+                    model.gradient_checkpointing_disable()
+                except Exception:
+                    pass
+            if was_training:
+                model.train()
+            for p, req in orig_req:
+                p.requires_grad_(req)
+
     return CompactTrace(
         T, n_layers, hidden, resid_quant, group_size, eff_top_k_mlp,
         resid_out, mlp_topk_out, head_out, hadamard_block=hadamard_block,
         mlp_quant=mlp_quant, mlp_idx_mode=eff_idx_mode, mlp_group_size=mlp_group_size,
         mlp_meta=mlp_meta_out, top_k_attn=top_k_attn, attn_topk=attn_topk_out,
         cache_quant=cache_quant, cache=cache_out, head_quant=head_quant, meta=trace_meta,
+        grad_quant=grad_quant, grad_mode=eff_grad_mode,
+        grad_target=grad_target_out, grad_healthy=grad_healthy_out, grad_summary=grad_summary_out,
+    )
+
+
+def capture_causal_trace(
+    model: nn.Module,
+    input_ids: torch.Tensor | list[int],
+    *,
+    target_span: tuple[int, int] | None,
+    healthy_span: tuple[int, int] | None = None,
+    grad_mode: str = "compressed",
+    **kwargs: Any,
+) -> CompactTrace:
+    """Convenience wrapper calling ``capture_compact(..., capture_grad=True)``."""
+    return capture_compact(
+        model,
+        input_ids,
+        capture_grad=True,
+        grad_mode=grad_mode,
+        target_span=target_span,
+        healthy_span=healthy_span,
+        **kwargs,
     )
 
 
@@ -1952,6 +2306,287 @@ def gradient_screen_candidates(
     for name, patch in items:
         grad_supp = -_first_order(patch, tgt_pieces)
         grad_dnll = _first_order(patch, hlt_pieces)
+        grad_pareto = grad_supp / max(abs(grad_dnll), 0.01)
+        rows.append({
+            "name": name,
+            "grad_supp": round(grad_supp, 6),
+            "grad_dnll": round(grad_dnll, 6),
+            "grad_pareto": round(grad_pareto, 6),
+            "passes_nll_guard": bool(grad_dnll <= max_nll_delta),
+        })
+    rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["grad_pareto"], -r["grad_supp"], abs(r["grad_dnll"])))
+    return rows
+
+
+def diagnose_causal_traces(
+    traces: list[CompactTrace],
+    *,
+    split_ab: bool = True,
+    top_k_sites: int = 8,
+    top_n_neurons: int = 64,
+    healthy_penalty: float = 1.0,
+    max_healthy_ratio: float = 0.5,
+    betas: tuple[float, ...] = (0.0, 0.5, 1.0, 2.0, 4.0),
+) -> dict[str, Any]:
+    """Offline causal diagnosis across unified MLP & Attention sites from captured causal ``CompactTrace``s.
+
+    Uses Half-A / Half-B held-out cross-validation on low-rank target & healthy curvature matrices
+    ``C_target`` and ``C_healthy`` to pick the site, direction (``paired``, ``causal``, or Pareto
+    Lagrangian ``C_target + beta * C_healthy``), and net causal neurons without touching any GPU.
+    """
+    if not traces:
+        raise ValueError("diagnose_causal_traces requires at least one CompactTrace")
+    if not any(ct.grad_summary for ct in traces):
+        raise ValueError("Traces lack grad_summary; capture with capture_compact(..., capture_grad=True)")
+
+    all_mods = sorted({mk for ct in traces for mk in ct.grad_summary})
+    half_a = traces[0::2] if (split_ab and len(traces) >= 2) else traces
+    half_b = traces[1::2] if (split_ab and len(traces) >= 2) else traces
+
+    def _pool_half(sub_traces: list[CompactTrace], mk: str) -> dict[str, Any]:
+        items = [
+            (
+                ct.grad_summary[mk],
+                max(0, int(ct.meta.get("grad_n_target", max(1, ct.seq_len - 1)))),
+                max(0, int(ct.meta.get("grad_n_healthy", 0))),
+            )
+            for ct in sub_traces
+            if mk in ct.grad_summary
+        ]
+        if not items:
+            raise KeyError(f"Module {mk!r} missing from split")
+        gs0 = items[0][0]
+        D = int(gs0["d_out"])
+        U = int(gs0["d_in"])
+        tot_t = sum(nt for _, nt, _ in items)
+        tot_h = sum(nh for _, _, nh in items)
+
+        C_t = torch.zeros((D, D), dtype=torch.float32)
+        C_h = torch.zeros((D, D), dtype=torch.float32)
+        paired = torch.zeros(D, dtype=torch.float32)
+        n_supp = torch.zeros(U, dtype=torch.float32)
+        n_dnll = torch.zeros(U, dtype=torch.float32)
+
+        for gs, nt, nh in items:
+            wt = (nt / tot_t) if tot_t > 0 else (1.0 / len(items))
+            vt = gs["c_target_eigvecs"].float()
+            lt = gs["c_target_eigvals"].float()
+            C_t += wt * (vt.t() @ (lt[:, None] * vt))
+            paired += wt * gs["paired_diff"].float()
+            n_supp += wt * gs["neuron_supp_attr"].float()
+            if tot_h > 0 and nh > 0:
+                wh = nh / tot_h
+                vh = gs["c_healthy_eigvecs"].float()
+                lh = gs["c_healthy_eigvals"].float()
+                C_h += wh * (vh.t() @ (lh[:, None] * vh))
+                n_dnll += wh * gs["neuron_dnll_attr"].float()
+
+        C_t = 0.5 * (C_t + C_t.t())
+        C_h = 0.5 * (C_h + C_h.t())
+        return {
+            "kind": gs0["kind"],
+            "layer": gs0["layer"],
+            "C_t": C_t,
+            "C_h": C_h,
+            "paired_diff": paired,
+            "neuron_supp": n_supp,
+            "neuron_dnll": n_dnll,
+        }
+
+    sites_all: list[dict[str, Any]] = []
+    directions: dict[str, torch.Tensor] = {}
+    top_neurons: dict[str, list[int]] = {}
+
+    for mk in all_mods:
+        pa = _pool_half(half_a, mk)
+        pb = _pool_half(half_b, mk) if half_b is not half_a else pa
+        pall = _pool_half(traces, mk)
+
+        C_t_A, C_h_A, diff_A = pa["C_t"], pa["C_h"], pa["paired_diff"]
+        C_t_B, C_h_B = pb["C_t"], pb["C_h"]
+
+        # Orthonormal basis of the Half-A active subspace (all stored C_t/C_h eigenvectors)
+        basis_rows = [
+            ct.grad_summary[mk][key].float()
+            for ct in half_a
+            if mk in ct.grad_summary
+            for key in ("c_target_eigvecs", "c_healthy_eigvecs")
+        ]
+        B_mat = torch.cat(basis_rows, dim=0) if basis_rows else torch.empty((0, C_t_A.shape[0]))
+        if B_mat.numel() > 0 and float(B_mat.abs().max().item()) > 1e-12:
+            q_a, r_a = torch.linalg.qr(B_mat.t(), mode="reduced")
+            active_cols = (r_a.abs().diag() > 1e-6).nonzero(as_tuple=True)[0]
+            Q_A = q_a[:, active_cols] if active_cols.numel() > 0 else None
+        else:
+            Q_A = None
+
+        cands: list[tuple[str, torch.Tensor]] = []
+        if float(diff_A.norm().item()) > 1e-12:
+            cands.append(("paired", (diff_A / diff_A.norm()).float()))
+        if Q_A is not None:
+            C_t_sub = 0.5 * (Q_A.t() @ (C_t_A + C_t_A.t()) @ Q_A)
+            C_h_sub = 0.5 * (Q_A.t() @ (C_h_A + C_h_A.t()) @ Q_A)
+            _, ev_c = torch.linalg.eigh(C_t_sub)
+            cands.append(("causal", (Q_A @ ev_c[:, -1]).contiguous().float()))
+            for beta in betas:
+                _, ev_p = torch.linalg.eigh(C_t_sub + float(beta) * C_h_sub)
+                cands.append((f"pareto_b{beta:g}", (Q_A @ ev_p[:, -1]).contiguous().float()))
+        else:
+            _, ev_c = torch.linalg.eigh(C_t_A)
+            cands.append(("causal", ev_c[:, -1].contiguous().float()))
+
+        scored_cands: list[tuple[float, float, float, str, torch.Tensor]] = []
+        for kind_lbl, u in cands:
+            u = u / u.norm().clamp_min(1e-12)
+            supp_b = float((u @ C_t_B @ u).item())
+            dnll_b = float(-(u @ C_h_B @ u).item())
+            pareto_b = supp_b / max(abs(dnll_b), 0.01)
+            scored_cands.append((pareto_b, supp_b, -abs(dnll_b), kind_lbl, u))
+
+        best_pareto, best_supp, neg_dnll_abs, best_kind, best_u = max(scored_cands, key=lambda x: (x[0], x[1], x[2]))
+        best_dnll = float(-(best_u @ C_h_B @ best_u).item())
+        if float(diff_A.norm().item()) > 1e-12:
+            if float((best_u @ diff_A).item()) < 0.0:
+                best_u = -best_u
+        else:
+            top_i = int(best_u.abs().argmax().item())
+            if float(best_u[top_i].item()) < 0.0:
+                best_u = -best_u
+
+        supp_n = pall["neuron_supp"]
+        dnll_n = pall["neuron_dnll"]
+        net_n = supp_n - float(healthy_penalty) * torch.clamp(dnll_n, min=0.0)
+        order = torch.argsort(net_n, descending=True).tolist()
+        safe = [i for i in order if float(dnll_n[i].item()) <= float(max_healthy_ratio) * max(float(supp_n[i].item()), 1e-8)]
+        picked = safe[:top_n_neurons] if safe else order[:top_n_neurons]
+
+        directions[mk] = best_u
+        top_neurons[mk] = picked
+        sites_all.append({
+            "module": mk,
+            "kind": pa["kind"],
+            "layer": pa["layer"],
+            "best_dir_kind": best_kind,
+            "pareto_score": round(best_pareto, 6),
+            "target_supp": round(best_supp, 6),
+            "healthy_dnll": round(best_dnll, 6),
+            "passive_diff_norm": round(float(pall["paired_diff"].norm().item()), 6),
+            "n_safe_neurons": len(safe),
+            "top_neuron": picked[0] if picked else None,
+        })
+
+    passive_rank = [r["module"] for r in sorted(sites_all, key=lambda r: (-r["passive_diff_norm"], r["module"]))]
+    sites_all.sort(key=lambda r: (-r["pareto_score"], -r["target_supp"], abs(r["healthy_dnll"])))
+    causal_rank = [r["module"] for r in sites_all]
+
+    return {
+        "sites": sites_all[:top_k_sites],
+        "all_sites": sites_all,
+        "causal_rank": causal_rank,
+        "passive_rank": passive_rank,
+        "directions": directions,
+        "top_neurons": top_neurons,
+        "split_mode": "half_ab" if (split_ab and len(traces) >= 2) else "full",
+        "n_traces": len(traces),
+        "summary": {
+            "top_causal_site": sites_all[0]["module"],
+            "top_causal_kind": sites_all[0]["kind"],
+            "top_causal_layer": sites_all[0]["layer"],
+            "top_causal_pareto": sites_all[0]["pareto_score"],
+            "top_passive_site": passive_rank[0],
+        },
+    }
+
+
+@torch.no_grad()
+def screen_patches_from_traces(
+    traces: list[CompactTrace],
+    candidates: dict[str, Any] | list[tuple[str, Any]],
+    model_or_weights: nn.Module | dict[str, torch.Tensor],
+    *,
+    max_nll_delta: float = 0.05,
+) -> list[dict[str, Any]]:
+    """Purely offline first-order screening over ``CompactTrace(..., capture_grad=True, grad_mode='compressed')``.
+
+    Requires zero model forward or backward passes; aggregates per-token causal sensitivities
+    weighted identically to ``gradient_screen_candidates``.
+    """
+    items = list(candidates.items()) if isinstance(candidates, dict) else list(candidates)
+    if not items:
+        return []
+    if not traces:
+        raise ValueError("screen_patches_from_traces requires at least one CompactTrace")
+    for idx_t, ct in enumerate(traces):
+        if ct.grad_mode != "compressed":
+            raise ValueError(
+                f"Trace #{idx_t} has grad_mode={ct.grad_mode!r}; capture with capture_grad=True, grad_mode='compressed'"
+            )
+
+    if isinstance(model_or_weights, dict):
+        w_cpu = {k: v.detach().float().cpu() for k, v in model_or_weights.items()}
+    else:
+        _, w_cpu = _resolve_edit_modules(model_or_weights, items)
+
+    needed_mods = sorted({e.module for _, patch in items for e in patch.edits})
+    n_t_list = [max(0, int(ct.meta.get("grad_n_target", max(1, ct.seq_len - 1)))) for ct in traces]
+    n_h_list = [max(0, int(ct.meta.get("grad_n_healthy", 0))) for ct in traces]
+    tot_t = max(1, sum(n_t_list))
+    tot_h = max(1, sum(n_h_list))
+
+    # Cache reconstructed gradients & inputs per (trace_idx, module) across all candidate patches
+    cached_inputs: dict[tuple[int, str], tuple[str, Any]] = {}
+    cached_gt: dict[tuple[int, str], torch.Tensor | None] = {}
+    cached_gh: dict[tuple[int, str], torch.Tensor | None] = {}
+    wn_by_mod = {mk: w_cpu[mk].norm(dim=0).clamp_min(1e-12) for mk in needed_mods}
+
+    for ti, ct in enumerate(traces):
+        head_key_map = {_safe_module_suffix(hk): hk for hk in ct.head_norms}
+        for mk in needed_mods:
+            cached_gt[(ti, mk)] = ct.dequant_grad(mk, "target")
+            cached_gh[(ti, mk)] = ct.dequant_grad(mk, "healthy")
+            gs = ct.grad_summary.get(mk, {})
+            kind = gs.get("kind")
+            layer = gs.get("layer", _layer_idx_from_name(mk))
+            if kind == "mlp" or (kind != "attn" and layer is not None and layer in ct.mlp_topk and ".mlp." in mk):
+                idx_m, val_m = ct.dequant_mlp_topk(int(layer))
+                x_m = val_m / wn_by_mod[mk][idx_m]
+                cached_inputs[(ti, mk)] = ("mlp", (idx_m, x_m))
+            else:
+                hk = mk if mk in ct.head_norms else head_key_map.get(mk)
+                h_dense = ct.dequant_head_in(hk) if hk is not None else None
+                if h_dense is None:
+                    raise ValueError(f"Trace #{ti} missing pre-W_O head vectors for {mk!r}; capture with head_quant='int8'")
+                cached_inputs[(ti, mk)] = ("attn", h_dense)
+
+    rows: list[dict[str, Any]] = []
+    for name, patch in items:
+        grad_supp = 0.0
+        grad_dnll = 0.0
+        for e in patch.edits:
+            u = e.u.detach().float().cpu()
+            uw = u @ w_cpu[e.module]
+            if e.idx is not None:
+                m = torch.zeros_like(uw)
+                m[e.idx.long()] = 1.0
+                uw = uw * m
+            for ti in range(len(traces)):
+                kind_in, h_obj = cached_inputs[(ti, e.module)]
+                if kind_in == "mlp":
+                    idx_m, x_m = h_obj
+                    h_dot_uw = (x_m * uw[idx_m]).sum(dim=1)
+                else:
+                    h_dot_uw = h_obj @ uw
+
+                g_t = cached_gt[(ti, e.module)]
+                if g_t is not None and n_t_list[ti] > 0:
+                    wt = n_t_list[ti] / tot_t
+                    grad_supp += wt * float(e.alpha) * float(((g_t @ u) * h_dot_uw).sum().item())
+
+                g_h = cached_gh[(ti, e.module)]
+                if g_h is not None and n_h_list[ti] > 0:
+                    wh = n_h_list[ti] / tot_h
+                    grad_dnll += wh * (-float(e.alpha)) * float(((g_h @ u) * h_dot_uw).sum().item())
+
         grad_pareto = grad_supp / max(abs(grad_dnll), 0.01)
         rows.append({
             "name": name,
