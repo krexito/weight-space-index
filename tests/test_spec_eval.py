@@ -392,6 +392,95 @@ def test_hybrid_recurrent_cache_rollback_bit_exact() -> None:
     assert spec["finish_reason"] == ref["finish_reason"]
 
 
+class _NewLinearLayer:
+    """Like transformers >= 5.4 LinearAttentionLayer: dict states updated in place, crop refuses without recording."""
+
+    def __init__(self, hidden: int) -> None:
+        self.conv_states = {0: None}
+        self.recurrent_states = {0: None}
+        self.is_conv_states_initialized = {0: False}
+        self.is_recurrent_states_initialized = {0: False}
+        self.has_previous_state = {0: False}
+        self.record_past = False
+        self.hidden = hidden
+
+    def crop(self, tokens_to_remove: int) -> None:
+        if not self.record_past:
+            raise RuntimeError("`crop` was called, but the current layer does not track past states.")
+
+
+class _NewDynamicLayer:
+    """Like transformers >= 5.4 DynamicLayer: crop accepts only a negative number of tokens to remove."""
+
+    def __init__(self) -> None:
+        self.keys = self.values = None
+        self.is_initialized = False
+
+    def crop(self, tokens_to_remove: int) -> None:
+        if tokens_to_remove > 0:
+            raise ValueError("Calling `crop` with a positive value is not supported.")
+        if tokens_to_remove and self.is_initialized:
+            self.keys = self.keys[..., :tokens_to_remove, :]
+            self.values = self.values[..., :tokens_to_remove, :]
+
+
+class _NewLayeredCache:
+    def __init__(self, hidden: int) -> None:
+        self.layers = [_NewLinearLayer(hidden), _NewDynamicLayer()]
+
+    def get_seq_length(self) -> int:
+        k = self.layers[1].keys
+        return 0 if k is None else int(k.shape[-2])
+
+    def crop(self, tokens_to_remove: int) -> None:
+        for lyr in self.layers:
+            lyr.crop(tokens_to_remove)
+
+
+class _TinyLayeredHybridLM(_TinyHybridLM):
+    """Same toy recurrence, but its state lives in a transformers-5.4-style per-layer cache."""
+
+    def forward(self, input_ids, past_key_values=None, use_cache=True):
+        cache = past_key_values if past_key_values is not None else (_NewLayeredCache(self.hidden) if use_cache else None)
+        lin, att = (cache.layers if cache is not None else (None, None))
+        state = lin.recurrent_states[0].clone() if lin is not None and lin.recurrent_states[0] is not None             else torch.zeros(1, self.hidden)
+        conv = lin.conv_states[0].clone() if lin is not None and lin.conv_states[0] is not None             else torch.zeros(1, self.hidden)
+        emb = self.embed(input_ids)
+        outs = []
+        for t in range(emb.shape[1]):
+            conv = 0.5 * conv + emb[:, t, :]
+            state = torch.tanh(state @ self.w_rec + conv)
+            outs.append(state)
+        if cache is not None:
+            for d, v in ((lin.conv_states, conv), (lin.recurrent_states, state)):
+                if d[0] is None:
+                    d[0] = v.clone()
+                else:
+                    d[0].copy_(v)  # in place, like the real layer (static addresses)
+            lin.is_conv_states_initialized[0] = lin.is_recurrent_states_initialized[0] = True
+            lin.has_previous_state[0] = True
+            kv = torch.stack(outs, dim=1)[:, None, :, :]
+            att.keys = kv if att.keys is None else torch.cat([att.keys, kv], dim=2)
+            att.values = att.keys.clone()
+            att.is_initialized = True
+        return SimpleNamespace(logits=self.lm_head(torch.stack(outs, dim=1)), past_key_values=cache)
+
+
+def test_layered_recurrent_cache_rollback_bit_exact() -> None:
+    # transformers >= 5.4 moved Qwen3.5's Gated DeltaNet state onto cache.layers[i]; crop() then raised
+    # "does not track past states" (Colab bench_base_draft_spec run). Rollback must restore + replay instead.
+    model = _TinyLayeredHybridLM(vocab=32, hidden=16, seed=19).eval()
+    prompt = [1, 4, 9, 12]
+    ref = greedy_generate_reference(model, prompt, max_new_tokens=30, eos_token_ids=None, presence_penalty=1.0)
+    bad = list(ref["token_ids"])
+    bad[3] = (bad[3] + 1) % 30
+    bad[10] = (bad[10] + 2) % 30
+    spec = speculative_generate_with_base(model, prompt, bad, max_new_tokens=30, eos_token_ids=None, block_size=6,
+                                          use_suffix_realign=True, presence_penalty=1.0)
+    assert spec["token_ids"] == ref["token_ids"]
+    assert spec["total_accepted"] < spec["total_drafted"]  # a rejection (and so a rollback) really happened
+
+
 def test_evaluate_patches_speculative_applies_and_restores_weights() -> None:
     model = _TinyCausalLM(vocab=64, hidden=32, inter=48, n_layers=2, seed=21).eval()
     prompts = [[2, 5, 11], [4, 17, 29, 31]]

@@ -193,6 +193,20 @@ def _sample_speculative_token(
     return False, nxt
 
 
+_LAYER_STATE_ATTRS = ("conv_states", "recurrent_states", "conv_state", "recurrent_state", "ssm_state")
+
+
+def _cache_crop_to(cache: Any, keep_len: int) -> None:
+    """Shrink a croppable cache to `keep_len` tokens. Negative arguments mean "remove that many tokens" in every
+    transformers version (old: crop(max_length) also accepted -n; >= 5.4 accepts only -n)."""
+    cur = int(cache.get_seq_length()) if hasattr(cache, "get_seq_length") else None
+    if cur is None:
+        cache.crop(keep_len)
+        return
+    if cur > keep_len:
+        cache.crop(-(cur - keep_len))
+
+
 def _is_recurrent_cache(cache: Any) -> bool:
     if cache is None or isinstance(cache, tuple):
         return False
@@ -203,6 +217,16 @@ def _is_recurrent_cache(cache: Any) -> bool:
                 return True
         elif val is not None:
             return True
+    # transformers >= 5.4: Cache.layers[i] holds dicts conv_states / recurrent_states (LinearAttentionLayer, e.g.
+    # Qwen3.5 Gated DeltaNet). Cache.crop cannot roll these back (it raises unless past recording is on, and even
+    # then a recurrent state cannot be un-applied), so they need snapshot + restore + replay.
+    for lyr in getattr(cache, "layers", None) or []:
+        for attr in _LAYER_STATE_ATTRS:
+            val = getattr(lyr, attr, None)
+            if isinstance(val, dict) and any(v is not None for v in val.values()):
+                return True
+            if isinstance(val, torch.Tensor):
+                return True
     if not hasattr(cache, "crop"):
         return True
     return False
@@ -250,7 +274,7 @@ def _crop_cache(cache: Any, keep_len: int) -> Any:
             for layer in cache
         )
     if hasattr(cache, "crop"):
-        cache.crop(keep_len)
+        _cache_crop_to(cache, keep_len)
         return cache
     # Fallback for DynamicCache-like objects without .crop()
     for attr in ("key_cache", "value_cache"):
@@ -262,6 +286,10 @@ def _crop_cache(cache: Any, keep_len: int) -> Any:
     if hasattr(cache, "_seen_tokens"):
         cache._seen_tokens = keep_len
     return cache
+
+
+_LAYER_FLAG_ATTRS = ("is_initialized", "is_conv_states_initialized", "is_recurrent_states_initialized",
+                     "has_previous_state")
 
 
 def _snapshot_cache(cache: Any) -> dict[str, Any]:
@@ -277,7 +305,7 @@ def _snapshot_cache(cache: Any) -> dict[str, Any]:
         layer_snaps = []
         for lyr in layers:
             ls: dict[str, Any] = {}
-            for attr in ("keys", "values", "conv_state", "recurrent_state", "ssm_state"):
+            for attr in ("keys", "values") + _LAYER_STATE_ATTRS + _LAYER_FLAG_ATTRS:
                 if hasattr(lyr, attr):
                     ls[attr] = _clone_state_container(getattr(lyr, attr))
             layer_snaps.append(ls)
@@ -288,12 +316,15 @@ def _snapshot_cache(cache: Any) -> dict[str, Any]:
 def _restore_cache(cache: Any, snap: dict[str, Any], keep_len: int) -> Any:
     if "tuple" in snap:
         return _crop_cache(_clone_state_container(snap["tuple"]), keep_len)
-    if hasattr(cache, "crop") and not any(k in snap for k in ("conv_states", "recurrent_states", "ssm_states")):
-        cache.crop(keep_len)
+    layered = "layers" in snap and isinstance(getattr(cache, "layers", None), list)
+    layer_state = layered and any(a in ls for ls in snap["layers"] for a in _LAYER_STATE_ATTRS)
+    if hasattr(cache, "crop") and not layer_state and not any(
+            k in snap for k in ("conv_states", "recurrent_states", "ssm_states")):
+        _cache_crop_to(cache, keep_len)
         return cache
 
-    if hasattr(cache, "crop"):
-        cache.crop(keep_len)
+    if hasattr(cache, "crop") and not layered:
+        _cache_crop_to(cache, keep_len)
     for attr in ("conv_states", "recurrent_states", "ssm_states", "key_cache", "value_cache"):
         if attr in snap:
             cur = getattr(cache, attr)
@@ -317,7 +348,14 @@ def _restore_cache(cache: Any, snap: dict[str, Any], keep_len: int) -> Any:
         for lyr, ls in zip(layers, snap["layers"]):
             for attr, val in ls.items():
                 if attr in ("keys", "values") and isinstance(val, torch.Tensor) and val.dim() >= 3:
-                    setattr(lyr, attr, val[:, :, :keep_len, :].contiguous())
+                    setattr(lyr, attr, val[..., :keep_len, :].contiguous())
+                elif isinstance(val, dict) and isinstance(getattr(lyr, attr, None), dict):
+                    cur = getattr(lyr, attr)
+                    for k, v in val.items():  # copy in place where shapes match: keeps static (cudagraph) addresses
+                        if isinstance(v, torch.Tensor) and isinstance(cur.get(k), torch.Tensor) and cur[k].shape == v.shape:
+                            cur[k].copy_(v)
+                        else:
+                            cur[k] = _clone_state_container(v)
                 else:
                     setattr(lyr, attr, _clone_state_container(val))
     return cache
