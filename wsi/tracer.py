@@ -1777,7 +1777,193 @@ def discover_compact_dirs(
     }
 
 
-@torch.no_grad()
+def _resolve_edit_modules(
+    model: nn.Module,
+    items: list[tuple[str, Any]],
+) -> tuple[dict[str, nn.Module], dict[str, torch.Tensor]]:
+    """Resolve unique `module_suffix` names referenced by candidate `MoIPatch`es and cache CPU float32 weights."""
+    from .moipatch import module_suffix
+
+    names: dict[str, list[nn.Module]] = {}
+    for name, mod in model.named_modules():
+        if "mtp" in name or "visual" in name or getattr(mod, "weight", None) is None:
+            continue
+        try:
+            names.setdefault(module_suffix(name), []).append(mod)
+        except ValueError:
+            pass
+
+    needed = sorted({e.module for _, patch in items for e in patch.edits})
+    resolved: dict[str, nn.Module] = {}
+    w_cpu: dict[str, torch.Tensor] = {}
+    for mk in needed:
+        mods = names.get(mk, [])
+        if len(mods) != 1:
+            raise KeyError(f"{mk}: {len(mods)} matching modules in the model")
+        mod = mods[0]
+        resolved[mk] = mod
+        w = mod.weight.detach().float().cpu()
+        if not isinstance(mod, nn.Linear) and w.dim() == 2:
+            w = w.t()
+        w_cpu[mk] = w
+    return resolved, w_cpu
+
+
+def _to_seq_tensors(seqs: list[torch.Tensor | list[int]], dev: torch.device) -> list[torch.Tensor]:
+    out = []
+    for s in seqs:
+        t = s if isinstance(s, torch.Tensor) else torch.tensor(s, dtype=torch.long)
+        out.append((t.unsqueeze(0) if t.dim() == 1 else t).to(dev))
+    return out
+
+
+def _resolve_target_span(T: int, span: tuple[int, int] | None) -> tuple[int, int]:
+    if span is not None:
+        s, e = span
+        lo = max(0, min(T - 2, int(s) - 1))
+        hi = max(lo + 1, min(T - 1, int(e) - 1))
+        return lo, hi
+    lo = max(0, (T // 2) - 1) if T >= 4 else T - 2
+    return lo, T - 1
+
+
+def _tail_logits(model: nn.Module, ids: torch.Tensor, lo: int) -> torch.Tensor:
+    """Logits of positions lo..T-1 only: full [T, vocab] logits of a 16k-token sequence do not fit in memory."""
+    T = int(ids.shape[1])
+    try:
+        out = model(input_ids=ids, use_cache=False, logits_to_keep=T - lo)
+    except TypeError:  # model without logits_to_keep
+        out = model(input_ids=ids, use_cache=False)
+    return out.logits[0, -(T - lo):]
+
+
+def gradient_screen_candidates(
+    model: nn.Module,
+    candidates: dict[str, Any] | list[tuple[str, Any]],
+    *,
+    healthy_seqs: list[torch.Tensor | list[int]],
+    target_seqs: list[torch.Tensor | list[int]],
+    target_spans: list[tuple[int, int]] | None = None,
+    max_nll_delta: float = 0.05,
+) -> list[dict[str, Any]]:
+    """Fast 1st-order gradient prefilter scoring arbitrarily many candidate `MoIPatch`es via 1 backward/seq.
+
+    Runs 1 backward pass per sequence (target log-prob and healthy NLL) in the model's native dtype with
+    parameter gradients disabled, caching only input activations and output gradients at the edited modules.
+    Ideal as Stage 1 to narrow hundreds/thousands of layer/neuron sites down before `screen_patch_candidates`.
+    """
+    items = list(candidates.items()) if isinstance(candidates, dict) else list(candidates)
+    if not items:
+        return []
+
+    dev = next(model.parameters()).device
+    resolved, w_cpu = _resolve_edit_modules(model, items)
+    h_ids = _to_seq_tensors(healthy_seqs, dev)
+    t_ids = _to_seq_tensors(target_seqs, dev)
+
+    n_h = sum(max(0, int(ids.shape[1]) - 1) for ids in h_ids)
+    n_t = 0
+    for i, ids in enumerate(t_ids):
+        T = int(ids.shape[1])
+        if T < 2:
+            continue
+        lo, hi = _resolve_target_span(T, target_spans[i] if (target_spans is not None and i < len(target_spans)) else None)
+        n_t += hi - lo
+
+    orig_req = [(p, p.requires_grad) for p in model.parameters()]
+    for p, _ in orig_req:
+        p.requires_grad_(False)
+
+    def _run_grad_pass(seqs: list[torch.Tensor], spans: list[tuple[int, int]] | None, kind: str) -> dict[str, list[tuple[torch.Tensor, torch.Tensor]]]:
+        pieces: dict[str, list[tuple[torch.Tensor, torch.Tensor]]] = {mk: [] for mk in resolved}
+        denom = max(1, n_t if kind == "target" else n_h)
+        with torch.enable_grad():
+            for i, ids in enumerate(seqs):
+                T = int(ids.shape[1])
+                if T < 2:
+                    continue
+                if kind == "target":
+                    lo, hi = _resolve_target_span(T, spans[i] if (spans is not None and i < len(spans)) else None)
+                else:
+                    lo, hi = 0, T - 1
+
+                st: dict[str, dict[str, Any]] = {"h": {}, "y": {}}
+                handles = []
+                for mk, mod in resolved.items():
+                    def _hook(_m, inp, out, mk=mk):
+                        x_in = inp[0]
+                        st["h"][mk] = (x_in[0] if x_in.dim() == 3 else x_in).detach().float().cpu()
+                        t = out[0] if isinstance(out, tuple) else out
+                        if not t.requires_grad:
+                            t = t.detach().requires_grad_(True)
+                        else:
+                            t.retain_grad()
+                        st["y"][mk] = t
+                        return (t, *out[1:]) if isinstance(out, tuple) else t
+
+                    handles.append(mod.register_forward_hook(_hook))
+
+                logits = lp = obj = None
+                try:
+                    logits = _tail_logits(model, ids, lo)[: hi - lo].float()
+                    lp = F.log_softmax(logits, dim=-1).gather(1, ids[0, lo + 1 : hi + 1, None]).squeeze(1)
+                    obj = (lp.sum() / denom) if kind == "target" else (-lp.sum() / denom)
+                    if obj.requires_grad:
+                        obj.backward()
+                    for mk in resolved:
+                        if mk in st["y"] and mk in st["h"]:
+                            ty = st["y"][mk]
+                            if ty.grad is not None:
+                                g = (ty.grad[0] if ty.grad.dim() == 3 else ty.grad).detach().float().cpu()
+                            else:
+                                y0 = ty.detach()[0] if ty.dim() == 3 else ty.detach()
+                                g = torch.zeros_like(y0, dtype=torch.float32, device="cpu")
+                            pieces[mk].append((g, st["h"][mk]))
+                finally:
+                    for h in handles:
+                        h.remove()
+                    del st, logits, lp, obj
+                    if dev.type == "cuda":
+                        torch.cuda.empty_cache()
+        return pieces
+
+    try:
+        tgt_pieces = _run_grad_pass(t_ids, target_spans, "target")
+        hlt_pieces = _run_grad_pass(h_ids, None, "healthy")
+    finally:
+        for p, req in orig_req:
+            p.requires_grad_(req)
+
+    @torch.no_grad()
+    def _first_order(patch: Any, pieces: dict[str, list[tuple[torch.Tensor, torch.Tensor]]]) -> float:
+        tot = 0.0
+        for e in patch.edits:
+            u = e.u.detach().float().cpu()
+            uw = u @ w_cpu[e.module]
+            if e.idx is not None:
+                m = torch.zeros_like(uw)
+                m[e.idx.long()] = 1.0
+                uw = uw * m
+            for g_t, h_t in pieces[e.module]:
+                tot += float(-e.alpha * ((g_t @ u) * (h_t @ uw)).sum())
+        return tot
+
+    rows: list[dict[str, Any]] = []
+    for name, patch in items:
+        grad_supp = -_first_order(patch, tgt_pieces)
+        grad_dnll = _first_order(patch, hlt_pieces)
+        grad_pareto = grad_supp / max(abs(grad_dnll), 0.01)
+        rows.append({
+            "name": name,
+            "grad_supp": round(grad_supp, 6),
+            "grad_dnll": round(grad_dnll, 6),
+            "grad_pareto": round(grad_pareto, 6),
+            "passes_nll_guard": bool(grad_dnll <= max_nll_delta),
+        })
+    rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["grad_pareto"], -r["grad_supp"], abs(r["grad_dnll"])))
+    return rows
+
+
 def screen_patch_candidates(
     model: nn.Module,
     candidates: dict[str, Any] | list[tuple[str, Any]],
@@ -1787,90 +1973,120 @@ def screen_patch_candidates(
     target_spans: list[tuple[int, int]] | None = None,
     max_nll_delta: float = 0.05,
     rank_by: str = "pareto",
+    prefilter_top_k: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Fast 1-forward-pass proxy screen ranking candidate `MoIPatch`es by failure suppression vs. healthy `delta_nll`.
+    """Fast 1-forward-pass proxy screen ranking candidate `MoIPatch`es by failure suppression vs. healthy drift (`delta_nll` & `healthy_kl`).
 
     Evaluates each patch in teacher-forced mode (zero token generation) so bad `(k, n, alpha)` configs
     can be pruned in seconds before running expensive long-horizon generation.
+    Computes both `delta_healthy_nll` and exact full-distribution `healthy_kl = KL(p_base || p_patched)`
+    on healthy sequences (zero extra forward passes).
+    Pass `prefilter_top_k` to use 1-backward `gradient_screen_candidates` as Stage 1 when screening large
+    candidate sets, narrowing to the top-K candidates before running forward evaluation.
     `rank_by="pareto"` (default) ranks guard-passing patches by `pareto_score = target_suppression / max(|delta_nll|, 0.01)`;
-    pass `rank_by="suppression"` to rank by raw `target_suppression`.
+    pass `rank_by="pareto_kl"` to rank by `pareto_kl = target_suppression / max(healthy_kl, 0.01)`,
+    or `rank_by="suppression"` to rank by raw `target_suppression`.
     """
-    if rank_by not in ("pareto", "suppression"):
-        raise ValueError(f"rank_by must be 'pareto' or 'suppression', got {rank_by!r}")
-    dev = next(model.parameters()).device
+    if rank_by not in ("pareto", "pareto_kl", "suppression"):
+        raise ValueError(f"rank_by must be 'pareto', 'pareto_kl', or 'suppression', got {rank_by!r}")
     items = list(candidates.items()) if isinstance(candidates, dict) else list(candidates)
 
-    def _to_ids(seq: torch.Tensor | list[int]) -> torch.Tensor:
-        t = seq if isinstance(seq, torch.Tensor) else torch.tensor(seq, dtype=torch.long)
-        return (t.unsqueeze(0) if t.dim() == 1 else t).to(dev)
+    grad_by_name: dict[str, dict[str, Any]] = {}
+    if prefilter_top_k is not None:
+        prefilter_top_k = int(prefilter_top_k)
+        if prefilter_top_k < 1:
+            raise ValueError(f"prefilter_top_k must be >= 1, got {prefilter_top_k!r}")
+        if items and prefilter_top_k < len(items):
+            grad_rows = gradient_screen_candidates(
+                model,
+                items,
+                healthy_seqs=healthy_seqs,
+                target_seqs=target_seqs,
+                target_spans=target_spans,
+                max_nll_delta=max_nll_delta,
+            )
+            grad_by_name = {r["name"]: r for r in grad_rows}
+            cand_by_name = {n: p for n, p in items}
+            items = [(r["name"], cand_by_name[r["name"]]) for r in grad_rows[:prefilter_top_k]]
 
-    h_ids = [_to_ids(s) for s in healthy_seqs]
-    t_ids = [_to_ids(s) for s in target_seqs]
+    dev = next(model.parameters()).device
+    with torch.no_grad():
+        h_ids = _to_seq_tensors(healthy_seqs, dev)
+        t_ids = _to_seq_tensors(target_seqs, dev)
+        base_h_logp: list[torch.Tensor | None] = []
 
-    def _tail_logits(ids: torch.Tensor, lo: int) -> torch.Tensor:
-        """Logits of positions lo..T-1 only: full [T, vocab] logits of a 16k-token sequence do not fit in memory."""
-        T = int(ids.shape[1])
-        try:
-            out = model(input_ids=ids, use_cache=False, logits_to_keep=T - lo)
-        except TypeError:  # model without logits_to_keep
-            out = model(input_ids=ids, use_cache=False)
-        return out.logits[0, -(T - lo):]
+        def _eval_current(*, capture_base_logp: bool = False) -> tuple[float, float, float]:
+            nll_sum, kl_sum, n_h = 0.0, 0.0, 0
+            for i, ids in enumerate(h_ids):
+                if ids.shape[1] < 2:
+                    if capture_base_logp:
+                        base_h_logp.append(None)
+                    continue
+                logits = _tail_logits(model, ids, 0)[:-1].float()
+                lp = F.log_softmax(logits, dim=-1)
+                nll_sum += float(F.nll_loss(lp, ids[0, 1:], reduction="sum"))
+                n_h += int(ids.shape[1] - 1)
+                if capture_base_logp:
+                    base_h_logp.append(lp.to(dtype=torch.bfloat16, device="cpu"))
+                elif i < len(base_h_logp) and base_h_logp[i] is not None:
+                    lp_b = base_h_logp[i].to(device=dev, dtype=torch.float32)
+                    kl_tok = (lp_b.exp() * (lp_b - lp)).sum(dim=-1).clamp_min(0.0)
+                    kl_sum += float(kl_tok.sum())
+                    del lp_b, kl_tok
+                del logits, lp
+            logp_sum, n_t = 0.0, 0
+            for i, ids in enumerate(t_ids):
+                T = int(ids.shape[1])
+                if T < 2:
+                    continue
+                lo, hi = _resolve_target_span(T, target_spans[i] if (target_spans is not None and i < len(target_spans)) else None)
+                # position j predicts token j + 1; only positions lo..hi-1 are scored
+                logits = _tail_logits(model, ids, lo)[: hi - lo].float()
+                seg = F.log_softmax(logits, dim=-1).gather(1, ids[0, lo + 1: hi + 1, None]).squeeze(1)
+                logp_sum += float(seg.sum())
+                n_t += int(seg.numel())
+            return (nll_sum / max(1, n_h)), (kl_sum / max(1, n_h)), (logp_sum / max(1, n_t))
 
-    def _eval_current() -> tuple[float, float]:
-        nll_sum, n_h = 0.0, 0
-        for ids in h_ids:
-            if ids.shape[1] < 2:
-                continue
-            logits = _tail_logits(ids, 0)[:-1].float()
-            nll_sum += float(F.cross_entropy(logits, ids[0, 1:], reduction="sum"))
-            n_h += int(ids.shape[1] - 1)
-        logp_sum, n_t = 0.0, 0
-        for i, ids in enumerate(t_ids):
-            T = int(ids.shape[1])
-            if T < 2:
-                continue
-            if target_spans is not None and i < len(target_spans):
-                s, e = target_spans[i]
-                lo = max(0, min(T - 2, int(s) - 1))
-                hi = max(lo + 1, min(T - 1, int(e) - 1))
-            else:
-                lo = max(0, (T // 2) - 1) if T >= 4 else T - 2
-                hi = T - 1
-            # position j predicts token j + 1; only positions lo..hi-1 are scored
-            logits = _tail_logits(ids, lo)[: hi - lo].float()
-            seg = F.log_softmax(logits, dim=-1).gather(1, ids[0, lo + 1: hi + 1, None]).squeeze(1)
-            logp_sum += float(seg.sum())
-            n_t += int(seg.numel())
-        return (nll_sum / max(1, n_h)), (logp_sum / max(1, n_t))
-
-    base_nll, base_tlogp = _eval_current()
-    rows: list[dict[str, Any]] = []
-    for name, patch in items:
-        h = patch.attach(model)
-        h.on()
-        try:
-            p_nll, p_tlogp = _eval_current()
-        finally:
-            h.off()
-        d_nll = p_nll - base_nll
-        supp = base_tlogp - p_tlogp  # positive => failure tokens became less likely
-        pareto = supp / max(abs(d_nll), 0.01)
-        rows.append({
-            "name": name,
-            "base_healthy_nll": round(base_nll, 5),
-            "healthy_nll": round(p_nll, 5),
-            "delta_healthy_nll": round(d_nll, 5),
-            "base_target_logp": round(base_tlogp, 5),
-            "target_logp": round(p_tlogp, 5),
-            "target_suppression": round(supp, 5),
-            "pareto_score": round(pareto, 4),
-            "passes_nll_guard": bool(d_nll <= max_nll_delta),
-        })
-    if rank_by == "pareto":
-        rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["pareto_score"], -r["target_suppression"], r["delta_healthy_nll"]))
-    else:
-        rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["target_suppression"], r["delta_healthy_nll"]))
-    return rows
+        base_nll, _, base_tlogp = _eval_current(capture_base_logp=True)
+        rows: list[dict[str, Any]] = []
+        for name, patch in items:
+            h = patch.attach(model)
+            h.on()
+            try:
+                p_nll, p_kl, p_tlogp = _eval_current()
+            finally:
+                h.off()
+            d_nll = p_nll - base_nll
+            supp = base_tlogp - p_tlogp  # positive => failure tokens became less likely
+            pareto = supp / max(abs(d_nll), 0.01)
+            pareto_kl = supp / max(p_kl, 0.01)
+            row: dict[str, Any] = {
+                "name": name,
+                "base_healthy_nll": round(base_nll, 5),
+                "healthy_nll": round(p_nll, 5),
+                "delta_healthy_nll": round(d_nll, 5),
+                "healthy_kl": round(p_kl, 5),
+                "base_target_logp": round(base_tlogp, 5),
+                "target_logp": round(p_tlogp, 5),
+                "target_suppression": round(supp, 5),
+                "pareto_score": round(pareto, 4),
+                "pareto_kl": round(pareto_kl, 4),
+                "passes_nll_guard": bool(d_nll <= max_nll_delta),
+            }
+            if name in grad_by_name:
+                gr = grad_by_name[name]
+                row["grad_supp"] = gr["grad_supp"]
+                row["grad_dnll"] = gr["grad_dnll"]
+                row["grad_pareto"] = gr["grad_pareto"]
+            rows.append(row)
+        base_h_logp.clear()
+        if rank_by == "pareto":
+            rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["pareto_score"], -r["target_suppression"], r["delta_healthy_nll"]))
+        elif rank_by == "pareto_kl":
+            rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["pareto_kl"], -r["target_suppression"], r["healthy_kl"]))
+        else:
+            rows.sort(key=lambda r: (not r["passes_nll_guard"], -r["target_suppression"], r["delta_healthy_nll"]))
+        return rows
 
 
 # ----------------------------------------------------------------------------------------------- differential trace API

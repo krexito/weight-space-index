@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from wsi import (  # noqa: E402
+    Edit,
     MoIPatch,
     WeightSpaceIndex,
     capture_compact,
@@ -28,6 +29,7 @@ from wsi import (  # noqa: E402
     diff_compact,
     diff_traces,
     discover_compact_circuit,
+    gradient_screen_candidates,
     hadamard_transform,
     quantization_error,
     quantize_block_fp4,
@@ -420,7 +422,19 @@ def test_discover_compact_circuit() -> None:
             target_seqs=[ids_l],
             target_spans=[(4, 10)],
         )
-        assert len(screened) == 3 and all("delta_healthy_nll" in r and "target_suppression" in r for r in screened)
+        assert len(screened) == 3 and all(
+            "delta_healthy_nll" in r and "healthy_kl" in r and "pareto_kl" in r and "target_suppression" in r and r["healthy_kl"] >= 0.0
+            for r in screened
+        )
+        screened_kl = screen_patch_candidates(
+            m,
+            {"unified": res_model["patches"]["unified_top2"], "blind": res_model["patches"]["blind_top2"]},
+            healthy_seqs=[ids_h],
+            target_seqs=[ids_l],
+            target_spans=[(4, 10)],
+            rank_by="pareto_kl",
+        )
+        assert len(screened_kl) == 2 and all(r["healthy_kl"] >= 0.0 for r in screened_kl)
         hp = res_model["patch"].attach(m)
         hp.on()
         assert not hp.check_restored()
@@ -520,10 +534,67 @@ def test_discover_compact_circuit() -> None:
             assert MoIPatch.load(mcp_patch).attach(m).fingerprint_ok()
 
 
+def test_gradient_screen_candidates() -> None:
+    torch.manual_seed(11)
+    m = _TinyCausalModel(vocab=32, hidden=32, inter=64, n_layers=4, n_heads=4).eval()
+    with torch.no_grad():
+        for p in m.parameters():
+            p.normal_(mean=0.0, std=0.15)
+
+    # Preserve mixed requires_grad state across the gradient call
+    for p in m.parameters():
+        p.requires_grad_(False)
+    m.lm_head.weight.requires_grad_(True)
+
+    ids_h = [1, 2, 10, 11, 12, 13, 14, 15]
+    ids_l = [1, 2, 10, 11, 20, 20, 20, 20, 20, 20]
+    spans = [(4, 10)]
+
+    u_mlp = torch.randn(32)
+    u_mlp = u_mlp / u_mlp.norm()
+    u_attn = torch.randn(32)
+    u_attn = u_attn / u_attn.norm()
+
+    # Tiny alpha=5e-3 keeps patches in the linear regime for exact finite-difference validation
+    tiny_cands = {
+        "mlp_sub": MoIPatch(edits=[Edit(module="layers.1.mlp.down_proj", u=u_mlp, alpha=5e-3, idx=torch.arange(16))]),
+        "mlp_multi": MoIPatch(edits=[
+            Edit(module="layers.1.mlp.down_proj", u=u_mlp, alpha=5e-3),
+            Edit(module="layers.2.mlp.down_proj", u=u_attn, alpha=5e-3),
+        ]),
+        "attn_o": MoIPatch(edits=[Edit(module="layers.1.self_attn.o_proj", u=u_attn, alpha=5e-3)]),
+    }
+    grad_rows = gradient_screen_candidates(m, tiny_cands, healthy_seqs=[ids_h], target_seqs=[ids_l], target_spans=spans)
+    assert m.lm_head.weight.requires_grad is True
+    assert m.model.layers[1].mlp.down_proj.weight.requires_grad is False
+
+    fwd_rows = screen_patch_candidates(m, tiny_cands, healthy_seqs=[ids_h], target_seqs=[ids_l], target_spans=spans)
+    g_by = {r["name"]: r for r in grad_rows}
+    f_by = {r["name"]: r for r in fwd_rows}
+    for name in tiny_cands:
+        assert abs(g_by[name]["grad_supp"] - f_by[name]["target_suppression"]) < 2e-4, (name, g_by[name], f_by[name])
+        assert abs(g_by[name]["grad_dnll"] - f_by[name]["delta_healthy_nll"]) < 2e-4, (name, g_by[name], f_by[name])
+
+    # Verify 2-stage funnel (`prefilter_top_k=2`) narrows 4 candidates to 2 finalists and attaches both grad & forward fields
+    stage_cands = {
+        "c1": MoIPatch(edits=[Edit(module="layers.1.mlp.down_proj", u=u_mlp, alpha=1.0, idx=torch.arange(16))]),
+        "c2": MoIPatch(edits=[Edit(module="layers.2.mlp.down_proj", u=u_attn, alpha=1.0, idx=torch.arange(16))]),
+        "c3": MoIPatch(edits=[Edit(module="layers.1.self_attn.o_proj", u=u_attn, alpha=1.0)]),
+        "c4": MoIPatch(edits=[Edit(module="layers.2.self_attn.o_proj", u=u_mlp, alpha=1.0)]),
+    }
+    prefiltered = screen_patch_candidates(
+        m, stage_cands, healthy_seqs=[ids_h], target_seqs=[ids_l], target_spans=spans, prefilter_top_k=2
+    )
+    assert len(prefiltered) == 2
+    for row in prefiltered:
+        assert {"delta_healthy_nll", "healthy_kl", "pareto_score", "pareto_kl", "grad_supp", "grad_dnll", "grad_pareto"}.issubset(row)
+
+
 if __name__ == "__main__":
     test_block_int4_isolates_outliers()
     test_compact_trace_roundtrip_and_loop_onset()
     test_diff_traces_pinpoints_planted_circuit_with_wsi()
     test_hybrid_attn_topk_layer_mapping()
     test_discover_compact_circuit()
+    test_gradient_screen_candidates()
     print("ALL TRACER TESTS PASSED!")

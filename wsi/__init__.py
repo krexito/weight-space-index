@@ -19,7 +19,7 @@ from .compare import (
     transplant_connected_chain,
 )
 from .indexer import build_index
-from .moipatch import Edit, MoIPatch, PatchHandle
+from .moipatch import Edit, MoIPatch, PatchHandle, RoutedPatchHandle
 from .query import WeightSpaceIndex, load_index
 from .tracer import (
     CompactTrace,
@@ -30,6 +30,7 @@ from .tracer import (
     diff_compact,
     diff_traces,
     discover_compact_circuit,
+    gradient_screen_candidates,
     hadamard_transform,
     quantization_error,
     quantize_block_fp4,
@@ -46,6 +47,7 @@ __all__ = [
     "Edit",
     "MoIPatch",
     "PatchHandle",
+    "RoutedPatchHandle",
     "SelectiveMoI",
     "TaskRouter",
     "apply_selection",
@@ -58,6 +60,7 @@ __all__ = [
     "diff_traces",
     "discover_compact_circuit",
     "find_mlps",
+    "gradient_screen_candidates",
     "hadamard_transform",
     "quantization_error",
     "quantize_block_fp4",

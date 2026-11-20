@@ -315,8 +315,12 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
                     "description": "Optional `[start, end]` token spans inside each target sequence to measure suppression on",
                 },
                 "max_nll_delta": {"type": "number", "default": 0.05},
-                "rank_by": {"type": "string", "default": "pareto", "enum": ["pareto", "suppression", "delta_nll"]},
+                "rank_by": {"type": "string", "default": "pareto", "enum": ["pareto", "pareto_kl", "suppression"]},
                 "top_k": {"type": "integer", "default": 10},
+                "prefilter_top_k": {
+                    "type": "integer",
+                    "description": "Optional gradient prefilter count: when set (< number of candidates), runs 1 backward per sequence to narrow down to the top-K candidates before running forward screening",
+                },
                 "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
                 "device_map": {"type": "string", "default": "auto"},
             },
@@ -421,6 +425,7 @@ def _screen_candidates_tool(args: dict[str, Any]) -> dict[str, Any]:
     max_nll_delta = float(args.get("max_nll_delta", 0.05))
     rank_by = str(args.get("rank_by", "pareto"))
     top_k = int(args.get("top_k", 10))
+    prefilter_top_k = int(args["prefilter_top_k"]) if args.get("prefilter_top_k") is not None else None
 
     model = _load_model_for_screen(
         args["model_dir"],
@@ -436,6 +441,7 @@ def _screen_candidates_tool(args: dict[str, Any]) -> dict[str, Any]:
             target_spans=spans,
             max_nll_delta=max_nll_delta,
             rank_by=rank_by,
+            prefilter_top_k=prefilter_top_k,
         )
     finally:
         del model
