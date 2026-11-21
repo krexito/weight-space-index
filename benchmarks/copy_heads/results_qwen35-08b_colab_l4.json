@@ -1,0 +1,3499 @@
+{
+ "run": {
+  "model": "/content/base",
+  "work": "work_gsm8k",
+  "max_len": 4096,
+  "tokens_a": {
+   "loop": 22404,
+   "copy": 13612,
+   "other": 35515
+  },
+  "tokens_b": {
+   "loop": 41670,
+   "copy": 35956,
+   "other": 83140
+  },
+  "n_heads": 336,
+  "spearman_loop_vs_copy": 0.471,
+  "top_by_spec": [
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.84793,
+    "copy": 0.3787,
+    "other": 1.42609,
+    "spec": 0.46923
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.12512,
+    "copy": 0.01013,
+    "other": 0.28258,
+    "spec": 0.11499
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.21108,
+    "copy": 0.12407,
+    "other": 0.70213,
+    "spec": 0.08701
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.05542,
+    "copy": -0.02658,
+    "other": 0.12847,
+    "spec": 0.082
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.04381,
+    "copy": -0.01232,
+    "other": 0.11593,
+    "spec": 0.05613
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.07332,
+    "copy": 0.01835,
+    "other": 0.15401,
+    "spec": 0.05497
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.05605,
+    "copy": 0.00582,
+    "other": 0.1245,
+    "spec": 0.05023
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.1497,
+    "copy": 0.10283,
+    "other": 0.19379,
+    "spec": 0.04687
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.05634,
+    "copy": 0.01772,
+    "other": 0.1025,
+    "spec": 0.03862
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.06561,
+    "copy": 0.02722,
+    "other": 0.11878,
+    "spec": 0.03839
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.02797,
+    "copy": -0.00978,
+    "other": 0.07487,
+    "spec": 0.03775
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 1,
+    "kind": "attn",
+    "loop": 0.03396,
+    "copy": 0.00071,
+    "other": 0.0869,
+    "spec": 0.03325
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.02583,
+    "copy": -0.00486,
+    "other": 0.06182,
+    "spec": 0.03069
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.03861,
+    "copy": 0.0107,
+    "other": 0.07093,
+    "spec": 0.02791
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.05894,
+    "copy": 0.03195,
+    "other": 0.04721,
+    "spec": 0.02699
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.01601,
+    "copy": -0.00759,
+    "other": 0.04484,
+    "spec": 0.0236
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.04147,
+    "copy": 0.02063,
+    "other": 0.07863,
+    "spec": 0.02084
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.02873,
+    "copy": 0.00916,
+    "other": 0.05587,
+    "spec": 0.01957
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.02331,
+    "copy": 0.00538,
+    "other": 0.05242,
+    "spec": 0.01793
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 5,
+    "kind": "attn",
+    "loop": 0.00919,
+    "copy": -0.00798,
+    "other": 0.02359,
+    "spec": 0.01717
+   }
+  ],
+  "top_by_copy": [
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.84793,
+    "copy": 0.3787,
+    "other": 1.42609,
+    "spec": 0.46923
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.21108,
+    "copy": 0.12407,
+    "other": 0.70213,
+    "spec": 0.08701
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.1497,
+    "copy": 0.10283,
+    "other": 0.19379,
+    "spec": 0.04687
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.02554,
+    "copy": 0.03272,
+    "other": 0.01426,
+    "spec": -0.00718
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.05894,
+    "copy": 0.03195,
+    "other": 0.04721,
+    "spec": 0.02699
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.01529,
+    "copy": 0.02888,
+    "other": 0.0087,
+    "spec": -0.01359
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.06561,
+    "copy": 0.02722,
+    "other": 0.11878,
+    "spec": 0.03839
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.02976,
+    "copy": 0.0235,
+    "other": 0.04429,
+    "spec": 0.00626
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.0368,
+    "copy": 0.0229,
+    "other": 0.06936,
+    "spec": 0.0139
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.04147,
+    "copy": 0.02063,
+    "other": 0.07863,
+    "spec": 0.02084
+   }
+  ],
+  "top_by_loop": [
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.84793,
+    "copy": 0.3787,
+    "other": 1.42609,
+    "spec": 0.46923
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.21108,
+    "copy": 0.12407,
+    "other": 0.70213,
+    "spec": 0.08701
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.1497,
+    "copy": 0.10283,
+    "other": 0.19379,
+    "spec": 0.04687
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.12512,
+    "copy": 0.01013,
+    "other": 0.28258,
+    "spec": 0.11499
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.07332,
+    "copy": 0.01835,
+    "other": 0.15401,
+    "spec": 0.05497
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.06561,
+    "copy": 0.02722,
+    "other": 0.11878,
+    "spec": 0.03839
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.05894,
+    "copy": 0.03195,
+    "other": 0.04721,
+    "spec": 0.02699
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.05634,
+    "copy": 0.01772,
+    "other": 0.1025,
+    "spec": 0.03862
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.05605,
+    "copy": 0.00582,
+    "other": 0.1245,
+    "spec": 0.05023
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.05542,
+    "copy": -0.02658,
+    "other": 0.12847,
+    "spec": 0.082
+   }
+  ],
+  "combos_b": {
+   "1": {
+    "heads": [
+     "model.layers.0.linear_attn.out_proj#8"
+    ],
+    "ablate_top": {
+     "loop": 0.79541,
+     "copy": 0.43461,
+     "other": 1.44947
+    },
+    "ablate_random": {
+     "loop": 0.00293,
+     "copy": -0.00145,
+     "other": 0.01082
+    }
+   },
+   "2": {
+    "heads": [
+     "model.layers.0.linear_attn.out_proj#8",
+     "model.layers.7.self_attn.o_proj#2"
+    ],
+    "ablate_top": {
+     "loop": 0.90837,
+     "copy": 0.46892,
+     "other": 1.74398
+    },
+    "ablate_random": {
+     "loop": 0.00317,
+     "copy": 0.00265,
+     "other": 0.00829
+    }
+   },
+   "4": {
+    "heads": [
+     "model.layers.0.linear_attn.out_proj#8",
+     "model.layers.7.self_attn.o_proj#2",
+     "model.layers.3.self_attn.o_proj#7",
+     "model.layers.7.self_attn.o_proj#6"
+    ],
+    "ablate_top": {
+     "loop": 4.15665,
+     "copy": 4.31143,
+     "other": 5.38448
+    },
+    "ablate_random": {
+     "loop": 0.02682,
+     "copy": 0.01128,
+     "other": 0.06386
+    }
+   },
+   "8": {
+    "heads": [
+     "model.layers.0.linear_attn.out_proj#8",
+     "model.layers.7.self_attn.o_proj#2",
+     "model.layers.3.self_attn.o_proj#7",
+     "model.layers.7.self_attn.o_proj#6",
+     "model.layers.2.linear_attn.out_proj#11",
+     "model.layers.11.self_attn.o_proj#4",
+     "model.layers.11.self_attn.o_proj#7",
+     "model.layers.0.linear_attn.out_proj#3"
+    ],
+    "ablate_top": {
+     "loop": 5.0676,
+     "copy": 5.19095,
+     "other": 5.63998
+    },
+    "ablate_random": {
+     "loop": 0.01269,
+     "copy": 0.0028,
+     "other": 0.03859
+    }
+   }
+  },
+  "patch_b": {
+   "name": "qwen35_0.8b_p50c_loop_fix.moipatch",
+   "loop": 0.05334,
+   "copy": 0.0529,
+   "other": 0.02545
+  },
+  "single_heads": [
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00104,
+    "copy": -7e-05,
+    "other": 0.00428,
+    "spec": 0.00111
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00296,
+    "copy": 0.00106,
+    "other": 0.00696,
+    "spec": 0.0019
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.01856,
+    "copy": 0.01797,
+    "other": 0.02339,
+    "spec": 0.00059
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.1497,
+    "copy": 0.10283,
+    "other": 0.19379,
+    "spec": 0.04687
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.01052,
+    "copy": -0.00641,
+    "other": 0.03892,
+    "spec": 0.01693
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00481,
+    "copy": 0.00091,
+    "other": 0.01156,
+    "spec": 0.0039
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00412,
+    "copy": -0.001,
+    "other": 0.01157,
+    "spec": 0.00512
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00202,
+    "copy": 0.00027,
+    "other": 0.00776,
+    "spec": 0.00175
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.84793,
+    "copy": 0.3787,
+    "other": 1.42609,
+    "spec": 0.46923
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00201,
+    "copy": 0.00075,
+    "other": 0.00494,
+    "spec": 0.00126
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00124,
+    "copy": -0.00031,
+    "other": 0.00445,
+    "spec": 0.00155
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00915,
+    "copy": -0.00134,
+    "other": 0.03303,
+    "spec": 0.01049
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00209,
+    "copy": 0.00018,
+    "other": 0.00561,
+    "spec": 0.00191
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00561,
+    "copy": 0.00247,
+    "other": 0.019,
+    "spec": 0.00314
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00041,
+    "copy": -0.00052,
+    "other": 0.0018,
+    "spec": 0.00093
+   },
+   {
+    "module": "model.layers.0.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.0037,
+    "copy": 0.00143,
+    "other": 0.0121,
+    "spec": 0.00227
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00192,
+    "copy": 0.00027,
+    "other": 0.00556,
+    "spec": 0.00165
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00054,
+    "copy": -0.00012,
+    "other": 0.0008,
+    "spec": 0.00066
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00158,
+    "copy": 0.00012,
+    "other": 0.00351,
+    "spec": 0.00146
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00134,
+    "copy": 0.00049,
+    "other": 0.00275,
+    "spec": 0.00085
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00082,
+    "copy": -0.00017,
+    "other": 0.00324,
+    "spec": 0.00099
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.0016,
+    "copy": 0.00116,
+    "other": 0.00361,
+    "spec": 0.00044
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00138,
+    "copy": 0.00058,
+    "other": 0.00315,
+    "spec": 0.0008
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00607,
+    "copy": 0.00272,
+    "other": 0.00575,
+    "spec": 0.00335
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00188,
+    "copy": 0.00116,
+    "other": 0.00428,
+    "spec": 0.00072
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00034,
+    "copy": -0.0011,
+    "other": 0.00239,
+    "spec": 0.00144
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00047,
+    "copy": -0.0012,
+    "other": 0.00273,
+    "spec": 0.00167
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00056,
+    "copy": 4e-05,
+    "other": 0.00251,
+    "spec": 0.00052
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00535,
+    "copy": -0.00431,
+    "other": 0.02126,
+    "spec": 0.00966
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00092,
+    "copy": 0.00029,
+    "other": 0.00084,
+    "spec": 0.00063
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00036,
+    "copy": -3e-05,
+    "other": 0.00296,
+    "spec": 0.00039
+   },
+   {
+    "module": "model.layers.1.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.01026,
+    "copy": 0.00443,
+    "other": 0.01088,
+    "spec": 0.00583
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00036,
+    "copy": 0.00016,
+    "other": 0.0003,
+    "spec": 0.0002
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00182,
+    "copy": 0.00021,
+    "other": 0.00571,
+    "spec": 0.00161
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00152,
+    "copy": 0.00037,
+    "other": 0.00294,
+    "spec": 0.00115
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.0003,
+    "copy": -2e-05,
+    "other": 0.00145,
+    "spec": 0.00032
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00377,
+    "copy": -0.00018,
+    "other": 0.00616,
+    "spec": 0.00395
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00028,
+    "copy": -0.00168,
+    "other": 0.00475,
+    "spec": 0.00196
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00113,
+    "copy": 0.0008,
+    "other": 0.00352,
+    "spec": 0.00033
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.0013,
+    "copy": 0.00055,
+    "other": 0.00321,
+    "spec": 0.00075
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00079,
+    "copy": 0.00063,
+    "other": 0.00089,
+    "spec": 0.00016
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00225,
+    "copy": -0.00049,
+    "other": 0.00748,
+    "spec": 0.00274
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00135,
+    "copy": -0.00055,
+    "other": 0.00389,
+    "spec": 0.0019
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.04381,
+    "copy": -0.01232,
+    "other": 0.11593,
+    "spec": 0.05613
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00171,
+    "copy": -0.00062,
+    "other": 0.00473,
+    "spec": 0.00233
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00099,
+    "copy": 0.00014,
+    "other": 0.00252,
+    "spec": 0.00085
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00055,
+    "copy": -6e-05,
+    "other": 0.00328,
+    "spec": 0.00061
+   },
+   {
+    "module": "model.layers.2.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": -0.00034,
+    "copy": -0.0019,
+    "other": -0.00051,
+    "spec": 0.00156
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.00657,
+    "copy": 0.00039,
+    "other": 0.02137,
+    "spec": 0.00618
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 1,
+    "kind": "attn",
+    "loop": 0.00392,
+    "copy": 0.00076,
+    "other": 0.00512,
+    "spec": 0.00316
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.00128,
+    "copy": -0.0007,
+    "other": 0.00692,
+    "spec": 0.00198
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.00419,
+    "copy": -0.00116,
+    "other": 0.01523,
+    "spec": 0.00535
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.01872,
+    "copy": 0.00383,
+    "other": 0.03802,
+    "spec": 0.01489
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 5,
+    "kind": "attn",
+    "loop": 0.00585,
+    "copy": 0.00168,
+    "other": 0.01764,
+    "spec": 0.00417
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.00253,
+    "copy": 0.00082,
+    "other": 0.00695,
+    "spec": 0.00171
+   },
+   {
+    "module": "model.layers.3.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.21108,
+    "copy": 0.12407,
+    "other": 0.70213,
+    "spec": 0.08701
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00032,
+    "copy": 7e-05,
+    "other": 0.00256,
+    "spec": 0.00025
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00019,
+    "copy": -3e-05,
+    "other": 0.00077,
+    "spec": 0.00022
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00025,
+    "copy": 0.00051,
+    "other": 0.00013,
+    "spec": -0.00026
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 8e-05,
+    "copy": 0.00018,
+    "other": 0.00257,
+    "spec": -0.0001
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00271,
+    "copy": -0.00085,
+    "other": 0.00615,
+    "spec": 0.00356
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00107,
+    "copy": 0.00172,
+    "other": 0.00096,
+    "spec": -0.00065
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00176,
+    "copy": -0.00033,
+    "other": 0.00264,
+    "spec": 0.00209
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00137,
+    "copy": 0.00074,
+    "other": 0.00144,
+    "spec": 0.00063
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.0003,
+    "copy": -0.00031,
+    "other": 0.002,
+    "spec": 0.00061
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00093,
+    "copy": -0.00023,
+    "other": 0.00386,
+    "spec": 0.00116
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00129,
+    "copy": 0.00036,
+    "other": 0.00268,
+    "spec": 0.00093
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00463,
+    "copy": -0.0082,
+    "other": 0.02886,
+    "spec": 0.01283
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 9e-05,
+    "copy": -0.00155,
+    "other": 0.00459,
+    "spec": 0.00164
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00209,
+    "copy": 0.00072,
+    "other": 0.00324,
+    "spec": 0.00137
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00221,
+    "copy": 3e-05,
+    "other": 0.00491,
+    "spec": 0.00218
+   },
+   {
+    "module": "model.layers.4.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.0007,
+    "copy": -0.00035,
+    "other": 0.00259,
+    "spec": 0.00105
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00097,
+    "copy": 1e-05,
+    "other": 0.00253,
+    "spec": 0.00096
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": -0.00015,
+    "copy": -0.00028,
+    "other": 0.00083,
+    "spec": 0.00013
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00068,
+    "copy": -0.00102,
+    "other": 0.00296,
+    "spec": 0.0017
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00273,
+    "copy": -0.00024,
+    "other": 0.0054,
+    "spec": 0.00297
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00013,
+    "copy": 9e-05,
+    "other": 0.00084,
+    "spec": 4e-05
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": -0.00013,
+    "copy": -0.00183,
+    "other": 0.00279,
+    "spec": 0.0017
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00227,
+    "copy": 0.00018,
+    "other": 0.00364,
+    "spec": 0.00209
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00329,
+    "copy": 0.00237,
+    "other": 0.00472,
+    "spec": 0.00092
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00041,
+    "copy": -0.00076,
+    "other": 0.00223,
+    "spec": 0.00117
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00087,
+    "copy": 0.00057,
+    "other": 0.00138,
+    "spec": 0.0003
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00204,
+    "copy": -0.00099,
+    "other": 0.00519,
+    "spec": 0.00303
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00175,
+    "copy": 0.00092,
+    "other": 0.00393,
+    "spec": 0.00083
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00288,
+    "copy": -0.00121,
+    "other": 0.00757,
+    "spec": 0.00409
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00054,
+    "copy": 0.00019,
+    "other": 0.00126,
+    "spec": 0.00035
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00299,
+    "copy": 0.0003,
+    "other": 0.00641,
+    "spec": 0.00269
+   },
+   {
+    "module": "model.layers.5.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00207,
+    "copy": -0.00048,
+    "other": 0.00582,
+    "spec": 0.00255
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.0012,
+    "copy": 4e-05,
+    "other": 0.00161,
+    "spec": 0.00116
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00065,
+    "copy": -8e-05,
+    "other": 0.00135,
+    "spec": 0.00073
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00097,
+    "copy": 4e-05,
+    "other": 0.00251,
+    "spec": 0.00093
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00172,
+    "copy": -0.00026,
+    "other": 0.00378,
+    "spec": 0.00198
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00102,
+    "copy": 0.00077,
+    "other": 0.00278,
+    "spec": 0.00025
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00149,
+    "copy": -1e-05,
+    "other": 0.00441,
+    "spec": 0.0015
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00213,
+    "copy": -0.0001,
+    "other": 0.00577,
+    "spec": 0.00223
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00194,
+    "copy": -0.00405,
+    "other": 0.01201,
+    "spec": 0.00599
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00361,
+    "copy": -0.00021,
+    "other": 0.00515,
+    "spec": 0.00382
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00066,
+    "copy": -0.00021,
+    "other": 0.00225,
+    "spec": 0.00087
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00159,
+    "copy": 2e-05,
+    "other": 0.00434,
+    "spec": 0.00157
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00032,
+    "copy": 0.00126,
+    "other": 0.00203,
+    "spec": -0.00094
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": -0.00044,
+    "copy": -0.00123,
+    "other": 0.00281,
+    "spec": 0.00079
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00115,
+    "copy": -0.00011,
+    "other": 0.00525,
+    "spec": 0.00126
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00112,
+    "copy": -0.00095,
+    "other": 0.00323,
+    "spec": 0.00207
+   },
+   {
+    "module": "model.layers.6.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00107,
+    "copy": -0.00366,
+    "other": 0.00649,
+    "spec": 0.00473
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.02873,
+    "copy": 0.00916,
+    "other": 0.05587,
+    "spec": 0.01957
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 1,
+    "kind": "attn",
+    "loop": 0.03396,
+    "copy": 0.00071,
+    "other": 0.0869,
+    "spec": 0.03325
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.12512,
+    "copy": 0.01013,
+    "other": 0.28258,
+    "spec": 0.11499
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.03861,
+    "copy": 0.0107,
+    "other": 0.07093,
+    "spec": 0.02791
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.02331,
+    "copy": 0.00538,
+    "other": 0.05242,
+    "spec": 0.01793
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 5,
+    "kind": "attn",
+    "loop": 0.00919,
+    "copy": -0.00798,
+    "other": 0.02359,
+    "spec": 0.01717
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.05542,
+    "copy": -0.02658,
+    "other": 0.12847,
+    "spec": 0.082
+   },
+   {
+    "module": "model.layers.7.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.02797,
+    "copy": -0.00978,
+    "other": 0.07487,
+    "spec": 0.03775
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00119,
+    "copy": -0.00096,
+    "other": 0.00358,
+    "spec": 0.00215
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00027,
+    "copy": -0.00157,
+    "other": 0.00188,
+    "spec": 0.00184
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00307,
+    "copy": 0.00071,
+    "other": 0.00445,
+    "spec": 0.00236
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00098,
+    "copy": -0.00045,
+    "other": 0.00275,
+    "spec": 0.00143
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00217,
+    "copy": 0.00055,
+    "other": 0.00345,
+    "spec": 0.00162
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00039,
+    "copy": -0.0009,
+    "other": 0.00376,
+    "spec": 0.00129
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00137,
+    "copy": -0.00014,
+    "other": 0.0032,
+    "spec": 0.00151
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00154,
+    "copy": 0.00033,
+    "other": 0.00179,
+    "spec": 0.00121
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.0014,
+    "copy": -0.00249,
+    "other": 0.00602,
+    "spec": 0.00389
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00086,
+    "copy": -0.00121,
+    "other": 0.00197,
+    "spec": 0.00207
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00074,
+    "copy": -0.00058,
+    "other": 0.00153,
+    "spec": 0.00132
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00205,
+    "copy": 0.00084,
+    "other": 0.00194,
+    "spec": 0.00121
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00148,
+    "copy": 0.00087,
+    "other": 0.00333,
+    "spec": 0.00061
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00261,
+    "copy": -0.00061,
+    "other": 0.00869,
+    "spec": 0.00322
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00381,
+    "copy": 0.00075,
+    "other": 0.00653,
+    "spec": 0.00306
+   },
+   {
+    "module": "model.layers.8.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00036,
+    "copy": -0.00022,
+    "other": 0.00206,
+    "spec": 0.00058
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00273,
+    "copy": 0.00069,
+    "other": 0.00717,
+    "spec": 0.00204
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00282,
+    "copy": 0.00188,
+    "other": 0.00479,
+    "spec": 0.00094
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00129,
+    "copy": -0.00065,
+    "other": 0.00251,
+    "spec": 0.00194
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.0012,
+    "copy": -0.00013,
+    "other": 0.00374,
+    "spec": 0.00133
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00169,
+    "copy": -0.00014,
+    "other": 0.00375,
+    "spec": 0.00183
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00468,
+    "copy": 0.00143,
+    "other": 0.00665,
+    "spec": 0.00325
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00234,
+    "copy": -0.00016,
+    "other": 0.00466,
+    "spec": 0.0025
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00463,
+    "copy": 0.0001,
+    "other": 0.00705,
+    "spec": 0.00453
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00169,
+    "copy": -0.00045,
+    "other": 0.00433,
+    "spec": 0.00214
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00135,
+    "copy": -0.00053,
+    "other": 0.00295,
+    "spec": 0.00188
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00289,
+    "copy": 0.00027,
+    "other": 0.00868,
+    "spec": 0.00262
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.0007,
+    "copy": -0.0004,
+    "other": 0.00192,
+    "spec": 0.0011
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00105,
+    "copy": 0.0012,
+    "other": 0.00295,
+    "spec": -0.00015
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00067,
+    "copy": -0.0009,
+    "other": 0.00307,
+    "spec": 0.00157
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.0019,
+    "copy": 0.00045,
+    "other": 0.00182,
+    "spec": 0.00145
+   },
+   {
+    "module": "model.layers.9.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00142,
+    "copy": -0.00088,
+    "other": 0.00633,
+    "spec": 0.0023
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00133,
+    "copy": 0.00013,
+    "other": 0.00196,
+    "spec": 0.0012
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00412,
+    "copy": 0.00162,
+    "other": 0.00644,
+    "spec": 0.0025
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.05894,
+    "copy": 0.03195,
+    "other": 0.04721,
+    "spec": 0.02699
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00407,
+    "copy": 0.0035,
+    "other": 0.00504,
+    "spec": 0.00057
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.0057,
+    "copy": 0.00193,
+    "other": 0.01177,
+    "spec": 0.00377
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00283,
+    "copy": -0.00116,
+    "other": 0.00741,
+    "spec": 0.00399
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00019,
+    "copy": -0.00085,
+    "other": 0.00199,
+    "spec": 0.00104
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00115,
+    "copy": -0.00017,
+    "other": 0.00231,
+    "spec": 0.00132
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00292,
+    "copy": -0.00111,
+    "other": 0.00441,
+    "spec": 0.00403
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00144,
+    "copy": -0.00172,
+    "other": 0.00667,
+    "spec": 0.00316
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00059,
+    "copy": -0.00038,
+    "other": 0.00372,
+    "spec": 0.00097
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00566,
+    "copy": 0.0008,
+    "other": 0.00985,
+    "spec": 0.00486
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.0054,
+    "copy": 0.0004,
+    "other": 0.00915,
+    "spec": 0.005
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.0011,
+    "copy": -0.00058,
+    "other": 0.00316,
+    "spec": 0.00168
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00055,
+    "copy": -0.0004,
+    "other": 0.00175,
+    "spec": 0.00095
+   },
+   {
+    "module": "model.layers.10.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00213,
+    "copy": -0.00101,
+    "other": 0.00702,
+    "spec": 0.00314
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.04147,
+    "copy": 0.02063,
+    "other": 0.07863,
+    "spec": 0.02084
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 1,
+    "kind": "attn",
+    "loop": 0.00865,
+    "copy": 0.00278,
+    "other": 0.01745,
+    "spec": 0.00587
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.01455,
+    "copy": 0.00501,
+    "other": 0.02309,
+    "spec": 0.00954
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.06561,
+    "copy": 0.02722,
+    "other": 0.11878,
+    "spec": 0.03839
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.07332,
+    "copy": 0.01835,
+    "other": 0.15401,
+    "spec": 0.05497
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 5,
+    "kind": "attn",
+    "loop": 0.01722,
+    "copy": 0.00191,
+    "other": 0.03475,
+    "spec": 0.01531
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.05634,
+    "copy": 0.01772,
+    "other": 0.1025,
+    "spec": 0.03862
+   },
+   {
+    "module": "model.layers.11.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.05605,
+    "copy": 0.00582,
+    "other": 0.1245,
+    "spec": 0.05023
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00322,
+    "copy": 0.002,
+    "other": 0.00322,
+    "spec": 0.00122
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00205,
+    "copy": -0.0,
+    "other": 0.00529,
+    "spec": 0.00205
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00126,
+    "copy": 3e-05,
+    "other": 0.00303,
+    "spec": 0.00123
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00088,
+    "copy": 0.00054,
+    "other": 0.00181,
+    "spec": 0.00034
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00195,
+    "copy": -0.0011,
+    "other": 0.00503,
+    "spec": 0.00305
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00415,
+    "copy": -0.00049,
+    "other": 0.00814,
+    "spec": 0.00464
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00097,
+    "copy": 5e-05,
+    "other": 0.00266,
+    "spec": 0.00092
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00213,
+    "copy": 0.00117,
+    "other": 0.0019,
+    "spec": 0.00096
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.0015,
+    "copy": 0.00043,
+    "other": 0.00401,
+    "spec": 0.00107
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00361,
+    "copy": 0.00293,
+    "other": 0.01019,
+    "spec": 0.00068
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00156,
+    "copy": -0.00031,
+    "other": 0.00264,
+    "spec": 0.00187
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00237,
+    "copy": 4e-05,
+    "other": 0.00679,
+    "spec": 0.00233
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00024,
+    "copy": 0.0026,
+    "other": 0.00191,
+    "spec": -0.00236
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00281,
+    "copy": 0.00271,
+    "other": 0.00332,
+    "spec": 0.0001
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00074,
+    "copy": -0.00011,
+    "other": 0.00277,
+    "spec": 0.00085
+   },
+   {
+    "module": "model.layers.12.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00438,
+    "copy": -0.00071,
+    "other": 0.01124,
+    "spec": 0.00509
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00145,
+    "copy": -0.00107,
+    "other": 0.00505,
+    "spec": 0.00252
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.0067,
+    "copy": 0.00968,
+    "other": 0.00854,
+    "spec": -0.00298
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.01601,
+    "copy": -0.00759,
+    "other": 0.04484,
+    "spec": 0.0236
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00097,
+    "copy": 0.00075,
+    "other": 0.00237,
+    "spec": 0.00022
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": -0.00052,
+    "copy": 0.0009,
+    "other": -0.00121,
+    "spec": -0.00142
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00192,
+    "copy": 0.00076,
+    "other": 0.00352,
+    "spec": 0.00116
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00259,
+    "copy": -0.00017,
+    "other": 0.00667,
+    "spec": 0.00276
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00954,
+    "copy": 0.0144,
+    "other": 0.0101,
+    "spec": -0.00486
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00241,
+    "copy": 0.00312,
+    "other": 0.00355,
+    "spec": -0.00071
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.0007,
+    "copy": 0.00045,
+    "other": 0.0019,
+    "spec": 0.00025
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.0034,
+    "copy": -0.00038,
+    "other": 0.00844,
+    "spec": 0.00378
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00306,
+    "copy": 0.00323,
+    "other": 0.00604,
+    "spec": -0.00017
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.0023,
+    "copy": -0.00025,
+    "other": 0.00369,
+    "spec": 0.00255
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00474,
+    "copy": 0.00233,
+    "other": 0.00606,
+    "spec": 0.00241
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00071,
+    "copy": -0.00072,
+    "other": 0.00243,
+    "spec": 0.00143
+   },
+   {
+    "module": "model.layers.13.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00255,
+    "copy": 0.0004,
+    "other": 0.00696,
+    "spec": 0.00215
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00166,
+    "copy": 0.00091,
+    "other": 0.00333,
+    "spec": 0.00075
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00129,
+    "copy": 0.00033,
+    "other": 0.00165,
+    "spec": 0.00096
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00052,
+    "copy": 0.00017,
+    "other": 0.00185,
+    "spec": 0.00035
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00599,
+    "copy": 0.00245,
+    "other": 0.01073,
+    "spec": 0.00354
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00029,
+    "copy": -0.00015,
+    "other": 0.00051,
+    "spec": 0.00044
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00036,
+    "copy": 0.00065,
+    "other": 0.00125,
+    "spec": -0.00029
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00135,
+    "copy": 0.00023,
+    "other": 0.00335,
+    "spec": 0.00112
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00637,
+    "copy": 0.00325,
+    "other": 0.00724,
+    "spec": 0.00312
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00058,
+    "copy": -0.00052,
+    "other": 0.00131,
+    "spec": 0.0011
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.004,
+    "copy": 0.00199,
+    "other": 0.00384,
+    "spec": 0.00201
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00224,
+    "copy": 0.00059,
+    "other": 0.00398,
+    "spec": 0.00165
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.003,
+    "copy": -0.00077,
+    "other": 0.01176,
+    "spec": 0.00377
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00402,
+    "copy": 0.00341,
+    "other": 0.00516,
+    "spec": 0.00061
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00224,
+    "copy": 0.00112,
+    "other": 0.00523,
+    "spec": 0.00112
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.02554,
+    "copy": 0.03272,
+    "other": 0.01426,
+    "spec": -0.00718
+   },
+   {
+    "module": "model.layers.14.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00278,
+    "copy": -0.00026,
+    "other": 0.00686,
+    "spec": 0.00304
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.01405,
+    "copy": 0.00967,
+    "other": 0.0267,
+    "spec": 0.00438
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 1,
+    "kind": "attn",
+    "loop": 0.02221,
+    "copy": 0.00726,
+    "other": 0.05352,
+    "spec": 0.01495
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.03035,
+    "copy": 0.01408,
+    "other": 0.05754,
+    "spec": 0.01627
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.02583,
+    "copy": -0.00486,
+    "other": 0.06182,
+    "spec": 0.03069
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.00493,
+    "copy": 0.00761,
+    "other": 0.00567,
+    "spec": -0.00268
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 5,
+    "kind": "attn",
+    "loop": 0.00925,
+    "copy": 0.01059,
+    "other": 0.0113,
+    "spec": -0.00134
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.0055,
+    "copy": 0.00463,
+    "other": 0.005,
+    "spec": 0.00087
+   },
+   {
+    "module": "model.layers.15.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.01529,
+    "copy": 0.02888,
+    "other": 0.0087,
+    "spec": -0.01359
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.0038,
+    "copy": 0.00143,
+    "other": 0.00867,
+    "spec": 0.00237
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00458,
+    "copy": -0.00091,
+    "other": 0.01202,
+    "spec": 0.00549
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00199,
+    "copy": 0.00072,
+    "other": 0.00263,
+    "spec": 0.00127
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00149,
+    "copy": -0.00032,
+    "other": 0.00315,
+    "spec": 0.00181
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00013,
+    "copy": 0.00075,
+    "other": -0.00078,
+    "spec": -0.00062
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00173,
+    "copy": 0.00052,
+    "other": 0.00314,
+    "spec": 0.00121
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00945,
+    "copy": 0.00792,
+    "other": 0.01042,
+    "spec": 0.00153
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00028,
+    "copy": -0.00016,
+    "other": 0.00076,
+    "spec": 0.00044
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00113,
+    "copy": -0.0003,
+    "other": 0.00242,
+    "spec": 0.00143
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": -0.00122,
+    "copy": -3e-05,
+    "other": -0.00224,
+    "spec": -0.00119
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00917,
+    "copy": 0.0097,
+    "other": 0.01622,
+    "spec": -0.00053
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00209,
+    "copy": -0.0007,
+    "other": 0.00515,
+    "spec": 0.00279
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.0012,
+    "copy": 0.00051,
+    "other": 0.00225,
+    "spec": 0.00069
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00144,
+    "copy": -0.0001,
+    "other": 0.0054,
+    "spec": 0.00154
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00064,
+    "copy": 0.00131,
+    "other": 0.00266,
+    "spec": -0.00067
+   },
+   {
+    "module": "model.layers.16.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00204,
+    "copy": 0.00079,
+    "other": 0.00473,
+    "spec": 0.00125
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00239,
+    "copy": 0.00111,
+    "other": 0.0051,
+    "spec": 0.00128
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00344,
+    "copy": 0.00191,
+    "other": 0.00549,
+    "spec": 0.00153
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00134,
+    "copy": 0.00054,
+    "other": 0.00292,
+    "spec": 0.0008
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00142,
+    "copy": -0.00024,
+    "other": 0.00408,
+    "spec": 0.00166
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00088,
+    "copy": 0.00081,
+    "other": 0.00238,
+    "spec": 7e-05
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 5e-05,
+    "copy": -0.0002,
+    "other": 0.0002,
+    "spec": 0.00025
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00479,
+    "copy": 0.00461,
+    "other": 0.00213,
+    "spec": 0.00018
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00011,
+    "copy": 0.00046,
+    "other": 0.00083,
+    "spec": -0.00035
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00193,
+    "copy": -0.00036,
+    "other": 0.0051,
+    "spec": 0.00229
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00509,
+    "copy": 0.00241,
+    "other": 0.01611,
+    "spec": 0.00268
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00077,
+    "copy": -0.0002,
+    "other": 0.00333,
+    "spec": 0.00097
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00674,
+    "copy": 0.00701,
+    "other": 0.01161,
+    "spec": -0.00027
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00199,
+    "copy": 0.00183,
+    "other": 0.00308,
+    "spec": 0.00016
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00099,
+    "copy": 0.00012,
+    "other": 0.00165,
+    "spec": 0.00087
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00199,
+    "copy": 1e-05,
+    "other": 0.00555,
+    "spec": 0.00198
+   },
+   {
+    "module": "model.layers.17.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00162,
+    "copy": 0.00131,
+    "other": 0.00308,
+    "spec": 0.00031
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00575,
+    "copy": 0.00387,
+    "other": 0.01448,
+    "spec": 0.00188
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00303,
+    "copy": 0.00222,
+    "other": 0.00552,
+    "spec": 0.00081
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00076,
+    "copy": 0.0003,
+    "other": 0.00045,
+    "spec": 0.00046
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00203,
+    "copy": 0.0011,
+    "other": 0.00434,
+    "spec": 0.00093
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00051,
+    "copy": 0.00036,
+    "other": 0.00088,
+    "spec": 0.00015
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00044,
+    "copy": -0.00072,
+    "other": 0.00034,
+    "spec": 0.00116
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00422,
+    "copy": 0.00135,
+    "other": 0.00895,
+    "spec": 0.00287
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00121,
+    "copy": 0.00158,
+    "other": 0.00297,
+    "spec": -0.00037
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00083,
+    "copy": 0.0009,
+    "other": 0.00174,
+    "spec": -7e-05
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00025,
+    "copy": 0.00064,
+    "other": 0.00122,
+    "spec": -0.00039
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00084,
+    "copy": 0.00035,
+    "other": 0.00074,
+    "spec": 0.00049
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00108,
+    "copy": 0.00091,
+    "other": 0.00099,
+    "spec": 0.00017
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00027,
+    "copy": -3e-05,
+    "other": 0.00105,
+    "spec": 0.0003
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00077,
+    "copy": 0.00101,
+    "other": 0.00232,
+    "spec": -0.00024
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00215,
+    "copy": 0.00224,
+    "other": 0.00535,
+    "spec": -9e-05
+   },
+   {
+    "module": "model.layers.18.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00552,
+    "copy": 0.00118,
+    "other": 0.00917,
+    "spec": 0.00434
+   },
+   {
+    "module": "model.layers.19.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.0076,
+    "copy": 0.00717,
+    "other": 0.0109,
+    "spec": 0.00043
+   },
+   {
+    "module": "model.layers.19.self_attn.o_proj",
+    "head": 1,
+    "kind": "attn",
+    "loop": 0.00843,
+    "copy": 0.00644,
+    "other": 0.01424,
+    "spec": 0.00199
+   },
+   {
+    "module": "model.layers.19.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.00897,
+    "copy": 0.00596,
+    "other": 0.01087,
+    "spec": 0.00301
+   },
+   {
+    "module": "model.layers.19.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.01152,
+    "copy": 0.01048,
+    "other": 0.01826,
+    "spec": 0.00104
+   },
+   {
+    "module": "model.layers.19.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.00832,
+    "copy": -0.00071,
+    "other": 0.01949,
+    "spec": 0.00903
+   },
+   {
+    "module": "model.layers.19.self_attn.o_proj",
+    "head": 5,
+    "kind": "attn",
+    "loop": 0.01289,
+    "copy": 0.01395,
+    "other": 0.0192,
+    "spec": -0.00106
+   },
+   {
+    "module": "model.layers.19.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.00295,
+    "copy": -0.0037,
+    "other": 0.00722,
+    "spec": 0.00665
+   },
+   {
+    "module": "model.layers.19.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.00595,
+    "copy": 0.00858,
+    "other": 0.00871,
+    "spec": -0.00263
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00045,
+    "copy": 0.00043,
+    "other": 0.0009,
+    "spec": 2e-05
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00235,
+    "copy": 0.00143,
+    "other": 0.00478,
+    "spec": 0.00092
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.0005,
+    "copy": 0.0003,
+    "other": 0.00128,
+    "spec": 0.0002
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00076,
+    "copy": 0.00046,
+    "other": 0.00231,
+    "spec": 0.0003
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00116,
+    "copy": 0.001,
+    "other": 0.00068,
+    "spec": 0.00016
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00085,
+    "copy": 0.00015,
+    "other": 0.00216,
+    "spec": 0.0007
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00248,
+    "copy": -0.00027,
+    "other": 0.00543,
+    "spec": 0.00275
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.00143,
+    "copy": 0.00097,
+    "other": 0.00136,
+    "spec": 0.00046
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00416,
+    "copy": 0.00053,
+    "other": 0.01061,
+    "spec": 0.00363
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00191,
+    "copy": 0.00114,
+    "other": 0.00435,
+    "spec": 0.00077
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00403,
+    "copy": 0.00111,
+    "other": 0.00775,
+    "spec": 0.00292
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00209,
+    "copy": 0.00176,
+    "other": 0.00194,
+    "spec": 0.00033
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00047,
+    "copy": -7e-05,
+    "other": 0.00059,
+    "spec": 0.00054
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00061,
+    "copy": 0.00037,
+    "other": 0.0008,
+    "spec": 0.00024
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00105,
+    "copy": 0.00022,
+    "other": 0.00106,
+    "spec": 0.00083
+   },
+   {
+    "module": "model.layers.20.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": -0.00012,
+    "copy": 9e-05,
+    "other": -6e-05,
+    "spec": -0.00021
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00121,
+    "copy": 0.00155,
+    "other": 0.00381,
+    "spec": -0.00034
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00142,
+    "copy": 0.00099,
+    "other": 0.00246,
+    "spec": 0.00043
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.00098,
+    "copy": 0.00095,
+    "other": 0.00079,
+    "spec": 3e-05
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00069,
+    "copy": 0.00128,
+    "other": 0.00245,
+    "spec": -0.00059
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.0022,
+    "copy": 0.00234,
+    "other": 0.00414,
+    "spec": -0.00014
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00252,
+    "copy": 0.00043,
+    "other": 0.00663,
+    "spec": 0.00209
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00436,
+    "copy": 0.00246,
+    "other": 0.00674,
+    "spec": 0.0019
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.0005,
+    "copy": 0.0003,
+    "other": 0.00019,
+    "spec": 0.0002
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00037,
+    "copy": 0.00071,
+    "other": 0.00038,
+    "spec": -0.00034
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.00099,
+    "copy": 0.00053,
+    "other": 0.00173,
+    "spec": 0.00046
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00161,
+    "copy": 4e-05,
+    "other": 0.00321,
+    "spec": 0.00157
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00206,
+    "copy": 0.00168,
+    "other": 0.00324,
+    "spec": 0.00038
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00016,
+    "copy": -2e-05,
+    "other": -5e-05,
+    "spec": 0.00018
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": -0.00012,
+    "copy": 0.00013,
+    "other": -0.00066,
+    "spec": -0.00025
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00335,
+    "copy": -0.0001,
+    "other": 0.0069,
+    "spec": 0.00345
+   },
+   {
+    "module": "model.layers.21.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00449,
+    "copy": 0.00184,
+    "other": 0.00609,
+    "spec": 0.00265
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 0,
+    "kind": "linear_attn",
+    "loop": 0.00155,
+    "copy": 0.00036,
+    "other": 0.002,
+    "spec": 0.00119
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 1,
+    "kind": "linear_attn",
+    "loop": 0.00014,
+    "copy": -7e-05,
+    "other": 0.00028,
+    "spec": 0.00021
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 2,
+    "kind": "linear_attn",
+    "loop": 0.02976,
+    "copy": 0.0235,
+    "other": 0.04429,
+    "spec": 0.00626
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 3,
+    "kind": "linear_attn",
+    "loop": 0.00013,
+    "copy": 6e-05,
+    "other": 0.0004,
+    "spec": 7e-05
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 4,
+    "kind": "linear_attn",
+    "loop": 0.00052,
+    "copy": 0.00021,
+    "other": -1e-05,
+    "spec": 0.00031
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 5,
+    "kind": "linear_attn",
+    "loop": 0.00631,
+    "copy": 0.00606,
+    "other": 0.00954,
+    "spec": 0.00025
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 6,
+    "kind": "linear_attn",
+    "loop": 0.00034,
+    "copy": -6e-05,
+    "other": 0.00047,
+    "spec": 0.0004
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 7,
+    "kind": "linear_attn",
+    "loop": 0.0025,
+    "copy": 0.00146,
+    "other": 0.00204,
+    "spec": 0.00104
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 8,
+    "kind": "linear_attn",
+    "loop": 0.00104,
+    "copy": 0.00082,
+    "other": 0.00134,
+    "spec": 0.00022
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 9,
+    "kind": "linear_attn",
+    "loop": 0.01723,
+    "copy": 0.01234,
+    "other": 0.02816,
+    "spec": 0.00489
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 10,
+    "kind": "linear_attn",
+    "loop": 0.00034,
+    "copy": 0.00057,
+    "other": 0.00061,
+    "spec": -0.00023
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 11,
+    "kind": "linear_attn",
+    "loop": 0.00025,
+    "copy": 0.0004,
+    "other": -0.00014,
+    "spec": -0.00015
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 12,
+    "kind": "linear_attn",
+    "loop": 0.00087,
+    "copy": 0.00041,
+    "other": 0.00077,
+    "spec": 0.00046
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 13,
+    "kind": "linear_attn",
+    "loop": 0.00684,
+    "copy": 0.00554,
+    "other": 0.01177,
+    "spec": 0.0013
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 14,
+    "kind": "linear_attn",
+    "loop": 0.00021,
+    "copy": -0.00028,
+    "other": 0.00058,
+    "spec": 0.00049
+   },
+   {
+    "module": "model.layers.22.linear_attn.out_proj",
+    "head": 15,
+    "kind": "linear_attn",
+    "loop": 0.00326,
+    "copy": 0.002,
+    "other": 0.00515,
+    "spec": 0.00126
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 0,
+    "kind": "attn",
+    "loop": 0.0075,
+    "copy": 0.00913,
+    "other": 0.00561,
+    "spec": -0.00163
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 1,
+    "kind": "attn",
+    "loop": 0.00355,
+    "copy": -0.00239,
+    "other": 0.00786,
+    "spec": 0.00594
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 2,
+    "kind": "attn",
+    "loop": 0.0368,
+    "copy": 0.0229,
+    "other": 0.06936,
+    "spec": 0.0139
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 3,
+    "kind": "attn",
+    "loop": 0.01325,
+    "copy": 0.00195,
+    "other": 0.02554,
+    "spec": 0.0113
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 4,
+    "kind": "attn",
+    "loop": 0.00814,
+    "copy": 0.00487,
+    "other": 0.00753,
+    "spec": 0.00327
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 5,
+    "kind": "attn",
+    "loop": 0.00828,
+    "copy": 0.00984,
+    "other": 0.00138,
+    "spec": -0.00156
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 6,
+    "kind": "attn",
+    "loop": 0.0186,
+    "copy": 0.01332,
+    "other": 0.0349,
+    "spec": 0.00528
+   },
+   {
+    "module": "model.layers.23.self_attn.o_proj",
+    "head": 7,
+    "kind": "attn",
+    "loop": 0.00676,
+    "copy": 0.00731,
+    "other": 0.0054,
+    "spec": -0.00055
+   }
+  ],
+  "wall_s": 2919.1
+ },
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-0.8B",
+  "commit": "da6fcca79b1adc3092191dc2c414f858e28bee5a",
+  "notebook": "copy_heads_colab.ipynb",
+  "gpu": "NVIDIA L4",
+  "saved_utc": "2026-11-21T08:03:55+00:00"
+ }
+}
