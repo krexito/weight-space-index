@@ -18,6 +18,7 @@ Built to work standalone or directly on top of [`wsr` (Weight-Space Reading and 
 * **`84%` cross-lingual Spanish recall** and **`78%` one-hop reasoning** *(person → city's country)*
 * **`22.67` WikiText-2 perplexity — exact match to unmodified `base` (`22.67`)** *(`always-on ROME 198k`, `MEMIT 338`)*
 * **`0.0%` gate firing on WikiText-2 tokens**, **`30 / 30`** known capitals preserved, and surname collision leaks cut from `93%` (`100` memories) / `62%` (`1,000` memories) down to base noise (`13%`)
+* **Second architecture (`LiquidAI/LFM3-1.7B`, ShortConv hybrid, `bf16`, `L0`, `N=100`, [`results`](./benchmarks/moi_memory/results_lfm3_colab_l4_100_l012.json)):** `rome_fullname` beats `MEMIT` on every metric — `87.3%` dev, **`80.0%`** unseen paraphrases, `65.7%` Spanish, `70.7%` chat, **`84.0%` one-hop** (`49.0%` exact, beating in-context `81.0% / 47.0%`), `5.3%` surname leak (exact base vs `84.0%` `MEMIT`), **`29.48` WikiText-2 PPL** (exact base), and **`0.0%`** WikiText fire rate (writes still under-converged at 40 steps, final NLL `0.75`).
 
 ### 2. Surgical Behavioral Patching (`17.7 KB` Baked vs. Routed Safety)
 On **`LiquidAI/LFM3-1.7B`** (ShortConv + SwiGLU hybrid, zero layer hints, evaluated on disjoint `Half-B`, `OR-Bench-Toxic`, and out-of-distribution `JailbreakBench`), automated causal tracing + Fisher curvature localizes edits **24×–3,600× smaller** than all-layer abliteration:
