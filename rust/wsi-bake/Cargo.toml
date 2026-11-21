@@ -1,0 +1,11 @@
+[package]
+name = "wsi-bake"
+version = "0.1.0"
+edition = "2021"
+description = "Zero-dependency Rust CLI to inspect and bake .moipatch weight edits directly into safetensors checkpoints."
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1
