@@ -1,0 +1,5 @@
+*/wsi/
+*.moipatch
+_test_tmp/
+_cpu_test/
+__pycache__/
