@@ -21,6 +21,14 @@ from .compare import (
 from .indexer import build_index
 from .moipatch import Edit, MoIPatch, PatchHandle, RoutedPatchHandle, audit_moipatch
 from .query import WeightSpaceIndex, load_index
+from .router_cal import (
+    CALIBRATION_FIT_WRAPPERS,
+    CALIBRATION_VAL_WRAPPERS,
+    apply_calibration_wrapper,
+    evaluate_framing_invariance,
+    fit_framing_invariant_safety_router,
+    fit_invariant_direction,
+)
 from .spec_eval import (
     SuffixDraftIndex,
     capture_base_drafts,
@@ -58,6 +66,8 @@ from .tracer import (
 __all__ = [
     "ActivationIndex",
     "AdditiveMoI",
+    "CALIBRATION_FIT_WRAPPERS",
+    "CALIBRATION_VAL_WRAPPERS",
     "CompactTrace",
     "Edit",
     "MoIPatch",
@@ -66,6 +76,7 @@ __all__ = [
     "SelectiveMoI",
     "SuffixDraftIndex",
     "TaskRouter",
+    "apply_calibration_wrapper",
     "apply_selection",
     "attribute_direction_writers",
     "audit_moipatch",
@@ -80,8 +91,11 @@ __all__ = [
     "diff_compact",
     "diff_traces",
     "discover_compact_circuit",
+    "evaluate_framing_invariance",
     "evaluate_patches_speculative",
     "find_mlps",
+    "fit_framing_invariant_safety_router",
+    "fit_invariant_direction",
     "gradient_screen_candidates",
     "greedy_generate_reference",
     "hadamard_transform",

@@ -199,6 +199,60 @@ def _measure_router_telemetry(
     return tel
 
 
+@torch.no_grad()
+def _probe_left_pad_safe(
+    model: nn.Module,
+    tok: Any,
+    probe: list[str],
+    dev: torch.device,
+    batch_size: int,
+) -> int:
+    """Return ``batch_size`` if left-padded generation is exact OR last-token logits match ``bs=1``."""
+    exact_bs = sr._probe_batching_exact(model, tok, probe, dev, batch_size=batch_size)
+    if exact_bs > 1:
+        return exact_bs
+    if batch_size <= 1 or len(probe) < 2:
+        return 1
+
+    eos_id, pad_id = sr._tok_eos_pad(tok)
+    pad_val = pad_id if pad_id is not None else (eos_id if eos_id is not None else 0)
+    enc: list[tuple[list[int], int]] = []
+    for p in probe:
+        ids = [int(t) for t in (tok.encode(p, add_special_tokens=False) or [eos_id or 1])]
+        enc.append((ids, len(ids)))
+    pair: tuple[list[int], list[int]] | None = None
+    len0 = enc[0][1]
+    for ids_i, ln_i in enc[1:]:
+        if ln_i != len0:
+            pair = (enc[0][0], ids_i)
+            break
+    if pair is None:
+        return 1
+
+    try:
+        ref_logits = [
+            model(input_ids=torch.tensor([ids], dtype=torch.long, device=dev), use_cache=False).logits[0, -1].float()
+            for ids in pair
+        ]
+        max_len = max(len(pair[0]), len(pair[1]))
+        inp_t = torch.full((2, max_len), pad_val, dtype=torch.long, device=dev)
+        attn_t = torch.zeros((2, max_len), dtype=torch.long, device=dev)
+        for row_i, ids in enumerate(pair):
+            off = max_len - len(ids)
+            inp_t[row_i, off:] = torch.tensor(ids, dtype=torch.long, device=dev)
+            attn_t[row_i, off:] = 1
+        bat_logits = model(input_ids=inp_t, attention_mask=attn_t, use_cache=False).logits[:, -1].float()
+    except Exception:
+        return 1
+
+    ref_stack = torch.stack(ref_logits, dim=0)
+    top_match = bool(torch.equal(ref_stack.argmax(dim=-1), bat_logits.argmax(dim=-1)))
+    max_diff = float((ref_stack - bat_logits).abs().max().item())
+    if top_match and max_diff < 0.05:
+        return int(batch_size)
+    return 1
+
+
 def _resolve_suite_batch_size(
     model: nn.Module,
     tok: Any,
@@ -210,11 +264,11 @@ def _resolve_suite_batch_size(
     if batch_size <= 1 or len(formatted_prompts) < 2:
         return 1
     probe = formatted_prompts[: min(8, len(formatted_prompts))]
-    base_bs = sr._probe_batching_exact(model, tok, probe, dev, batch_size=batch_size)
+    base_bs = _probe_left_pad_safe(model, tok, probe, dev, batch_size=batch_size)
     if base_bs <= 1:
         return 1
-    with patch.enable_routed(model, mode="auto"):
-        routed_bs = sr._probe_batching_exact(model, tok, probe, dev, batch_size=base_bs)
+    with patch.enable_routed(model, mode="always_on"):
+        routed_bs = _probe_left_pad_safe(model, tok, probe, dev, batch_size=base_bs)
     return min(base_bs, routed_bs)
 
 
