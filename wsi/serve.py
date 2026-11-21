@@ -188,7 +188,7 @@ def bake_moipatch(
                     "base_sha256": orig_sha,
                     "patches": [],
                 }
-            tensors[tensor_key] = apply_edit(w_cur, e.u, e.idx, e.alpha)
+            tensors[tensor_key] = apply_edit(w_cur, e.u, e.idx, e.alpha, e.v)
             baked_modules[e.module]["patches"].append({"patch": lbl, "alpha": float(e.alpha)})
             baked_modules[e.module]["baked_sha256"] = _sha256(tensors[tensor_key])
 

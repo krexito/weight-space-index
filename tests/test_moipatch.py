@@ -829,3 +829,52 @@ if __name__ == "__main__":
     test_router_veto_save_load_fires_and_enable_routed()
     test_moipatch_save_shared_tensors()
     print("ALL MOIPATCH TESTS PASSED!")
+
+
+def test_explicit_v_edit_save_load_attach_routed_and_format() -> None:
+    """Edit.v: general rank-one W' = W - alpha u v^T (null-space-constrained edits), moipatch/1.1 on disk."""
+    torch.manual_seed(11)
+    model = _TinyRoutableLM(n_layers=3, hidden=16, inter=32, vocab=32).eval()
+    W = model.model.layers[1].mlp.down_proj.weight.detach().clone()
+    u = _unit_vec(16, 61)
+    # v = the projection row u^T W restricted to the orthogonal complement of 8 input directions
+    Q, _ = torch.linalg.qr(torch.randn(32, 8, dtype=torch.float64))
+    row = u.double() @ W.double()
+    v = row - (row @ Q) @ Q.T
+    patch = MoIPatch(edits=[Edit(module="layers.1.mlp.down_proj", u=u, alpha=1.0, v=v)], meta={"name": "v-edit"})
+    with tempfile.TemporaryDirectory() as td:
+        path = patch.save(Path(td) / "v.moipatch")
+        from safetensors import safe_open
+        with safe_open(str(path), "pt") as f:
+            assert json.loads(f.metadata()["moipatch"])["format"] == "moipatch/1.1"
+        loaded = MoIPatch.load(path)
+    assert loaded.edits[0].v is not None and torch.allclose(loaded.edits[0].v.double(), v)
+    assert "explicit input vector" in loaded.describe()
+    # attach: the weight becomes W - u v^T exactly, and inputs inside span(Q) see no change
+    expected = apply_edit(W, u, None, 1.0, v)
+    assert torch.allclose(expected.double(), W.double() - torch.outer(u.double(), v).to(W.dtype).double(), atol=1e-5)
+    x_in = (torch.randn(8, dtype=torch.float64) @ Q.T).to(W.dtype)
+    ids = torch.tensor([[1, 2, 3, 4]], dtype=torch.long)
+    with torch.no_grad():
+        with loaded.attach(model) as ph:
+            ph.on()
+            assert torch.equal(model.model.layers[1].mlp.down_proj.weight, expected)
+            assert torch.allclose(model.model.layers[1].mlp.down_proj(x_in), (W @ x_in), atol=1e-5)
+            out_attach = model(ids).logits
+        assert torch.equal(model.model.layers[1].mlp.down_proj.weight, W)  # restored
+        with loaded.enable_routed(model) as h:  # no router -> always on, hook path uses the explicit v
+            assert h.mode == "always_on"
+            assert torch.allclose(model(ids).logits, out_attach, atol=1e-4, rtol=1e-4)
+    # an edit cannot take both idx and v
+    try:
+        apply_edit(W, u, torch.tensor([0, 1]), 1.0, v)
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
+    # classic patches still save as moipatch/1
+    classic = MoIPatch(edits=[Edit(module="layers.1.mlp.down_proj", u=u, alpha=1.0)])
+    with tempfile.TemporaryDirectory() as td:
+        path = classic.save(Path(td) / "c.moipatch")
+        from safetensors import safe_open
+        with safe_open(str(path), "pt") as f:
+            assert json.loads(f.metadata()["moipatch"])["format"] == "moipatch/1"

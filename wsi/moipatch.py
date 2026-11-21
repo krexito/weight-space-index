@@ -55,6 +55,9 @@ import torch
 import torch.nn.functional as F
 
 FORMAT = "moipatch/1"
+FORMAT_V = "moipatch/1.1"  # adds explicit input-side vectors (Edit.v); written only when an edit has one, so
+                           # readers that only know moipatch/1 (e.g. rust/wsi-bake) refuse it instead of misbaking
+_FORMATS = (FORMAT, FORMAT_V)
 _DTYPES = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}
 
 
@@ -75,10 +78,21 @@ def module_suffix(name: str) -> str:
     return m.group(1)
 
 
-def apply_edit(W: torch.Tensor, u: torch.Tensor, idx: torch.Tensor | None, alpha: float) -> torch.Tensor:
-    """W' = W - alpha * u (m * (u^T W)), computed in float64 from the original weight, returned in W's dtype."""
+def apply_edit(W: torch.Tensor, u: torch.Tensor, idx: torch.Tensor | None, alpha: float,
+               v: torch.Tensor | None = None) -> torch.Tensor:
+    """W' = W - alpha * u (m * (u^T W)), computed in float64 from the original weight, returned in W's dtype.
+
+    With an explicit input-side vector `v` (Edit.v) the edit is the general rank-one W' = W - alpha * u v^T: e.g. the
+    projection's row u^T W restricted to a subspace of the input (a null-space-constrained edit)."""
     Wd = W.detach().cpu().double()
     uu = u.detach().cpu().double()
+    if v is not None:
+        if idx is not None:
+            raise ValueError("an edit takes either idx or an explicit v, not both")
+        vv = v.detach().cpu().double().reshape(-1)
+        if vv.numel() != Wd.shape[1]:
+            raise ValueError(f"v has {vv.numel()} entries, the weight has {Wd.shape[1]} input columns")
+        return (Wd - alpha * torch.outer(uu, vv)).to(W.dtype)
     m = torch.ones(Wd.shape[1], dtype=torch.float64)
     if idx is not None:
         m.zero_()
@@ -95,6 +109,7 @@ class Edit:
     base_sha256: str = ""  # SHA-256 of the original weight in base_dtype
     base_dtype: str = "bfloat16"
     shape: tuple = ()
+    v: torch.Tensor | None = None  # [in_features] explicit input-side vector: W' = W - alpha u v^T (moipatch/1.1)
 
 
 @dataclass
@@ -113,8 +128,12 @@ class MoIPatch:
             tensors[f"edit.{i}.u"] = e.u.detach().to(torch.float64 if e.u.dtype == torch.float64 else torch.float32).cpu().contiguous().clone()  # keep fp64 so the patched bf16 weights are bit-identical to the run
             if e.idx is not None:
                 tensors[f"edit.{i}.idx"] = e.idx.detach().long().cpu().contiguous().clone()
-            edits.append({"module": e.module, "alpha": float(e.alpha), "has_idx": e.idx is not None,
-                          "base_sha256": e.base_sha256, "base_dtype": e.base_dtype, "shape": list(e.shape)})
+            rec = {"module": e.module, "alpha": float(e.alpha), "has_idx": e.idx is not None,
+                   "base_sha256": e.base_sha256, "base_dtype": e.base_dtype, "shape": list(e.shape)}
+            if e.v is not None:
+                tensors[f"edit.{i}.v"] = e.v.detach().to(torch.float64).cpu().reshape(-1).contiguous().clone()
+                rec["has_v"] = True
+            edits.append(rec)
         router = None
         if self.router:
             tensors["router.dir"] = torch.as_tensor(self.router["dir"]).float().cpu().contiguous().clone()
@@ -122,7 +141,8 @@ class MoIPatch:
             if self.router.get("veto_dir") is not None:
                 tensors["router.veto_dir"] = torch.as_tensor(self.router["veto_dir"]).float().cpu().contiguous().clone()
                 router["has_veto"] = True
-        manifest = {"format": FORMAT, "edits": edits, "router": router, "gates": self.gates, "meta": self.meta}
+        fmt = FORMAT_V if any(e.v is not None for e in self.edits) else FORMAT
+        manifest = {"format": fmt, "edits": edits, "router": router, "gates": self.gates, "meta": self.meta}
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         save_file(tensors, str(p), metadata={"moipatch": json.dumps(manifest)})
@@ -134,13 +154,14 @@ class MoIPatch:
 
         with safe_open(str(path), "pt") as f:
             manifest = json.loads(f.metadata()["moipatch"])
-            if manifest.get("format") != FORMAT:
-                raise ValueError(f"unsupported format {manifest.get('format')} (expected {FORMAT})")
+            if manifest.get("format") not in _FORMATS:
+                raise ValueError(f"unsupported format {manifest.get('format')} (expected one of {_FORMATS})")
             edits = []
             for i, e in enumerate(manifest["edits"]):
                 edits.append(Edit(module=e["module"], u=f.get_tensor(f"edit.{i}.u"), alpha=e["alpha"],
                                   idx=f.get_tensor(f"edit.{i}.idx") if e["has_idx"] else None,
-                                  base_sha256=e["base_sha256"], base_dtype=e["base_dtype"], shape=tuple(e["shape"])))
+                                  base_sha256=e["base_sha256"], base_dtype=e["base_dtype"], shape=tuple(e["shape"]),
+                                  v=f.get_tensor(f"edit.{i}.v") if e.get("has_v") else None))
             router = manifest.get("router")
             if router is not None:
                 has_veto = bool(router.get("has_veto")) or ("router.veto_dir" in f.keys())
@@ -273,6 +294,8 @@ class MoIPatch:
             lines.append(f"base model: {m['base_model']}")
         for e in self.edits:
             cols = f"{len(e.idx)} columns" if e.idx is not None else "all columns"
+            if e.v is not None:
+                cols = "explicit input vector"
             lines.append(f"  edit {e.module} {tuple(e.shape)} alpha {e.alpha:g}, {cols}, base {e.base_dtype} "
                          f"sha256 {e.base_sha256[:12]}...")
         if self.router:
@@ -287,7 +310,8 @@ class MoIPatch:
             lines.append(f"  policy: {m['policy']}")
         if m.get("expected"):
             lines.append(f"  expected: {json.dumps(m['expected'])}")
-        n_bytes = sum(e.u.numel() * e.u.element_size() + (e.idx.numel() * 8 if e.idx is not None else 0) for e in self.edits)
+        n_bytes = sum(e.u.numel() * e.u.element_size() + (e.idx.numel() * 8 if e.idx is not None else 0)
+                      + (e.v.numel() * 8 if e.v is not None else 0) for e in self.edits)
         lines.append(f"  payload: {n_bytes / 1024:.1f} KB of recipe")
         return "\n".join(x for x in lines if x)
 
@@ -337,7 +361,7 @@ class PatchHandle:
             p = mod.weight
             self.params.append(p)
             self.orig.append(p.detach().cpu().clone())
-            self.new.append(apply_edit(self.orig[-1], e.u, e.idx, e.alpha))
+            self.new.append(apply_edit(self.orig[-1], e.u, e.idx, e.alpha, e.v))
 
     def __enter__(self) -> "PatchHandle":
         return self
@@ -723,7 +747,10 @@ class RoutedPatchHandle:
             uu = e.u.detach().cpu().double()
             dev = mod.weight.device
             u_scaled = (-float(e.alpha) * uu).float().to(dev)
-            if e.idx is not None:
+            if e.v is not None:
+                idx_dev = None
+                v_dev = e.v.detach().cpu().double().reshape(-1).float().to(dev)
+            elif e.idx is not None:
                 idx_cpu = e.idx.detach().long().cpu()
                 idx_dev = idx_cpu.to(dev)
                 v_dev = (uu @ Wd[:, idx_cpu]).float().to(dev)
@@ -731,7 +758,7 @@ class RoutedPatchHandle:
                 idx_dev = None
                 v_dev = (uu @ Wd).float().to(dev)
             module_deltas.setdefault(e.module, []).append((u_scaled, v_dev, idx_dev))
-            running_w[e.module] = apply_edit(running_w[e.module], e.u, e.idx, e.alpha)
+            running_w[e.module] = apply_edit(running_w[e.module], e.u, e.idx, e.alpha, e.v)
 
         # Resolve router mode & gates
         has_residual = bool(patch.router and "dir" in patch.router and "layer" in patch.router)
