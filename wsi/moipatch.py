@@ -1625,7 +1625,84 @@ def _main(argv=None) -> None:
     r.add_argument("--chat", action="store_true", help="format prompt with tokenizer.apply_chat_template if available")
     r.add_argument("--cpu", action="store_true")
     r.add_argument("--json", action="store_true", dest="as_json")
+
+    ex = sub.add_parser("export", help="bake .moipatch edits directly into a standalone HuggingFace checkpoint directory")
+    ex.add_argument("patch", nargs="+", help="one or more .moipatch files to bake sequentially")
+    ex.add_argument("--model", required=True, help="base HuggingFace model directory containing safetensors shards")
+    ex.add_argument("--out", required=True, help="destination directory for the standalone baked model")
+    ex.add_argument("--force", action="store_true", help="allow baking routed patches statically as always_on")
+    ex.add_argument("--copy", action="store_true", help="copy untouched shards instead of hardlinking")
+    ex.add_argument("--no-verify", action="store_true", help="skip SHA-256 base weight fingerprint verification")
+    ex.add_argument("--json", action="store_true", dest="as_json")
+
+    sv = sub.add_parser("serve", help="serve a base model with OpenAI-compatible API, web chat UI, and live patch hot-swap")
+    sv.add_argument("--model", required=True, help="base model path or HuggingFace repo ID")
+    sv.add_argument("--patch", action="append", default=[], help="patch to preload as name=path.moipatch or path.moipatch")
+    sv.add_argument("--activate", action="append", default=None, help="patch name(s) to activate at startup (default: all preloaded)")
+    sv.add_argument("--mode", choices=["auto", "always_on", "off"], default="auto")
+    sv.add_argument("--host", default="127.0.0.1")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.add_argument("--cpu", action="store_true")
+    sv.add_argument("--no-verify", action="store_true")
+
     a = ap.parse_args(argv)
+    if a.cmd == "export":
+        from .serve import bake_moipatch
+
+        rep = bake_moipatch(
+            a.model,
+            a.patch,
+            a.out,
+            verify_fingerprint=not a.no_verify,
+            allow_routed=a.force,
+            copy_untouched="copy" if a.copy else "auto",
+        )
+        if a.as_json:
+            print(json.dumps(rep, indent=2))
+        else:
+            print(
+                f"Baked {len(rep['patches'])} patch(es) into {rep['out_dir']} "
+                f"({rep['n_touched_shards']}/{rep['n_total_shards']} shard(s) modified, {len(rep['modules'])} module(s))"
+            )
+            if rep["had_router_warning"]:
+                print("WARNING: routed patch(es) were baked statically as always_on (router/veto disabled).", flush=True)
+        return
+
+    if a.cmd == "serve":
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from .serve import serve_moipatch
+
+        patch_map: dict[str, str] = {}
+        for raw_spec in a.patch:
+            if "=" in raw_spec:
+                nm, pth = raw_spec.split("=", 1)
+                patch_map[nm.strip()] = pth.strip()
+            else:
+                patch_map[Path(raw_spec).stem] = raw_spec
+
+        dev = "cpu" if a.cpu or not torch.cuda.is_available() else "cuda"
+        if patch_map:
+            first_p = MoIPatch.load(next(iter(patch_map.values())))
+            dt = _DTYPES[first_p.edits[0].base_dtype] if first_p.edits else torch.bfloat16
+        else:
+            dt = torch.bfloat16
+        if dev == "cpu" and dt != torch.float32:
+            dt = torch.float32
+        model = AutoModelForCausalLM.from_pretrained(a.model, dtype=dt).to(dev).eval()
+        tok = AutoTokenizer.from_pretrained(a.model)
+        serve_moipatch(
+            model,
+            tok,
+            patches=patch_map,
+            activate=a.activate,
+            mode=a.mode,
+            host=a.host,
+            port=a.port,
+            base_model_name=Path(a.model).name or "base",
+            verify_fingerprint=not a.no_verify,
+        )
+        return
+
     patch = MoIPatch.load(a.patch)
     if a.cmd == "info":
         print(patch.describe())

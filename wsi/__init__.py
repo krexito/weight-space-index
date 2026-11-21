@@ -29,6 +29,7 @@ from .router_cal import (
     fit_framing_invariant_safety_router,
     fit_invariant_direction,
 )
+from .serve import PatchRegistry, bake_moipatch, create_hotswap_server, serve_moipatch
 from .spec_eval import (
     SuffixDraftIndex,
     capture_base_drafts,
@@ -72,6 +73,7 @@ __all__ = [
     "Edit",
     "MoIPatch",
     "PatchHandle",
+    "PatchRegistry",
     "RoutedPatchHandle",
     "SelectiveMoI",
     "SuffixDraftIndex",
@@ -80,10 +82,12 @@ __all__ = [
     "apply_selection",
     "attribute_direction_writers",
     "audit_moipatch",
+    "bake_moipatch",
     "capture_base_drafts",
     "capture_causal_trace",
     "capture_compact",
     "capture_index",
+    "create_hotswap_server",
     "dequantize_block_fp4",
     "dequantize_block_int4",
     "dequantize_block_ternary",
@@ -108,6 +112,7 @@ __all__ = [
     "resolve_mlp_idx_mode",
     "screen_patch_candidates",
     "screen_patches_from_traces",
+    "serve_moipatch",
     "speculative_generate_with_base",
     "summarize_direction_traces",
     "trace_all",

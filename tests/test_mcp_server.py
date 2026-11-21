@@ -49,8 +49,9 @@ def test_mcp_exposes_build_and_screen_tools():
         "wsi_attribute_direction_writers",
         "wsi_trace_direction_graph",
         "wsi_peel_causal_circuit",
+        "wsi_bake_moipatch",
     }.issubset(names)
-    assert len(names) == 19
+    assert len(names) == 20
 
 
 def test_mcp_build_moipatch_and_screen_candidates_end_to_end(tmp_path, monkeypatch):
@@ -471,3 +472,84 @@ def test_mcp_direction_tracing_graph_and_peel_end_to_end(tmp_path, monkeypatch):
     assert peel["n_rounds_completed"] == 2
     assert peel["n_edits"] == 2 and peeled_path.exists()
     assert MoIPatch.load(peeled_path).attach(model).fingerprint_ok() is True
+
+
+def test_mcp_bake_moipatch(tmp_path):
+    from safetensors import safe_open
+    from wsi.moipatch import Edit, MoIPatch, _sha256, apply_edit
+
+    torch.manual_seed(2)
+    w = torch.randn(12, 12, dtype=torch.float32)
+    ckpt = tmp_path / "base_ckpt"
+    ckpt.mkdir()
+    save_file({"model.layers.0.mlp.down_proj.weight": w}, str(ckpt / "model.safetensors"))
+
+    u = torch.zeros(12, dtype=torch.float64)
+    u[0] = 1.0
+    edit = Edit(
+        module="layers.0.mlp.down_proj",
+        u=u,
+        alpha=0.75,
+        base_sha256=_sha256(w),
+        base_dtype="float32",
+        shape=(12, 12),
+    )
+
+    static_p = tmp_path / "static.moipatch"
+    MoIPatch(edits=[edit], meta={"name": "static-test"}).save(static_p)
+
+    out_dir = tmp_path / "baked_static"
+    r_ok = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 30, "method": "tools/call",
+        "params": {
+            "name": "wsi_bake_moipatch",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "out_dir": str(out_dir),
+                "patch_path": str(static_p),
+                "copy_untouched": "copy",
+            },
+        },
+    })
+    assert r_ok["result"]["isError"] is False, r_ok["result"]["content"][0]["text"]
+    rep = json.loads(r_ok["result"]["content"][0]["text"])
+    assert rep["n_touched_shards"] == 1 and rep["had_router_warning"] is False
+    assert (out_dir / "wsi_baked_patches.json").exists()
+    with safe_open(str(out_dir / "model.safetensors"), "pt") as sf:
+        assert torch.equal(sf.get_tensor("model.layers.0.mlp.down_proj.weight").clone(), apply_edit(w, u, None, 0.75))
+
+    # Guard routed patch unless allow_routed=True
+    r_dir = torch.zeros(12, dtype=torch.float32)
+    r_dir[1] = 1.0
+    routed_p = tmp_path / "routed.moipatch"
+    MoIPatch(
+        edits=[edit],
+        router={"layer": 1, "readout": "last_token", "dir": r_dir, "thr": 0.5},
+        meta={"name": "abliterated-sfw"},
+    ).save(routed_p)
+
+    r_blocked = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 31, "method": "tools/call",
+        "params": {
+            "name": "wsi_bake_moipatch",
+            "arguments": {"model_dir": str(ckpt), "out_dir": str(tmp_path / "baked_fail"), "patch_paths": [str(routed_p)]},
+        },
+    })
+    assert r_blocked["result"]["isError"] is True
+    assert "allow_routed" in r_blocked["result"]["content"][0]["text"]
+
+    r_forced = mcp.handle_rpc_message({
+        "jsonrpc": "2.0", "id": 32, "method": "tools/call",
+        "params": {
+            "name": "wsi_bake_moipatch",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "out_dir": str(tmp_path / "baked_forced"),
+                "patch_paths": [str(routed_p)],
+                "allow_routed": True,
+                "copy_untouched": "copy",
+            },
+        },
+    })
+    assert r_forced["result"]["isError"] is False, r_forced["result"]["content"][0]["text"]
+    assert json.loads(r_forced["result"]["content"][0]["text"])["had_router_warning"] is True

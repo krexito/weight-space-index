@@ -535,6 +535,23 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             "required": ["model_dir"],
         },
     },
+    {
+        "name": "wsi_bake_moipatch",
+        "description": "Stream-bake one or more `.moipatch` files directly into a standalone HuggingFace safetensors checkpoint directory on disk (without loading the full model into RAM/VRAM), verifying base SHA-256 fingerprints and rejecting routed patches unless `allow_routed=true`.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to base HuggingFace checkpoint directory with safetensors shards"},
+                "out_dir": {"type": "string", "description": "Destination directory for the standalone baked model"},
+                "patch_paths": {"type": "array", "items": {"type": "string"}, "description": "Ordered list of `.moipatch` paths to bake sequentially"},
+                "patch_path": {"type": "string", "description": "Convenience alias for baking a single `.moipatch` path"},
+                "verify_fingerprint": {"type": "boolean", "default": True},
+                "allow_routed": {"type": "boolean", "default": False, "description": "Must be true to bake a patch containing a runtime router/safety veto statically as `always_on`"},
+                "copy_untouched": {"type": "string", "default": "auto", "enum": ["auto", "copy"]},
+            },
+            "required": ["model_dir", "out_dir"],
+        },
+    },
 ]
 
 
@@ -1024,6 +1041,30 @@ def _peel_causal_circuit_tool(args: dict[str, Any]) -> dict[str, Any]:
     return res
 
 
+def _bake_moipatch_tool(args: dict[str, Any]) -> dict[str, Any]:
+    from .serve import bake_moipatch
+
+    paths: list[str] = []
+    if args.get("patch_paths") is not None:
+        raw_list = args["patch_paths"]
+        if not isinstance(raw_list, list):
+            raise ValueError("`patch_paths` must be a list of `.moipatch` file paths")
+        paths.extend(str(p) for p in raw_list)
+    if args.get("patch_path"):
+        paths.append(str(args["patch_path"]))
+    if not paths:
+        raise ValueError("Provide `patch_paths` (array) or `patch_path` (string)")
+
+    return bake_moipatch(
+        args["model_dir"],
+        paths,
+        args["out_dir"],
+        verify_fingerprint=bool(args.get("verify_fingerprint", True)),
+        allow_routed=bool(args.get("allow_routed", False)),
+        copy_untouched=str(args.get("copy_untouched", "auto")),
+    )
+
+
 def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Dispatch an MCP tool call to `WeightSpaceIndex`."""
     if name == "wsi_overview":
@@ -1138,6 +1179,8 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return _trace_direction_graph_tool(args)
     if name == "wsi_peel_causal_circuit":
         return _peel_causal_circuit_tool(args)
+    if name == "wsi_bake_moipatch":
+        return _bake_moipatch_tool(args)
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
 
 
