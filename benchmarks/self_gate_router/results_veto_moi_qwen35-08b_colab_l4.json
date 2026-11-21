@@ -1,0 +1,168 @@
+{
+ "run": {
+  "n": 200,
+  "arms": {
+   "base": {
+    "acc": 0.11,
+    "acc_rescued": 0.335,
+    "loop_killed": 177,
+    "switched_on": 0,
+    "healthy_switched": 0,
+    "healthy_kept_right": 22
+   },
+   "text_moi": {
+    "acc": 0.555,
+    "acc_rescued": 0.615,
+    "loop_killed": 52,
+    "switched_on": 189,
+    "healthy_switched": 11,
+    "healthy_kept_right": 22
+   },
+   "text_restart": {
+    "acc": 0.355,
+    "acc_rescued": 0.485,
+    "loop_killed": 119,
+    "switched_on": 189,
+    "healthy_switched": 11,
+    "healthy_kept_right": 20
+   },
+   "veto_moi": {
+    "acc": 0.555,
+    "acc_rescued": 0.59,
+    "loop_killed": 44,
+    "switched_on": 180,
+    "healthy_switched": 3,
+    "healthy_kept_right": 22
+   },
+   "veto_restart": {
+    "acc": 0.265,
+    "acc_rescued": 0.48,
+    "loop_killed": 142,
+    "switched_on": 180,
+    "healthy_switched": 3,
+    "healthy_kept_right": 21
+   }
+  },
+  "paired": {
+   "veto_moi_vs_text_moi": {
+    "diff": 0.0,
+    "ci95": [
+     -0.055,
+     0.055
+    ],
+    "a_only": 15,
+    "b_only": 15
+   },
+   "veto_moi_vs_text_moi_rescued": {
+    "diff": -0.025,
+    "ci95": [
+     -0.08,
+     0.03
+    ],
+    "a_only": 13,
+    "b_only": 18
+   },
+   "veto_moi_vs_veto_restart": {
+    "diff": 0.29,
+    "ci95": [
+     0.225,
+     0.36
+    ],
+    "a_only": 61,
+    "b_only": 3
+   },
+   "veto_moi_vs_veto_restart_rescued": {
+    "diff": 0.11,
+    "ci95": [
+     0.045,
+     0.175
+    ],
+    "a_only": 33,
+    "b_only": 11
+   },
+   "text_moi_vs_text_restart": {
+    "diff": 0.2,
+    "ci95": [
+     0.14,
+     0.265
+    ],
+    "a_only": 44,
+    "b_only": 4
+   },
+   "text_moi_vs_text_restart_rescued": {
+    "diff": 0.13,
+    "ci95": [
+     0.07,
+     0.19
+    ],
+    "a_only": 33,
+    "b_only": 7
+   },
+   "veto_restart_vs_text_restart": {
+    "diff": -0.09,
+    "ci95": [
+     -0.155,
+     -0.025
+    ],
+    "a_only": 15,
+    "b_only": 33
+   },
+   "veto_restart_vs_text_restart_rescued": {
+    "diff": -0.005,
+    "ci95": [
+     -0.065,
+     0.055
+    ],
+    "a_only": 18,
+    "b_only": 19
+   },
+   "veto_moi_vs_base": {
+    "diff": 0.445,
+    "ci95": [
+     0.375,
+     0.515
+    ],
+    "a_only": 89,
+    "b_only": 0
+   },
+   "veto_moi_vs_base_rescued": {
+    "diff": 0.255,
+    "ci95": [
+     0.19,
+     0.32
+    ],
+    "a_only": 55,
+    "b_only": 4
+   }
+  },
+  "healthy_base_right": 22,
+  "veto_plan": {
+   "calibration": {
+    "sign": 1.0,
+    "thr": 0.3521815823856774,
+    "auc_calib": 0.984,
+    "fpr": 0.01,
+    "n_loop_tokens": 72192,
+    "n_normal_tokens": 550111
+   },
+   "auc_test": 0.9822,
+   "n_test": 200,
+   "text_fired": 189,
+   "veto_on": 180,
+   "loops_on": "177/177",
+   "normal_on": "3/23",
+   "normal_text_fired": "12/23",
+   "median_delay_after_text": 1067.5,
+   "median_on_after_onset": 118.0
+  }
+ },
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-0.8B",
+  "commit": "f828c2b1820b36c4c8fa531c8b851542f90e0ba9",
+  "notebook": "veto_moi_colab.ipynb",
+  "fpr": 0.01,
+  "gpu": "NVIDIA L4",
+  "saved_utc": "2026-11-21T18:54:55+00:00"
+ }
+}
