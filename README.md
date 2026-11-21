@@ -1,10 +1,86 @@
 # Weight-Space Index (`wsi`)
 
-**A semantic decompiler, symbol table, and navigation index for neural network weights.**
+**Write 1,000 facts or 64-neuron behavioral patches straight into LLM `.safetensors` weights with zero training and `0.0%` drift outside the target behavior.**
 
-Built to work standalone or directly on top of [`wsr` (Weight-Space Reading and Programming)](./wsr), **Weight-Space Index (`wsi`)** allows Large Language Models (and humans) to inspect, search, trace, compare, and surgically edit `.safetensors` checkpoints **without running GPU forward passes or training**.
+Built to work standalone or directly on top of [`wsr` (Weight-Space Reading and Programming)](./wsr), **Weight-Space Index (`wsi`)** locates, audits, translates, and edits neural circuits without gradient descent—plus exports self-routing `.moipatch` files and static `.safetensors` checkpoints.
+
+> [!TIP]
+> **10-minute technical overview:** Read [**`WRITEUP.md`**](./WRITEUP.md) for the full write-up across `Qwen3.5-0.8B`, `LiquidAI/LFM3-1.7B`, and `microsoft/Aion-1.0-Instruct-2.3B`, including paired `GSM8K`/`MMLU` capability parity, borderline-benign safety stress tests, and Rust baking benchmarks.
 
 ---
+
+## Headline Results
+
+### 1. Weight-Space Memory Injection (`Qwen3.5-0.8B`, 1,000 Facts)
+`moi_memory.py` writes **1,000 invented people** (each with a city, job, and dog's name from 3 training sentences) straight into `down_proj` with a two-token full-name key gate (`rome_fullname`, [`results`](./benchmarks/moi_memory/results_fullname_colab_l4_qwen35_08b_1000.json)):
+
+* **`97%` recall on unseen paraphrases** and **`97%` chat** *(chance `11%`, `base 13%`, `always-on ROME 8%`, `MEMIT 38%`)*
+* **`84%` cross-lingual Spanish recall** and **`78%` one-hop reasoning** *(person → city's country)*
+* **`22.67` WikiText-2 perplexity — exact match to unmodified `base` (`22.67`)** *(`always-on ROME 198k`, `MEMIT 338`)*
+* **`0.0%` gate firing on WikiText-2 tokens**, **`30 / 30`** known capitals preserved, and surname collision leaks cut from `93%` (`100` memories) / `62%` (`1,000` memories) down to base noise (`13%`)
+
+### 2. Surgical Behavioral Patching (`17.7 KB` Baked vs. Routed Safety)
+On **`LiquidAI/LFM3-1.7B`** (ShortConv + SwiGLU hybrid, zero layer hints, evaluated on disjoint `Half-B`, `OR-Bench-Toxic`, and out-of-distribution `JailbreakBench`), automated causal tracing + Fisher curvature localizes edits **24×–3,600× smaller** than all-layer abliteration:
+
+| Configuration | Weights Edited | `GSM8K` (`n=200`) | `MMLU` (`n=400`) | `OR-Bench` Over-Refusal Recov. | `JBB-Benign` OOD Recov. | `OR-Bench-Toxic` Safety Kept | Normal Prose KL (`0.0 = exact`) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`base`** | `0` | `81.0%` | `45.0%` | `0.0%` | `0.0%` | `100.0%` (`83.0%` raw) | `0.00000` |
+| `classic_ablit` *(all 48 layers)* | `478.2M` (`27.7%`) | — | — | `85.0%` | — | `49.4%` *(lost half)* | `0.015–0.020` |
+| **`abliterated-bake`** *(`64` neurons, **`17.7 KB`**, static)* | **`131K` (`0.0076%`)** | `82.5%` *(CI `[-1.5, +4.5]`)* | `47.0%` *(CI `[0.0, +4.0]`)* | **`85.0%`** | **`82.4%`** | No veto | **`0.00091`** |
+| **`abliterated-sfw`** *(`2` modules + `L24` safety router, `53.9 KB`)* | `19.9M` (`1.15%`, gated) | **`81.0%`** *(`0/600` fires)* | **`45.0%`** *(`0/600` fires)* | `65.0%` | `11.8%` | **`96.4%`** *(OOD JBB `94.9–100%`)* | **`0.00000`** *(`30/30` exact)* |
+
+* **Baked vs. routed takeaway:** **The `17.7 KB` baked patch (`abliterated-bake`) is the robust general-purpose artifact** — capability is unchanged within statistical noise (`GSM8K`/`MMLU` CIs span zero) while staying at `0.00204` KL on OOD `JBB-Benign` boundary prompts. **The `L24` router (`abliterated-sfw`) is the safety-preserving option**: `0.00000` KL on everyday text and `94.9%–100.0%` safety kept across adversarial `JailbreakBench` wrappers, trading off boundary recovery near the safety margin.
+* **Other families (blind, zero layer hints):** On **`Qwen/Qwen3.5-0.8B`**, blind discovery (`L13-14`, `32` neurons) lifts `GSM8K` reasoning from `11.0%` (`base`) to `47.5%` always-on / **`55.5%`** via MoI (`+20.0 pts` over the `35.5%` unpatched restart control, tying MIT CSAIL `p50c` at `58.0%`). On **`microsoft/Aion-1.0-Instruct-2.3B`**, an isolated `claude -p` blind agent given only `wsi/` + a 1-page task cut over-refusal `94% → 33%` (`64.9%` recovered), kept `93.3%` toxic refusal, and left `100%` of ordinary answers identical in `8.1 min` on an L4 (subject to the style caveat below).
+
+---
+
+## Honest Scope & What Failed
+
+We publish every negative result, ceiling, and boundary failure alongside the wins (full logs in the collapsible sections below and [`WRITEUP.md`](./WRITEUP.md)):
+
+* **Capability parity, not a boost:** `abliterated-bake` shows `+1.5` on `GSM8K` (`95% CI [-1.5, +4.5]`) and `+2.0` on `MMLU` (`CI [0.0, +4.0]`). Those CIs touch/cross zero — the claim is **unchanged capability within noise; false refusals gone**.
+* **Boundary false-fires on routers:** An uncalibrated `L9` 1-sensor router false-fired on **`100%`** of edgy-but-benign boundary prompts (`KL 0.062`). Adding `Σ_frame` invariance + `ctrl_plus_nonref` (`abliterated-sfw`, `L24`) cuts false fires to **`7.2%`** (`JBB-Benign`, `KL 0.0023`) and **`25.6%`** (`OR-Bench`), with `0.0%` newly refused answers.
+* **Memory injection requires the full name:** At `1,000` memories, recall needs the exact two-part name (`Cugamer` alone or `Mr. Bernilri` will not fire), greedy generation (`46%`) lags multiple-choice (`97%`), and reverse queries (`dog → owner`) score `0%`.
+* **Blind-agent style drift:** On `Aion-1.0-2.3B`, the winning blind agent's all-layer edit shifted `41%` of recovered answers into an exam-solver template (`"The question asks: ..."`, `0%` in base), failing our automated `style_check` bar (`<= 20%`).
+* **Speculative decoding & batch MTP were slower:** Base-draft speculation gave `<= 1.15×` (`0.89×` sampling; `1/16` greedy match before the cache fix), and `Qwen3.5` MTP ran at **`0.80×`** (`1,508 s` vs `1,212 s`) under full batch concurrency.
+* **Benchmarks without loops cannot validate loop fixes:** `Qwen3.5-4B` loops only **`0.5%`** on `GSM8K` and **`0.7%`** on `MATH-500` under target sampling (`39%` was greedy-only); `LFM3-1.7B` loops **`0%`** on `MATH-500`.
+* **Negative mechanistic & routing hypotheses:** Copy-head ablation (`0/336` heads on `0.8B`; Spearman `0.89` with normal tokens), residual onset precursors (`AUC 0.789` = ordinary probe `0.791`; `0.56` on `MATH-500`), perpendicular healthy-projected loop directions, and pairwise OBS in `LFM3` accuracy (`95%` CIs cross `0`) did not beat simpler baselines. Routed task zones (`79.9%` at `85%`) tied one mixed-calibration index (`79.7%`), and the prospective `1`-forward screen ranked the `4B` winner `4th / 12`.
+* **Decompilation vs. discovery:** The `p50c` benchmark (`33.1–234.7 ms`, `0.999998` cos) checks exact re-expression of an already-edited checkpoint, whereas blind discovery from `base` takes `53.5 min – 9.1 h`.
+
+---
+
+## Quickstart (3 Commands)
+
+```bash
+# 1. Serve a live OpenAI-compatible hot-swap server (204-267 ms patch swap on LFM3-1.7B, 0.26 ms revert to base)
+python -m wsi moipatch serve LiquidAI/LFM3-1.7B --patch-dir patches/ --host 127.0.0.1 --port 8000
+
+# 2. Bake a .moipatch onto HF .safetensors shards with zero Python/PyTorch deps (391.5 KB Rust binary, 11.01x faster than Python)
+cargo build --release --manifest-path rust/wsi-bake/Cargo.toml
+./rust/wsi-bake/target/release/wsi-bake bake patches/lfm3_1.7b_abliterated_bake.moipatch /path/to/LFM3-1.7B /path/to/LFM3-baked
+
+# 3. Expose all 22 WSI tools over stdio for Claude Desktop / Cursor / Antigravity MCP clients
+python -m wsi mcp
+```
+
+Minimal Python API:
+
+```python
+from wsi import WeightSpaceIndex
+
+I = WeightSpaceIndex.from_model("models/gpt2")
+hits = I.search_transduction("ĠFrance", "ĠParis", top_k=5)
+I.rewire_transduction("ĠTower", "ĠParis", "ĠRome", top_k_neurons=24, strength=6.0, save_path="edit_eiffel_rome.safetensors")
+```
+
+*(Scroll down for full API, CLI, `wsr` sandbox, and MCP configuration examples.)*
+
+---
+
+## Full Documentation, Benchmarks & Negative Results
+
+<details>
+<summary><strong>1. Headline Static-Analysis Benchmarks & Sections 1–4 (GPT-2 Blind Reading, Surgical Rewiring, LFM3-1.7B OOD & MIT CSAIL Qwen3.5-0.8B)</strong></summary>
 
 ## ⚡ Headline Benchmarks: `wsr` Interactive Sandbox vs. `wsi` Static Analysis (Rust SIMD Core)
 
@@ -70,6 +146,13 @@ We evaluated `wsi` directly on the official external artifacts (`p10c`, `p25c`, 
   * **Cross-Layer Echo Detection (`27.17σ`):** `wsi.explain_edit` automatically detects that the principal residual write vector $\mathbf{u}_{15}$ of the 64 MLP neurons in Layer 15 and the principal residual write vector $\mathbf{u}_{19}$ of the 64 MLP neurons in Layer 19 have a cosine similarity of **`0.849005`** in $\mathbb{R}^{1024}$ (**`27.17 sigma`** above the random baseline $1/\sqrt{1024} \approx 0.03125$), identifying a `cross_layer_internal_state_resonance` loop.
   * **Per-Head Attribution (`head_attribution`):** On `p25c`, `wsi.explain_edit` automatically decomposes `layers.15.self_attn.o_proj.weight` (`8 heads × 256d`) and reports `modified_heads=[7], ablated_heads=[7]` (`cols [1792:2048]`).
   * **Linking `p50c` and `p25c` Purely from Weight Geometry (`trace_internal_state`):** Running `wsi.trace_internal_state(vec=u_15)` projects Layer 15's 64-neuron internal state vector across all 8 attention heads in `layers.15.self_attn.o_proj.weight` and ranks **`Head 7` (`cols [1792:2048]`) #1 out of all 8 heads** (`energy = 0.28956`), showing from static weight matrices (given the `p50c` direction) that `p25c` (ablating Layer 15 Head 7) and `p50c` (projecting 64 MLP neurons in Layers 15 & 19) intervene on the **exact same internal state circuit**.
+
+
+
+</details>
+
+<details>
+<summary><strong>2. Section 5: Cross-Architecture Weight Transplant, Compositional AND Gates & Mixture of Indexes (MoI)</strong></summary>
 
 ### 5. Cross-Architecture Weight Transplant: Big Model → Small Model (`python scripts/demo_cross_model_transplant.py`)
 Different models have randomly rotated latent spaces of different widths, but they share surface vocabulary tokens. `wsi` uses those shared tokens as a **Rosetta bridge** to translate neuron write-vectors between architectures — no training data, no gradient steps.
@@ -144,6 +227,15 @@ GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, id
 > * `transplant_circuit_from` translates only the **output write-vector** onto a user-specified student trigger; `transplant_full_neuron_from` translates **both input trigger keys and output write-vectors** into dormant student neurons (calibrated Layer-10 keys used a fast `1.15s` `343`-token pass on GPT-2 `'The'+tok`, while analytical Layer-0 keys require zero forward passes on either model).
 > * `transplant_connected_chain_from`, `transplant_compositional_and_chain_from`, and `MixtureOfIndexes` (`MoI`) wire **2-layer chains** `(L6 -> private residual wire -> L10)` between vocabulary-anchored boundaries (`L0` trigger $\to$ private internal state / compositional `AND` gate $\to$ `L1` output); grafting **purely mid-layer abstract reasoning subspaces** still requires full mid/late teacher MLP/attention tensors (`gate_proj`, `up_proj`, `down_proj`, `o_proj`) and multi-unit subspace/head transplants rather than 1-neuron chains.
 > * Capacity limits and polysemantic noise are real: a `768d` student cannot absorb an unbounded number of teacher neurons without interference, and no broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
+
+
+
+</details>
+
+<details>
+<summary><strong>3. Section 6A: Additive MoI — Weight-Space Memory Injection (1,000 Facts), Blind Loop Discovery, Sycophancy, Blind Agent Over-Refusal & LFM3 Capability/Boundary</strong></summary>
+
+> *Note: Full paired `GSM8K`/`MMLU`, adversarial `JailbreakBench`, and borderline-benign tables for `LiquidAI/LFM3-1.7B` are in [`WRITEUP.md`](./WRITEUP.md#3-empirical-results-on-liquidailfm3-17b).*
 
 ### 6. Two Kinds of MoI: Additive vs. Selective
 
@@ -324,6 +416,13 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >   * **The same change removed the decline with scale** (dev `+84` pts over base at 1,000, CI `[79, 89]`, vs `+53`, CI `[43, 63]`, for the surname gate). So the surname gate's drop from 98% to 66% was memories of other people firing, not a lack of capacity.
 >   * **Limits:** recall needs the full name ("Cugamer" alone or "Mr. Bernilri" was not tested and would not fire). Exact generation is weaker than multiple choice (dev `46%` of answers greedy-decodable at 1,000). Backwards questions (dog -> owner) stay at `0%` for every method, as expected from a key on the name. The second run reused the 1,000 memories written by the first (same `progress.pt`).
 >
+
+
+</details>
+
+<details>
+<summary><strong>4. Section 6B: Selective MoI — Compensated Indexes, Pairwise OBS, Gram Compression, vLLM Speed, Task Zones & CompactTrace X-Ray</strong></summary>
+
 > * **Compensated Selective MoI** (Selective MoI whose loaded down-projection columns are refit by ridge least squares on the task's activation covariance to cover the dropped neurons; `experiment_index_criteria.py`, [`results`](./benchmarks/index_criteria/results_colab_l4.json)) cuts most of the loss. Qwen3.5-0.8B math-solution ppl (full `5.33`):
 >
 >   | Neurons kept | `mean` (current index) | best plain criterion | best compensated | random |
@@ -457,7 +556,12 @@ MoI comes in two kinds with opposite goals. Measured results so far:
 >     * *Why traces find the origin (Layers 11–15) while WSI finds the amplifier (Layer 19) — and caveat on hints:* Layer 19 sits outside `hybrid_top_layers[:6]` in trace activation variance, yet static weight geometry (`16.8σ–18.6σ` SVD echo) and $W_O$ vector rotation confirm it amplifies Layer 15's edit. **Caveat:** in that Colab run, selecting Layer 19 automatically relied on three answer-shaped filters (`6 <= l <= 16`, `is_full_attn`, and `dst_layer < 23`), which narrowed downstream FA candidates to Layer 19 alone while raw resonance ranked `15 -> 19` `#5` behind `15 -> 16` (`0.6904`), `11 -> 23` (`0.6888`), `15 -> 23` (`0.6693`), and `15 -> 18` (`0.6586`). `discover_compact_circuit` has since been cleaned to remove all layer-number, layer-type, and `< max_layer` hints and defaults to `blind_top2` (matching `discover_blind.py` above).
 >     * *Held-out GSM8K (`24` problems, `2,048`-token cap):* strict `####` `acc` reaches `33.3%` (`ct_mlp_top3` `[14, 13, 10]`) and `25.0%` (`ct_wsi_fa3` `[11, 15, 19]`) vs. `16.7%` (`ct_wsi_pair` `[11, 19]` and `p50c_ref` `[15, 19]`), `12.5%` (`base`), and `8.3%` (`ct_mlp_fa3` `[11, 15, 7]`). Meanwhile `any_num_acc` is `50.0%–62.5%` across conditions (`base` `58.3%`, `p50c_ref` & `ct_mlp_fa3` `62.5%`, `mean_gen_tok` `1,916–2,048` vs. `loop_rate` `79.2%–100.0%`), confirming that at `2,048` tokens `Qwen3.5-0.8B` frequently computes the numerical answer before timing out on `####` formatting.
 
----
+
+
+</details>
+
+<details>
+<summary><strong>5. Architecture Overview, Full Capabilities Table & Detailed Python / CLI / wsr / MCP Usage</strong></summary>
 
 ## Why Weight-Space Index?
 
@@ -497,7 +601,7 @@ In standard weight-space reading (`wsr`), an LLM agent is given raw weight matri
 | **Portable `.moipatch` Recipes** | `MoIPatch.load("patch.moipatch")` / `wsi moipatch verify ...` | Packages self-routing, SHA-256 verified, byte-reversible Additive-MoI edits (`10-50 KB`, e.g. `patches/qwen35_0.8b_p50c_loop_fix.moipatch`, `patches/qwen35_4b_anti_sycophancy.moipatch`). The loop patch is a rank-1 extraction of p50c's edit (`99.84%` of the patched bf16 weights identical to p50c); its expected numbers are p50c's, not re-measured with the patch |
 | **Runtime Capture & Selective MoI** | `capture_index(model, texts, task="math")` / `trace_all(model, ids)` / `SelectiveMoI(indexes).route(...)` | Records what every linear layer and residual stream actually uses on a task (`ActivationIndex`, ~28 MB per task on Qwen3.5-0.8B), routes prompts to the closest task index and physically loads only its neurons (`apply_selection`) |
 | **Token-Level Compact Trace, Prompt X-Ray & Hybrid Discovery** | `capture_compact(model, ids)` / `diff_traces(model, ids_a, ids_b, wsi=I)` / `I.diff_compact(ct_a, ct_b)` / `I.discover_compact_circuit(traces)` / `wsi diff-compact` / `wsi discover-circuit` | Compresses per-token residuals (`INT8`+Hadamard + adaptive `top_k_mlp="auto"` 95% energy `FP4` MLP + `head_quant="int8"` pre-$W_O$ vectors + `INT8` cache), locates repetition onset, diffs `CompactTrace` (`diff_traces(..., compact=True)` default, exact $W_O$-projected `head`, `neuron`, KV/DeltaNet cache, vocab readout), and pairs origin traces with static `WSI` SVD resonance to synthesize `.moipatch` circuits |
-| **MCP Server** | `python -m wsi mcp` | Exposes all 13 `wsi_*` tools (including `wsi_diff_compact` and `wsi_discover_compact_circuit`) over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
+| **MCP Server** | `python -m wsi mcp` | Exposes all 22 `wsi_*` tools (including `wsi_audit_moipatch`, `wsi_calibrate_safety_router`, `wsi_bake_moipatch`, `wsi_diff_compact`, and `wsi_discover_compact_circuit`) over standard JSON-RPC 2.0 stdio for any MCP-compatible AI agent |
 
 ---
 
@@ -590,7 +694,18 @@ Add `wsi` to any MCP client (`claude_desktop_config.json`, Cursor, Antigravity, 
 }
 ```
 
----
+
+
+</details>
+
+<details>
+<summary><strong>6. Native Rust SIMD Core, Standalone Rust Baker & Reproducible Benchmark Commands</strong></summary>
+
+```bash
+# Build & test the zero-dependency standalone .moipatch -> .safetensors baker (`391.5 KB`, `11.01x` faster than Python, SHA-256 parity across BF16/F16/F32)
+cargo test --manifest-path rust/wsi-bake/Cargo.toml
+cargo build --release --manifest-path rust/wsi-bake/Cargo.toml
+```
 
 ## Native Rust SIMD Core & Reproducible Benchmarks
 
@@ -642,6 +757,10 @@ python scripts/experiment_quant_sweep.py
 python scripts/experiment_diff_compact_syco.py
 python scripts/experiment_loop_discover_compact.py
 ```
+
+
+
+</details>
 
 ---
 
