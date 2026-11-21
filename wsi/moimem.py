@@ -22,17 +22,67 @@ from __future__ import annotations
 
 import hashlib
 import json
+import weakref
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import torch
 
 FORMAT = "moimem/1"
+_SAVE_DTYPES = {
+    "fp32": torch.float32,
+    "float32": torch.float32,
+    "bf16": torch.bfloat16,
+    "bfloat16": torch.bfloat16,
+    "fp16": torch.float16,
+    "float16": torch.float16,
+}
+_SHA_CACHE: OrderedDict[tuple[int, int, tuple[int, ...], str, str], tuple[weakref.ReferenceType, int, str]] = OrderedDict()
+_SHA_CACHE_MAX = 32
 
 
 def _sha256(t: torch.Tensor) -> str:
     t = t.detach().contiguous().cpu()
     return hashlib.sha256(t.view(torch.uint8).numpy().tobytes()).hexdigest()
+
+
+def _tensor_quick_sig(t: torch.Tensor) -> tuple[int, int, int, int, int, int]:
+    """Fast O(1)-alloc byte integrity signature catching even ``.data[...]`` mutations."""
+    raw = t.detach().contiguous().reshape(-1).view(torch.uint8)
+    n = int(raw.numel())
+    ver = int(getattr(t, "_version", 0))
+    if n == 0:
+        return (ver, 0, 0, 0, 0, 0)
+    even = int(raw[0::2].sum(dtype=torch.int64).item())
+    odd = int(raw[1::2].sum(dtype=torch.int64).item()) if n > 1 else even
+    return (
+        ver,
+        n,
+        even,
+        odd,
+        int(raw[0].item()),
+        int(raw[n // 2].item()) ^ (int(raw[-1].item()) << 8),
+    )
+
+
+def _cached_sha256(t: torch.Tensor, dt: torch.dtype | None = None) -> str:
+    """Return SHA-256 hex digest with weakref + fast on-device byte-signature validation."""
+    target_dt = dt or t.dtype
+    key = (id(t), t.data_ptr(), tuple(t.shape), str(t.dtype), str(target_dt))
+    sig = _tensor_quick_sig(t)
+    cached = _SHA_CACHE.get(key)
+    if cached is not None:
+        ref, cached_sig, digest = cached
+        if ref() is t and cached_sig == sig:
+            _SHA_CACHE.move_to_end(key)
+            return digest
+    src = t.detach() if target_dt == t.dtype else t.detach().to(target_dt)
+    digest = _sha256(src)
+    _SHA_CACHE[key] = (weakref.ref(t), sig, digest)
+    while len(_SHA_CACHE) > _SHA_CACHE_MAX:
+        _SHA_CACHE.popitem(last=False)
+    return digest
 
 
 def find_layers(model) -> torch.nn.ModuleList:
@@ -80,14 +130,16 @@ class MemoryBank:
         return (self.c.numel() + self.r.numel()) * 2  # as stored (bf16)
 
     # ------------------------------------------------------------------ io
-    def save(self, path: str | Path) -> Path:
+    def save(self, path: str | Path, *, dtype: str = "fp32") -> Path:
         from safetensors.torch import save_file
 
+        if dtype not in _SAVE_DTYPES:
+            raise ValueError(f"Unsupported dtype {dtype!r}; expected one of {sorted(_SAVE_DTYPES)}")
+        dt = _SAVE_DTYPES[dtype]
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
         manifest = {"format": FORMAT, "layer": self.layer, "thr": self.thr, "names": self.names, "meta": self.meta}
-        # fp32 on disk: bytes() reports the bf16 size a deployment would need
-        save_file({"c": self.c.float().contiguous(), "r": self.r.float().contiguous(), "ck": self.ck.float().contiguous()},
+        save_file({"c": self.c.to(dt).contiguous(), "r": self.r.to(dt).contiguous(), "ck": self.ck.float().contiguous()},
                   str(p), metadata={"moimem": json.dumps(manifest)})
         return p
 
@@ -115,7 +167,7 @@ class MemoryHandle:
         want = bank.meta.get("down_proj_sha256")
         if want:
             dt = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[bank.meta["down_proj_dtype"]]
-            if _sha256(self.down.weight.detach().to(dt)) != want:
+            if _cached_sha256(self.down.weight, dt) != want:
                 raise ValueError("down_proj weights differ from the bank's base model (fingerprint mismatch)")
         p = self.down.weight
         self.c = bank.c.to(p.device, torch.float32)
