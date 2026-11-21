@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
@@ -1864,6 +1865,7 @@ def capture_causal_trace(
     *,
     target_span: int | tuple[int, int] | None = None,
     healthy_span: tuple[int, int] | None = None,
+    healthy_only: bool = False,
     grad_mode: str = "compressed",
     target_dir: torch.Tensor | None = None,
     target_layer: int | None = None,
@@ -1877,8 +1879,18 @@ def capture_causal_trace(
     contrast_token_ids: int | list[int] | torch.Tensor | None = None,
     **kwargs: Any,
 ) -> CompactTrace:
-    """Convenience wrapper calling ``capture_compact(..., capture_grad=True)``."""
-    return capture_compact(
+    """Convenience wrapper calling ``capture_compact(..., capture_grad=True)``.
+
+    When ``healthy_only=True``, traces only Fisher/gradient sensitivity over ``healthy_span``
+    and marks ``meta['grad_n_target'] = 0`` so healthy-prose traces never pollute ``C_target``.
+    """
+    if healthy_only:
+        if healthy_span is None or len(healthy_span) != 2 or int(healthy_span[1]) <= int(healthy_span[0]):
+            raise ValueError("healthy_only=True requires healthy_span=(lo_h, hi_h) with hi_h > lo_h")
+        lo_h, hi_h = int(healthy_span[0]), int(healthy_span[1])
+        target_span = (lo_h, min(hi_h, lo_h + 1))
+
+    ct = capture_compact(
         model,
         input_ids,
         capture_grad=True,
@@ -1897,6 +1909,28 @@ def capture_causal_trace(
         contrast_token_ids=contrast_token_ids,
         **kwargs,
     )
+    if healthy_only:
+        ct.meta["grad_n_target"] = 0
+    return ct
+
+
+def interleave_target_and_healthy_traces(
+    target_traces: Sequence[CompactTrace],
+    healthy_traces: Sequence[CompactTrace],
+) -> list[CompactTrace]:
+    """Pair-interleave target and healthy-only traces so `0::2`/`1::2` CV halves stay balanced."""
+    out: list[CompactTrace] = []
+    n_pairs = max((len(target_traces) + 1) // 2, (len(healthy_traces) + 1) // 2)
+    for pair_i in range(n_pairs):
+        for off in range(2):
+            idx = 2 * pair_i + off
+            if idx < len(target_traces):
+                out.append(target_traces[idx])
+        for off in range(2):
+            idx = 2 * pair_i + off
+            if idx < len(healthy_traces):
+                out.append(healthy_traces[idx])
+    return out
 
 
 def _annotate_mlp_wsi(rows: list[dict[str, Any]], wsi: Any | None) -> None:
@@ -5295,3 +5329,73 @@ def peel_causal_circuit(
         "cumulative_patch": cumulative_patch,
         "restore_exact_ok": bool(restore_exact_ok),
     }
+
+
+@torch.no_grad()
+def verify_onset_suppression(
+    model: nn.Module,
+    candidates: dict[str, Any],
+    onset_rows: Sequence[dict[str, Any]],
+    *,
+    device: torch.device | str | None = None,
+) -> dict[str, dict[str, float]]:
+    """Measure token-0 onset log-prob drop and top-1 flip rate for candidate `MoIPatch` edits."""
+    if device is not None:
+        dev = torch.device(device)
+    else:
+        try:
+            dev = next(model.parameters()).device
+        except StopIteration:
+            dev = torch.device("cpu")
+
+    was_training = bool(model.training)
+    model.eval()
+    results: dict[str, dict[str, float]] = {}
+    try:
+        base_cached: list[tuple[torch.Tensor, int, float, float, int]] = []
+        for row in onset_rows:
+            p_ids = [int(t) for t in row.get("prompt_ids") or ()]
+            first_raw = row.get("first_target_id")
+            if first_raw is None:
+                g_ids = row.get("gen_ids") or ()
+                first_raw = g_ids[0] if g_ids else None
+            if not p_ids or first_raw is None:
+                continue
+            first_tok = int(first_raw)
+            ids = torch.tensor([p_ids], dtype=torch.long, device=dev)
+            logits = model(input_ids=ids, use_cache=False).logits[0, -1].float()
+            lp = F.log_softmax(logits, dim=-1)
+            base_cached.append((ids, first_tok, float(lp[first_tok].item()), float(lp[first_tok].exp().item()), int(logits.argmax().item())))
+
+        if not base_cached:
+            return {
+                name: {"onset_logp_drop": 0.0, "onset_prob_drop": 0.0, "onset_top1_flip_rate": 0.0}
+                for name in candidates
+            }
+
+        n = len(base_cached)
+        for name, patch in candidates.items():
+            lp_drops: list[float] = []
+            p_drops: list[float] = []
+            flips: list[float] = []
+            h = patch.attach(model, verify_fingerprint=False)
+            try:
+                h.on()
+                for ids, first_tok, base_lp, base_p, _base_top1 in base_cached:
+                    logits = model(input_ids=ids, use_cache=False).logits[0, -1].float()
+                    lp = F.log_softmax(logits, dim=-1)
+                    lp_drops.append(base_lp - float(lp[first_tok].item()))
+                    p_drops.append(base_p - float(lp[first_tok].exp().item()))
+                    flips.append(1.0 if int(logits.argmax().item()) != first_tok else 0.0)
+            finally:
+                if h.active:
+                    h.off()
+            results[name] = {
+                "onset_logp_drop": round(sum(lp_drops) / n, 5),
+                "onset_prob_drop": round(sum(p_drops) / n, 5),
+                "onset_top1_flip_rate": round(sum(flips) / n, 5),
+            }
+    finally:
+        if was_training:
+            model.train()
+    return results

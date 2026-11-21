@@ -7,6 +7,9 @@ with an explicit paired framing-covariance penalty (``Sigma_frame``).
 from __future__ import annotations
 
 import math
+import re
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -923,7 +926,10 @@ def fit_framing_invariant_safety_router(
                                 }
                                 best_overall = (key, spec, dict(summary_row), dict(g1d))
 
-    assert best_overall is not None
+    if best_overall is None:
+        raise ValueError(
+            "Unable to fit safety router: could not separate benign_refused from control hidden states at any layer"
+        )
     _, win_spec, win_rep, _ = best_overall
     l_win = win_spec["l_idx"]
 
@@ -1031,3 +1037,249 @@ def fit_framing_invariant_safety_router(
         "top5_candidates": candidate_leaderboard[:5],
     }
     return router, report
+
+
+def _format_prompt_for_cal(tokenizer: Any, text: str, chat: bool) -> str:
+    if chat and tokenizer is not None and hasattr(tokenizer, "apply_chat_template") and getattr(tokenizer, "chat_template", None):
+        msgs = [{"role": "user", "content": str(text)}]
+        try:
+            return tokenizer.apply_chat_template(
+                msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False
+            )
+        except TypeError:
+            return tokenizer.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
+    return str(text)
+
+
+def _encode_cal_prompt(tokenizer: Any, formatted: str) -> list[int]:
+    if hasattr(tokenizer, "encode"):
+        ids = tokenizer.encode(formatted, add_special_tokens=False)
+    else:
+        enc = tokenizer(formatted, return_tensors=None)
+        ids = enc["input_ids"] if isinstance(enc, dict) else getattr(enc, "input_ids", [])
+    if ids and isinstance(ids[0], list):
+        ids = ids[0]
+    ids_int = [int(t) for t in ids]
+    if not ids_int:
+        eos = getattr(tokenizer, "eos_token_id", None)
+        ids_int = [int(eos) if eos is not None else 1]
+    return ids_int
+
+
+@torch.no_grad()
+def _capture_last_hidden_layers(
+    model: Any,
+    tokenizer: Any,
+    prompts: Sequence[str],
+    dev: torch.device,
+    *,
+    chat: bool = True,
+) -> torch.Tensor:
+    if not prompts:
+        raise ValueError("prompts must be non-empty for hidden state collection")
+    hs_list: list[torch.Tensor] = []
+    was_training = bool(getattr(model, "training", False))
+    if hasattr(model, "eval"):
+        model.eval()
+    try:
+        for p in prompts:
+            formatted = _format_prompt_for_cal(tokenizer, str(p), chat=chat)
+            p_ids = _encode_cal_prompt(tokenizer, formatted)
+            inp = torch.tensor([p_ids], dtype=torch.long, device=dev)
+            out = model(input_ids=inp, output_hidden_states=True, use_cache=False)
+            hs_list.append(torch.stack([h[0, -1].detach().float().cpu() for h in out.hidden_states], dim=0))
+    finally:
+        if was_training and hasattr(model, "train"):
+            model.train()
+    return torch.stack(hs_list, dim=0)
+
+
+def _infer_min_edit_layer(patch_obj: Any, n_blocks: int) -> int:
+    from .moipatch import _layer_index_from_suffix
+
+    layers: list[int] = []
+    for edit in patch_obj.edits:
+        try:
+            layers.append(_layer_index_from_suffix(edit.module))
+        except ValueError:
+            m = re.search(r"(?:^|\.)(?:layers|h|blocks)\.(\d+)\.", edit.module)
+            if m:
+                layers.append(int(m.group(1)))
+    return min(layers) if layers else max(1, int(n_blocks))
+
+
+def _build_wrapped_prompts(
+    prompts: Sequence[str],
+    wrappers: dict[str, str],
+) -> tuple[list[str], torch.Tensor, list[str]]:
+    wrapped: list[str] = []
+    gids: list[int] = []
+    styles: list[str] = []
+    for gid, raw_p in enumerate(prompts):
+        for style in wrappers:
+            wrapped.append(apply_calibration_wrapper(str(raw_p), style))
+            gids.append(gid)
+            styles.append(style)
+    return wrapped, torch.tensor(gids, dtype=torch.long), styles
+
+
+def calibrate_safety_router_on_model(
+    model: Any,
+    tokenizer: Any,
+    patch: Any,
+    *,
+    toxic_prompts: Sequence[str],
+    benign_refused_prompts: Sequence[str],
+    control_prompts: Sequence[str],
+    benign_nonrefused_prompts: Sequence[str] | None = None,
+    chat: bool = True,
+    max_toxic_fpr: float = 0.05,
+    n_folds: int = 4,
+    out_patch_path: str | Path | None = None,
+    device: torch.device | str | None = None,
+) -> dict[str, Any]:
+    """Calibrate a framing-invariant 2-vector safety router on a live model and optionally save `.moipatch`."""
+    from .moipatch import MoIPatch
+
+    patch_obj = patch if isinstance(patch, MoIPatch) else MoIPatch.load(patch)
+
+    if device is not None:
+        dev = torch.device(device)
+    else:
+        try:
+            dev = next(model.parameters()).device
+        except StopIteration:
+            dev = torch.device("cpu")
+
+    tox_list = [str(p) for p in toxic_prompts]
+    ben_ref_list = [str(p) for p in benign_refused_prompts]
+    ctrl_list = [str(p) for p in control_prompts]
+    nonref_list = [str(p) for p in benign_nonrefused_prompts] if benign_nonrefused_prompts else []
+
+    if not tox_list or not ben_ref_list or not ctrl_list:
+        raise ValueError("toxic_prompts, benign_refused_prompts, and control_prompts must all be non-empty")
+
+    tox_raw_hs = _capture_last_hidden_layers(model, tokenizer, tox_list, dev, chat=chat)
+    ben_ref_raw_hs = _capture_last_hidden_layers(model, tokenizer, ben_ref_list, dev, chat=chat)
+    ctrl_raw_hs = _capture_last_hidden_layers(model, tokenizer, ctrl_list, dev, chat=chat)
+    nonref_raw_hs = (
+        _capture_last_hidden_layers(model, tokenizer, nonref_list, dev, chat=chat) if nonref_list else None
+    )
+
+    tox_fit_p, tox_fit_gids, _ = _build_wrapped_prompts(tox_list, CALIBRATION_FIT_WRAPPERS)
+    ben_fit_p, ben_fit_gids, _ = _build_wrapped_prompts(ben_ref_list, CALIBRATION_FIT_WRAPPERS)
+    ctrl_fit_p, ctrl_fit_gids, _ = _build_wrapped_prompts(ctrl_list, CALIBRATION_FIT_WRAPPERS)
+
+    tox_val_p, tox_val_gids, tox_val_styles = _build_wrapped_prompts(tox_list, CALIBRATION_VAL_WRAPPERS)
+    ben_val_p, ben_val_gids, ben_val_styles = _build_wrapped_prompts(ben_ref_list, CALIBRATION_VAL_WRAPPERS)
+
+    tox_fit_hs = _capture_last_hidden_layers(model, tokenizer, tox_fit_p, dev, chat=chat)
+    ben_ref_fit_hs = _capture_last_hidden_layers(model, tokenizer, ben_fit_p, dev, chat=chat)
+    ctrl_fit_hs = _capture_last_hidden_layers(model, tokenizer, ctrl_fit_p, dev, chat=chat)
+
+    tox_val_hs = _capture_last_hidden_layers(model, tokenizer, tox_val_p, dev, chat=chat)
+    ben_ref_val_hs = _capture_last_hidden_layers(model, tokenizer, ben_val_p, dev, chat=chat)
+
+    n_blocks = int(tox_raw_hs.shape[1]) - 1
+    if n_blocks < 1:
+        raise ValueError(f"Expected >= 2 hidden_states entries (emb + >=1 block), got {tox_raw_hs.shape[1]}")
+    min_edit_layer = _infer_min_edit_layer(patch_obj, n_blocks)
+    ben_w = compute_hedging_balanced_weights(ben_ref_list)
+
+    router, report = fit_framing_invariant_safety_router(
+        tox_raw_hs,
+        tox_fit_hs,
+        tox_fit_gids,
+        ben_ref_raw_hs,
+        ben_ref_fit_hs,
+        ben_fit_gids,
+        ctrl_raw_hs,
+        n_blocks,
+        min_edit_layer,
+        tox_val_hs=tox_val_hs,
+        tox_val_gids=tox_val_gids,
+        ben_ref_val_hs=ben_ref_val_hs,
+        ben_ref_val_gids=ben_val_gids,
+        ben_nonref_raw_hs=nonref_raw_hs,
+        ctrl_fit_hs=ctrl_fit_hs,
+        ctrl_fit_gids=ctrl_fit_gids,
+        ben_ref_weights=ben_w,
+        k_cv=int(n_folds),
+        max_worst_tox_fpr=float(max_toxic_fpr),
+        device=dev,
+    )
+
+    l_win = int(router["layer"])
+    val_by_style: dict[str, torch.Tensor] = {}
+    for st in CALIBRATION_VAL_WRAPPERS:
+        t_idx = [i for i, s in enumerate(tox_val_styles) if s == st]
+        b_idx = [i for i, s in enumerate(ben_val_styles) if s == st]
+        if len(t_idx) == len(tox_list) and len(b_idx) == len(ben_ref_list):
+            val_by_style[st] = torch.cat([tox_val_hs[t_idx, l_win, :], ben_ref_val_hs[b_idx, l_win, :]], dim=0)
+    if val_by_style:
+        base_cat = torch.cat([tox_raw_hs[:, l_win, :], ben_ref_raw_hs[:, l_win, :]], dim=0)
+        invariance_metrics = evaluate_framing_invariance(router["veto_dir"], base_cat, val_by_style)
+    else:
+        invariance_metrics = {
+            "rms_shift": float(report.get("rms_unseen_frame_shift", 0.0)),
+            "shift_to_std_ratio": float(report.get("norm_unseen_frame_shift", 0.0)),
+        }
+
+    new_meta = dict(patch_obj.meta)
+    new_meta.setdefault("name", "abliterated-sfw")
+    new_meta["router_calibration"] = {
+        "layer": l_win,
+        "g1_mode": report.get("g1_mode"),
+        "lam_ridge_rel": report.get("lam_ridge_rel"),
+        "lam_frame": report.get("lam_frame"),
+        "orth_refusal": report.get("orth_refusal"),
+    }
+    calibrated = MoIPatch(
+        edits=list(patch_obj.edits),
+        router=router,
+        gates=list(patch_obj.gates),
+        meta=new_meta,
+    )
+
+    saved_path: str | None = None
+    if out_patch_path is not None:
+        out_p = Path(str(out_patch_path))
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        saved_path = str(calibrated.save(out_p))
+
+    oof_keys = (
+        "cv_folds",
+        "feasible",
+        "obj",
+        "g1_mode",
+        "lam_ridge_rel",
+        "lam_frame",
+        "orth_refusal",
+        "oof_ben_raw_tpr",
+        "oof_ben_wrap_tpr",
+        "oof_tox_raw_fpr",
+        "oof_tox_seen_wrap_fpr",
+        "oof_tox_unseen_wrap_fpr",
+        "oof_worst_tox_fpr",
+        "oof_ctrl_fpr",
+        "oof_veto_dprime",
+        "norm_unseen_frame_shift",
+        "rms_unseen_frame_shift",
+        "gate1_tpr",
+        "gate1_ctrl_fpr",
+        "gate1_nonref_fpr",
+        "cos_fit_vs_final",
+        "used_fallback_fit",
+    )
+    return {
+        "selected_layer": l_win,
+        "thresholds": {
+            "dir_thr": round(float(router["thr"]), 5),
+            "veto_thr": round(float(router["veto_thr"]), 5),
+        },
+        "oof_metrics": {k: report[k] for k in oof_keys if k in report},
+        "invariance_metrics": invariance_metrics,
+        "out_patch_path": saved_path,
+        "n_edits": len(calibrated.edits),
+        "edited_modules": [e.module for e in calibrated.edits],
+    }

@@ -25,6 +25,7 @@ from .router_cal import (
     CALIBRATION_FIT_WRAPPERS,
     CALIBRATION_VAL_WRAPPERS,
     apply_calibration_wrapper,
+    calibrate_safety_router_on_model,
     evaluate_framing_invariance,
     fit_framing_invariant_safety_router,
     fit_invariant_direction,
@@ -52,6 +53,7 @@ from .tracer import (
     discover_compact_circuit,
     gradient_screen_candidates,
     hadamard_transform,
+    interleave_target_and_healthy_traces,
     peel_causal_circuit,
     quantization_error,
     quantize_block_fp4,
@@ -62,6 +64,7 @@ from .tracer import (
     screen_patches_from_traces,
     summarize_direction_traces,
     trace_direction_graph,
+    verify_onset_suppression,
 )
 
 __all__ = [
@@ -83,6 +86,7 @@ __all__ = [
     "attribute_direction_writers",
     "audit_moipatch",
     "bake_moipatch",
+    "calibrate_safety_router_on_model",
     "capture_base_drafts",
     "capture_causal_trace",
     "capture_compact",
@@ -103,6 +107,7 @@ __all__ = [
     "gradient_screen_candidates",
     "greedy_generate_reference",
     "hadamard_transform",
+    "interleave_target_and_healthy_traces",
     "load_base_drafts_jsonl",
     "peel_causal_circuit",
     "quantization_error",
@@ -117,6 +122,7 @@ __all__ = [
     "summarize_direction_traces",
     "trace_all",
     "trace_direction_graph",
+    "verify_onset_suppression",
     "DynamicCircuitPager",
     "MixtureOfIndexes",
     "WeightSpaceIndex",

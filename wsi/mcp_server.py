@@ -552,6 +552,51 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             "required": ["model_dir", "out_dir"],
         },
     },
+    {
+        "name": "wsi_audit_moipatch",
+        "description": "Audit a `.moipatch` against a HuggingFace model checkpoint for SHA-256 fingerprint match, byte-exact restore, weight footprint, vocab logit lens, and end-to-end `output_logit_diff` / routed `control_audit`.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the base HuggingFace checkpoint directory"},
+                "patch_path": {"type": "string", "description": "Path to the `.moipatch` file to audit"},
+                "probe_prompts": {"type": "array", "items": {"type": "string"}, "description": "Optional trigger probe prompts"},
+                "probe_ids": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
+                "control_prompts": {"type": "array", "items": {"type": "string"}, "description": "Optional benign control prompts"},
+                "control_ids": {"type": "array", "items": {"type": "array", "items": {"type": "integer"}}},
+                "chat": {"type": "boolean", "default": False, "description": "Format string prompts with `tokenizer.apply_chat_template`"},
+                "top_k": {"type": "integer", "default": 10},
+                "verify_fingerprint": {"type": "boolean", "default": True},
+                "cpu": {"type": "boolean", "default": False},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir", "patch_path"],
+        },
+    },
+    {
+        "name": "wsi_calibrate_safety_router",
+        "description": "Calibrate a framing-invariant 2-vector safety veto router (`abliterated-sfw` style) on top of an existing surgical `.moipatch` using Group K-Fold OOF CV and paired `Sigma_frame` invariance, optionally saving the calibrated `.moipatch`.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Path to the base HuggingFace checkpoint directory"},
+                "patch_path": {"type": "string", "description": "Path to the base `.moipatch` providing surgical edits"},
+                "toxic_prompts": {"type": "array", "items": {"type": "string"}, "description": "Refused harmful/toxic calibration prompts"},
+                "benign_refused_prompts": {"type": "array", "items": {"type": "string"}, "description": "Benign over-refused calibration prompts"},
+                "control_prompts": {"type": "array", "items": {"type": "string"}, "description": "Normal everyday control prompts (must not fire)"},
+                "benign_nonrefused_prompts": {"type": "array", "items": {"type": "string"}, "description": "Optional benign prompts already answered by the base model"},
+                "chat": {"type": "boolean", "default": True},
+                "max_toxic_fpr": {"type": "number", "default": 0.05},
+                "n_folds": {"type": "integer", "default": 4},
+                "out_patch_path": {"type": "string", "description": "Optional output path to save the calibrated `.moipatch`"},
+                "cpu": {"type": "boolean", "default": False},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir", "patch_path", "toxic_prompts", "benign_refused_prompts", "control_prompts"],
+        },
+    },
 ]
 
 
@@ -573,6 +618,12 @@ def _load_model_for_screen(model_dir: str, dtype_name: str = "auto", device_map:
         model = AutoModelForCausalLM.from_pretrained(model_dir, torch_dtype=dtype, **base_kw)
     model.eval()
     return model
+
+
+def _load_tokenizer_for_screen(model_dir: str):
+    from transformers import AutoTokenizer
+
+    return AutoTokenizer.from_pretrained(model_dir)
 
 
 def _build_moipatch_tool(args: dict[str, Any]) -> dict[str, Any]:
@@ -1065,6 +1116,102 @@ def _bake_moipatch_tool(args: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _resolve_patch_load_opts(patch: MoIPatch, args: dict[str, Any]) -> tuple[str, str]:
+    cpu = bool(args.get("cpu", False))
+    dtype_name = str(args.get("dtype", "auto"))
+    if cpu:
+        eff_dtype = "float32"
+        eff_dev_map = ""
+    else:
+        if dtype_name == "auto" and patch.edits and patch.edits[0].base_dtype in ("bfloat16", "float16", "float32"):
+            eff_dtype = str(patch.edits[0].base_dtype)
+        else:
+            eff_dtype = dtype_name
+        eff_dev_map = str(args.get("device_map", "auto"))
+    return eff_dtype, eff_dev_map
+
+
+def _audit_moipatch_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+    import torch
+    from .moipatch import _apply_cli_chat
+
+    patch_path = str(args["patch_path"])
+    patch = MoIPatch.load(patch_path)
+    eff_dtype, eff_dev_map = _resolve_patch_load_opts(patch, args)
+    model = _load_model_for_screen(args["model_dir"], dtype_name=eff_dtype, device_map=eff_dev_map)
+    try:
+        probes = [str(p) for p in args["probe_prompts"]] if args.get("probe_prompts") is not None else None
+        controls = [str(p) for p in args["control_prompts"]] if args.get("control_prompts") is not None else None
+        needs_tok = (probes is not None and args.get("probe_ids") is None) or (
+            controls is not None and args.get("control_ids") is None
+        )
+        try:
+            tok = _load_tokenizer_for_screen(args["model_dir"])
+        except Exception:
+            if needs_tok:
+                raise
+            tok = None
+
+        use_chat = bool(args.get("chat", False))
+        if use_chat and tok is not None:
+            if probes is not None:
+                probes = [_apply_cli_chat(tok, p, True) for p in probes]
+            if controls is not None:
+                controls = [_apply_cli_chat(tok, p, True) for p in controls]
+
+        return patch.audit(
+            model,
+            tok,
+            probe_prompts=probes,
+            probe_ids=args.get("probe_ids"),
+            control_prompts=controls,
+            control_ids=args.get("control_ids"),
+            patch_path=patch_path,
+            top_k=int(args.get("top_k", 10)),
+            verify_fingerprint=bool(args.get("verify_fingerprint", True)),
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
+def _calibrate_safety_router_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+    import torch
+    from .router_cal import calibrate_safety_router_on_model
+
+    patch = MoIPatch.load(str(args["patch_path"]))
+    eff_dtype, eff_dev_map = _resolve_patch_load_opts(patch, args)
+    model = _load_model_for_screen(args["model_dir"], dtype_name=eff_dtype, device_map=eff_dev_map)
+    try:
+        tok = _load_tokenizer_for_screen(args["model_dir"])
+        return calibrate_safety_router_on_model(
+            model,
+            tok,
+            patch,
+            toxic_prompts=[str(p) for p in args["toxic_prompts"]],
+            benign_refused_prompts=[str(p) for p in args["benign_refused_prompts"]],
+            control_prompts=[str(p) for p in args["control_prompts"]],
+            benign_nonrefused_prompts=(
+                [str(p) for p in args["benign_nonrefused_prompts"]]
+                if args.get("benign_nonrefused_prompts") is not None
+                else None
+            ),
+            chat=bool(args.get("chat", True)),
+            max_toxic_fpr=float(args.get("max_toxic_fpr", 0.05)),
+            n_folds=int(args.get("n_folds", 4)),
+            out_patch_path=args.get("out_patch_path"),
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
 def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Dispatch an MCP tool call to `WeightSpaceIndex`."""
     if name == "wsi_overview":
@@ -1181,6 +1328,10 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return _peel_causal_circuit_tool(args)
     if name == "wsi_bake_moipatch":
         return _bake_moipatch_tool(args)
+    if name == "wsi_audit_moipatch":
+        return _audit_moipatch_tool(args)
+    if name == "wsi_calibrate_safety_router":
+        return _calibrate_safety_router_tool(args)
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
 
 

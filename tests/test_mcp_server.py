@@ -50,8 +50,10 @@ def test_mcp_exposes_build_and_screen_tools():
         "wsi_trace_direction_graph",
         "wsi_peel_causal_circuit",
         "wsi_bake_moipatch",
+        "wsi_audit_moipatch",
+        "wsi_calibrate_safety_router",
     }.issubset(names)
-    assert len(names) == 20
+    assert len(names) == 22
 
 
 def test_mcp_build_moipatch_and_screen_candidates_end_to_end(tmp_path, monkeypatch):
@@ -553,3 +555,146 @@ def test_mcp_bake_moipatch(tmp_path):
     })
     assert r_forced["result"]["isError"] is False, r_forced["result"]["content"][0]["text"]
     assert json.loads(r_forced["result"]["content"][0]["text"])["had_router_warning"] is True
+
+
+def test_mcp_audit_and_calibrate_safety_router(tmp_path, monkeypatch):
+    import torch.nn.functional as F
+
+    from wsi import Edit, MoIPatch
+    from wsi.moipatch import _sha256
+
+    class _CalBlock(nn.Module):
+        def __init__(self, hidden: int, inter: int) -> None:
+            super().__init__()
+            self.mlp = nn.Module()
+            self.mlp.up_proj = nn.Linear(hidden, inter, bias=False)
+            self.mlp.down_proj = nn.Linear(inter, hidden, bias=False)
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            return x + self.mlp.down_proj(F.relu(self.mlp.up_proj(x)))
+
+    class _CalLM(nn.Module):
+        def __init__(self, vocab: int = 32, hidden: int = 12, inter: int = 24, n_layers: int = 3) -> None:
+            super().__init__()
+            self.config = SimpleNamespace(model_type="llama", hidden_size=hidden, num_attention_heads=2)
+            self.model = nn.Module()
+            self.model.embed_tokens = nn.Embedding(vocab, hidden)
+            self.model.layers = nn.ModuleList([_CalBlock(hidden, inter) for _ in range(n_layers)])
+            self.model.norm = nn.LayerNorm(hidden)
+            self.lm_head = nn.Linear(hidden, vocab, bias=False)
+
+        def forward(self, input_ids: torch.Tensor, output_hidden_states: bool = False, **_kw):
+            h = self.model.embed_tokens(input_ids)
+            hs = [h] if output_hidden_states else None
+            for idx, blk in enumerate(self.model.layers):
+                h = blk(h)
+                if hs is not None and idx < len(self.model.layers) - 1:
+                    hs.append(h)
+            h_out = self.model.norm(h)
+            if hs is not None:
+                hs.append(h_out)
+            return SimpleNamespace(logits=self.lm_head(h_out), hidden_states=tuple(hs) if hs is not None else None)
+
+    class _CalTok:
+        vocab_size = 32
+        eos_token_id = 2
+
+        def encode(self, text: str, add_special_tokens: bool = False) -> list[int]:
+            low = text.lower()
+            base = 3
+            if "toxic" in low:
+                base = 20
+            elif "refuse" in low:
+                base = 12
+            extra = (sum(ord(ch) for ch in text) % 4) + 1
+            return [extra, base + (extra % 2)]
+
+        def decode(self, ids, skip_special_tokens: bool = True) -> str:
+            return " ".join(f"tok{i}" for i in ids)
+
+    torch.manual_seed(7)
+    model = _CalLM(vocab=32, hidden=12, inter=24, n_layers=3).eval()
+    with torch.no_grad():
+        emb = model.model.embed_tokens.weight
+        emb.zero_()
+        for tid in range(32):
+            if tid >= 19:  # toxic direction on dim 1 + dim 2
+                emb[tid, 1] = 2.0
+                emb[tid, 2] = 2.0
+            elif tid >= 11:  # benign over-refusal direction on dim 1 positive, dim 2 negative
+                emb[tid, 1] = 2.0
+                emb[tid, 2] = -2.0
+            else:  # everyday normal control on dim 0
+                emb[tid, 0] = 2.0
+                emb[tid, 1] = -2.0
+        for blk in model.model.layers:
+            blk.mlp.up_proj.weight.normal_(0, 0.05)
+            blk.mlp.down_proj.weight.normal_(0, 0.05)
+        model.model.norm.weight.fill_(1.0)
+        model.lm_head.weight.normal_(0, 0.2)
+
+    ckpt = tmp_path / "cal_ckpt"
+    ckpt.mkdir()
+    save_file({k: v.detach().cpu() for k, v in model.state_dict().items()}, str(ckpt / "model.safetensors"))
+
+    w_l1 = model.model.layers[1].mlp.down_proj.weight.detach()
+    u = torch.zeros(12, dtype=torch.float64)
+    u[1] = -1.0
+    base_patch_path = tmp_path / "base_surgical.moipatch"
+    MoIPatch(
+        edits=[Edit(module="layers.1.mlp.down_proj", u=u, alpha=1.5, base_sha256=_sha256(w_l1), base_dtype="float32", shape=tuple(w_l1.shape))],
+        meta={"name": "abliterated-base"},
+    ).save(base_patch_path)
+
+    monkeypatch.setattr(mcp, "_load_model_for_screen", lambda *_a, **_kw: model)
+    monkeypatch.setattr(mcp, "_load_tokenizer_for_screen", lambda *_a, **_kw: _CalTok())
+
+    r_audit = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 40,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_audit_moipatch",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "patch_path": str(base_patch_path),
+                "probe_prompts": ["refuse probe 1"],
+                "control_prompts": ["normal control 1"],
+                "cpu": True,
+            },
+        },
+    })
+    assert r_audit["result"]["isError"] is False, r_audit["result"]["content"][0]["text"]
+    audit_rep = json.loads(r_audit["result"]["content"][0]["text"])
+    assert audit_rep["fingerprint_ok"] is True
+    assert audit_rep["restore_exact_ok"] is True
+    assert audit_rep["output_logit_diff"]["n_probes"] == 1
+
+    cal_out = tmp_path / "calibrated_sfw.moipatch"
+    r_cal = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 41,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_calibrate_safety_router",
+            "arguments": {
+                "model_dir": str(ckpt),
+                "patch_path": str(base_patch_path),
+                "toxic_prompts": [f"toxic prompt {i}" for i in range(6)],
+                "benign_refused_prompts": [f"refuse prompt {i}" for i in range(6)],
+                "control_prompts": [f"normal control {i}" for i in range(6)],
+                "chat": False,
+                "n_folds": 3,
+                "out_patch_path": str(cal_out),
+                "cpu": True,
+            },
+        },
+    })
+    assert r_cal["result"]["isError"] is False, r_cal["result"]["content"][0]["text"]
+    cal_rep = json.loads(r_cal["result"]["content"][0]["text"])
+    assert cal_out.exists()
+    assert cal_rep["selected_layer"] >= 1
+    assert "dir_thr" in cal_rep["thresholds"] and "veto_thr" in cal_rep["thresholds"]
+    assert "invariance_metrics" in cal_rep
+    loaded = MoIPatch.load(cal_out)
+    assert loaded.router is not None and loaded.router.get("veto_dir") is not None
