@@ -1,0 +1,20 @@
+{
+ "stopped_at": "elicit",
+ "census": {
+  "loop_killed": 0.0,
+  "accuracy": 0.87,
+  "truncated": 0.08,
+  "min_loop_killed": 0.1,
+  "n": 100,
+  "passed": false,
+  "forced": false
+ },
+ "sampling": "lfm3-math",
+ "_final": {
+  "complete": true,
+  "model": "LiquidAI/LFM3-1.7B",
+  "commit": "61c380c650908b0a62742e2f00b91f058432a9b4",
+  "notebook": "discover_math500_lfm3_colab.ipynb",
+  "saved_utc": "2026-11-21T06:17:25+00:00"
+ }
+}
