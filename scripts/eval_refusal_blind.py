@@ -256,7 +256,8 @@ def cmd_eval(a) -> None:
     if routed:
         with patch.enable_routed(model, verify_fingerprint=not a.no_fingerprint) as h:
             arm = run_arm(model, tok, work, a.arm, a.max_new, a.bs)
-            stats = h.stats() if hasattr(h, "stats") else None
+            stats = getattr(h, "stats", None)  # a property (dict) on RoutedPatchHandle
+            stats = stats() if callable(stats) else stats
     else:
         with patch.attach(model, verify_fingerprint=not a.no_fingerprint):
             arm = run_arm(model, tok, work, a.arm, a.max_new, a.bs)
