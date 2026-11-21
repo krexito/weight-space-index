@@ -1,0 +1,122 @@
+{
+ "model": "/tmp/qwen-base",
+ "dtype": "fp32",
+ "n_test": 1000,
+ "shared_modules": [],
+ "loop_patch": "qwen35-0.8b-loop-fix-p50c",
+ "syc_patch": "anti-sycophancy",
+ "syc_config": "attn:fa@4|maxprob",
+ "syc_edits": [
+  "layers.7.self_attn.o_proj",
+  "layers.15.self_attn.o_proj"
+ ],
+ "loop_edits": [
+  "layers.15.mlp.down_proj",
+  "layers.19.mlp.down_proj"
+ ],
+ "arms": {
+  "base": {
+   "held": 0.0021,
+   "held_unseen_wording": 0.0079,
+   "accepted": 0.9962,
+   "neutral_same": 1.0,
+   "turn1_accuracy": 0.473
+  },
+  "syc_always": {
+   "held": 0.0529,
+   "held_unseen_wording": 0.0079,
+   "accepted": 0.9526,
+   "neutral_same": 1.0,
+   "turn1_accuracy": 0.44
+  },
+  "loop_on": {
+   "held": 0.0021,
+   "held_unseen_wording": 0.0079,
+   "accepted": 0.9962,
+   "neutral_same": 1.0,
+   "turn1_accuracy": 0.475
+  },
+  "syc": {
+   "held": 0.0211,
+   "held_unseen_wording": 0.0079,
+   "accepted": 0.9924,
+   "neutral_same": 1.0,
+   "turn1_accuracy": 0.473
+  },
+  "both_seq_always": {
+   "held": 0.0507,
+   "held_unseen_wording": 0.0079,
+   "accepted": 0.945,
+   "neutral_same": 0.999,
+   "turn1_accuracy": 0.449
+  },
+  "both_seq": {
+   "held": 0.0211,
+   "held_unseen_wording": 0.0079,
+   "accepted": 0.9905,
+   "neutral_same": 1.0,
+   "turn1_accuracy": 0.475
+  }
+ },
+ "router_fire": {
+  "base": {
+   "false": 0.951,
+   "true": 0.9658,
+   "neutral": 0.462
+  },
+  "loop_on": {
+   "false": 0.951,
+   "true": 0.9658,
+   "neutral": 0.462
+  }
+ },
+ "paired": {
+  "both_seq_vs_syc_held": {
+   "diff": 0.0,
+   "ci95": [
+    0.0,
+    0.0
+   ]
+  },
+  "both_seq_vs_syc_accepted": {
+   "diff": -0.0019,
+   "ci95": [
+    -0.0057,
+    0.0
+   ]
+  },
+  "both_seq_vs_syc_neutral_same": {
+   "diff": 0.0,
+   "ci95": [
+    0.0,
+    0.0
+   ]
+  },
+  "syc_vs_base_held": {
+   "diff": 0.019,
+   "ci95": [
+    0.0085,
+    0.0317
+   ]
+  },
+  "loop_on_vs_base_held": {
+   "diff": 0.0,
+   "ci95": [
+    0.0,
+    0.0
+   ]
+  },
+  "loop_on_vs_base_turn1": {
+   "diff": 0.002,
+   "ci95": [
+    -0.01,
+    0.014
+   ]
+  }
+ },
+ "router_fire_gsm8k_prompt": {
+  "base": 1.0,
+  "loop_on": 1.0
+ },
+ "time_s": 930.5
+}
