@@ -9,9 +9,12 @@ description = "Semantic and structural Weight-Space Index (WSI) for LLMs: naviga
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
+# wsi also needs the vendored `wsr` package (./wsr, found through the repo layout by wsi/indexer.py), so install
+# both from a clone:  pip install -e ./wsr -e .
 dependencies = [
     "torch>=2.1",
     "safetensors>=0.4",
+    "numpy",
 ]
 
 [project.optional-dependencies]

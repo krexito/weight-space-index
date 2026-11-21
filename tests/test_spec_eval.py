@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

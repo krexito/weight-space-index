@@ -20,7 +20,6 @@ from .indexer import (
     _compute_svd_basis,
     _effective_unembed,
     _input_embed,
-    _input_to_residual_columns,
     _load_vocab,
     _to_residual_columns,
     build_index,
@@ -28,8 +27,8 @@ from .indexer import (
     get_mlp_input_keys,
     token_roles,
 )
-from .rust_accel import has_rust_core, rust_analyze_residual_delta
-from wsr.ops import effective_gain, load_submission, validate_edit
+from .rust_accel import rust_analyze_residual_delta
+from wsr.ops import effective_gain, load_submission
 
 
 class WeightSpaceIndex:
