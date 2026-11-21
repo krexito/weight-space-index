@@ -60,7 +60,7 @@ import torch.nn.functional as F
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from wsi.moimem import MemoryBank, _sha256, find_layers  # noqa: E402
+from wsi.moimem import MemoryBank, _sha256, find_layers, layer_down_proj  # noqa: E402
 
 # ----------------------------------------------------------------------------------------------- knowledge
 # (city, country EN, country ES); city names are the same in English and Spanish
@@ -243,14 +243,14 @@ class LM:
 
         self.dev = "cpu" if cpu or not torch.cuda.is_available() else "cuda"
         dt = {"fp32": torch.float32, "bf16": torch.bfloat16, "fp16": torch.float16}[dtype]
-        self.tok = AutoTokenizer.from_pretrained(tok_id or model_id)
-        self.model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dt).to(self.dev).eval()
+        self.tok = AutoTokenizer.from_pretrained(tok_id or model_id, trust_remote_code=True)
+        self.model = AutoModelForCausalLM.from_pretrained(model_id, dtype=dt, trust_remote_code=True).to(self.dev).eval()
         for p in self.model.parameters():
             p.requires_grad_(False)
-        self.decoder = self.model.get_decoder()
+        self.decoder = self.model.get_decoder() if hasattr(self.model, "get_decoder") else getattr(self.model, "model", self.model)
         self.head = self.model.get_output_embeddings()
         self.layers = find_layers(self.model)
-        self.downs = [l.mlp.down_proj for l in self.layers]
+        self.downs = [layer_down_proj(l) for l in self.layers]
         self.U, self.D = self.downs[0].in_features, self.downs[0].out_features
         self.pad = self.tok.pad_token_id if self.tok.pad_token_id is not None else (self.tok.eos_token_id or 0)
         self.has_chat = bool(getattr(self.tok, "chat_template", None))
@@ -262,8 +262,11 @@ class LM:
         pre = (ctx + "\n") if ctx else ""
         if probe["user"] is None:
             return pre + probe["prompt"]
-        head = self.tok.apply_chat_template([{"role": "user", "content": pre + probe["user"]}], tokenize=False,
-                                            add_generation_prompt=True, enable_thinking=False)
+        msgs = [{"role": "user", "content": pre + probe["user"]}]
+        try:
+            head = self.tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True, enable_thinking=False)
+        except TypeError:
+            head = self.tok.apply_chat_template(msgs, tokenize=False, add_generation_prompt=True)
         return head + probe["prompt"]
 
     def subj_last(self, text: str, subj: str) -> list[int]:
@@ -301,7 +304,8 @@ class LM:
         return ids.to(self.dev), att.to(self.dev)
 
     def hidden(self, ids, att) -> torch.Tensor:
-        return self.decoder(input_ids=ids, attention_mask=att, use_cache=False).last_hidden_state
+        out = self.decoder(input_ids=ids, attention_mask=att, use_cache=False)
+        return out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]
 
     def logp_at(self, h: torch.Tensor, bidx: torch.Tensor, tidx: torch.Tensor) -> torch.Tensor:
         return F.log_softmax(self.head(h[bidx, tidx]).float(), dim=-1)

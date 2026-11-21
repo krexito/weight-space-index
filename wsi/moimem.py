@@ -41,6 +41,19 @@ def find_layers(model) -> torch.nn.ModuleList:
                 and "mtp" not in n and "visual" not in n)
 
 
+def layer_down_proj(layer: torch.nn.Module) -> torch.nn.Module:
+    """Resolve a decoder block's MLP down-projection across Llama/Qwen, LFM3, GPT-2, OPT."""
+    for path in (("mlp", "down_proj"), ("feed_forward", "w2"), ("mlp", "c_proj"), ("mlp", "fc2")):
+        cur = layer
+        for attr in path:
+            cur = getattr(cur, attr, None)
+            if cur is None:
+                break
+        if cur is not None:
+            return cur
+    raise AttributeError(f"Could not find MLP down-projection on layer {type(layer).__name__}")
+
+
 @dataclass
 class MemoryBank:
     layer: int
@@ -98,7 +111,7 @@ class MemoryHandle:
 
     def __init__(self, bank: MemoryBank, model):
         self.bank, self.model = bank, model
-        self.down = find_layers(model)[bank.layer].mlp.down_proj
+        self.down = layer_down_proj(find_layers(model)[bank.layer])
         want = bank.meta.get("down_proj_sha256")
         if want:
             dt = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[bank.meta["down_proj_dtype"]]
