@@ -18,6 +18,13 @@ from .compare import (
     transplant_compositional_and_chain,
     transplant_connected_chain,
 )
+from .fisher import (
+    FisherProfile,
+    allocate_fisher_global,
+    allocate_fisher_uniform,
+    find_mlp_down_projections,
+    profile_column_fisher,
+)
 from .indexer import build_index
 from .moipatch import Edit, MoIPatch, PatchHandle, RoutedPatchHandle, audit_moipatch
 from .query import WeightSpaceIndex, load_index
@@ -74,6 +81,7 @@ __all__ = [
     "CALIBRATION_VAL_WRAPPERS",
     "CompactTrace",
     "Edit",
+    "FisherProfile",
     "MoIPatch",
     "PatchHandle",
     "PatchRegistry",
@@ -127,11 +135,15 @@ __all__ = [
     "MixtureOfIndexes",
     "WeightSpaceIndex",
     "align_semantic_circuits",
+    "allocate_fisher_global",
+    "allocate_fisher_uniform",
     "build_index",
     "decompile_edit_intent",
     "diff_checkpoints",
     "discover_connected_chains",
+    "find_mlp_down_projections",
     "load_index",
+    "profile_column_fisher",
     "transfer_edit",
     "transfer_transduction_edit",
     "transplant_compositional_and_chain",

@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import re
 import time
 from pathlib import Path
@@ -42,7 +43,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+_SCRIPT_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _SCRIPT_DIR.parent
+for _p in (_REPO_ROOT, _SCRIPT_DIR):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+from wsi.fisher import (
+    FisherProfile,
+    allocate_fisher_global,
+    allocate_fisher_uniform,
+    profile_column_fisher,
+)
 
 HUB_FILES = {
     "gsm8k/test.parquet": ("openai/gsm8k", "main/test-00000-of-00001.parquet"),
@@ -105,6 +117,10 @@ def main() -> None:
     ap.add_argument("--gram-tokens", type=int, default=20_000,
                     help="math tokens used for the co-activation (Gram) matrix of the +recon indexes")
     ap.add_argument("--ridge", type=float, default=1e-2, help="lambda as a fraction of mean diag(G_SS)")
+    ap.add_argument("--fisher-tokens", type=int, default=8_192,
+                    help="math calibration tokens used for Fisher profiling when fisher indexes are requested")
+    ap.add_argument("--min-neurons-per-layer", type=int, default=64,
+                    help="minimum MLP neurons preserved per layer by math-fisher_global")
     ap.add_argument("--ppl-tokens", type=int, default=8_000)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--out", default="results_task_index.json")
@@ -193,9 +209,26 @@ def main() -> None:
     t0 = time.perf_counter()
     wiki_mean, _, _ = calibrate(wiki_seqs)
     math_mean, math_energy, n_gram = calibrate(math_seqs, gram_tokens=args.gram_tokens)  # Gram stays = math
-    score = {"math": math_mean, "math_energy": math_energy, "wiki": wiki_mean}
+    score: dict[str, torch.Tensor] = {"math": math_mean, "math_energy": math_energy, "wiki": wiki_mean}
     print(f"calibrated on {sum(map(len, math_seqs)):,} math + {sum(map(len, wiki_seqs)):,} wiki tokens "
           f"(Gram from the first {n_gram:,} math tokens) in {time.perf_counter() - t0:.0f}s", flush=True)
+
+    req_indexes = [x.strip() for x in args.indexes.split(",") if x.strip()]
+    need_fisher = any("fisher" in x for x in req_indexes)
+    fisher_prof: FisherProfile | None = None
+    fisher_cal_s = 0.0
+    down_mods: list[tuple[str, nn.Linear]] = []
+    if need_fisher:
+        mod_to_name = {m: n for n, m in model.named_modules()}
+        down_mods = [(mod_to_name.get(orig[li][2], f"layers.{li}.{NM[2]}"), orig[li][2]) for li in range(L)]
+        t_f0 = time.perf_counter()
+        fisher_prof = profile_column_fisher(
+            model, down_mods, math_seqs, delta_w=None, device=dev, max_tokens=args.fisher_tokens,
+        )
+        fisher_cal_s = round(time.perf_counter() - t_f0, 2)
+        score["math_fisher"] = torch.stack([fisher_prof.scores[nm].double() for nm, _ in down_mods])
+        print(f"fisher profiled on {fisher_prof.n_tokens:,} math tokens ({fisher_prof.n_seqs} seqs) "
+              f"in {fisher_cal_s:.1f}s", flush=True)
 
     def recon_w2(li: int, ix: torch.Tensor) -> torch.Tensor:
         """Compensation: refit the kept w2 columns so the MLP output matches the full one on the math calibration
@@ -228,11 +261,21 @@ def main() -> None:
         kind = kind.removesuffix("+recon")
         if kind == "math-obs":
             return obs_index(budget)
+        if kind == "math-fisher_uniform":
+            if fisher_prof is None:
+                raise RuntimeError("Fisher profile was not initialized")
+            alloc = allocate_fisher_uniform(fisher_prof, budget, min_per_module=args.min_neurons_per_layer)
+            return [alloc[nm] for nm, _ in down_mods]
+        if kind == "math-fisher_global":
+            if fisher_prof is None:
+                raise RuntimeError("Fisher profile was not initialized")
+            alloc = allocate_fisher_global(fisher_prof, budget, min_per_module=args.min_neurons_per_layer)
+            return [alloc[nm] for nm, _ in down_mods]
         k_tot = round(budget * U * L)
         if kind == "random":
             g = torch.Generator().manual_seed(0)
             return [torch.randperm(U, generator=g)[: round(budget * U)].sort().values for _ in range(L)]
-        src, mode = kind.split("-")
+        src, mode = kind.split("-", 1)
         if mode == "energy":
             src, mode = "math_energy", "uniform"
         s = score[src]
@@ -332,22 +375,50 @@ def main() -> None:
         apply_index(None)
         return r
 
+    def _paired_ci(a: list[int], b: list[int], n_boot: int = 2000, seed: int = 0) -> dict:
+        n_items = min(len(a), len(b))
+        if n_items <= 0:
+            return {"delta": 0.0, "ci95": [0.0, 0.0], "gained": 0, "lost": 0}
+        diffs = [int(a[i]) - int(b[i]) for i in range(n_items)]
+        rng = random.Random(seed)
+        boots = sorted(sum(diffs[rng.randrange(n_items)] for _ in range(n_items)) / n_items for _ in range(n_boot))
+        return {
+            "delta": round(sum(diffs) / n_items, 4),
+            "ci95": [round(boots[int(0.025 * n_boot)], 4), round(boots[int(0.975 * n_boot)], 4)],
+            "gained": sum(1 for d in diffs if d > 0),
+            "lost": sum(1 for d in diffs if d < 0),
+        }
+
+    _meta_keys = {
+        "index_overlap_math_wiki",
+        "paired_fisher_global_vs_energy",
+        "paired_fisher_global_vs_global",
+    }
     out_p = Path(args.out)
     out_p.parent.mkdir(parents=True, exist_ok=True)
     results: dict = {}
     if out_p.exists():  # resume: keep configs already finished (e.g. saved to Google Drive before a disconnect)
         results = {k: v for k, v in json.loads(out_p.read_text(encoding="utf-8")).get("results", {}).items()
-                   if k != "index_overlap_math_wiki"}
+                   if k not in _meta_keys}
         print(f"resuming: {len(results)} configs already in {out_p}: {sorted(results)}", flush=True)
 
     def save() -> None:
-        out_p.write_text(json.dumps({"model": args.model_dir, "n_problems": len(prompts),
-                                     "calib_tokens": args.calib_tokens, "results": results,
-                                     "wall_s": time.perf_counter() - t_start}, indent=2), encoding="utf-8")
+        tmp_p = out_p.with_suffix(".json.tmp")
+        tmp_p.write_text(json.dumps({
+            "model": args.model_dir,
+            "n_problems": len(prompts),
+            "calib_tokens": args.calib_tokens,
+            "fisher_tokens": args.fisher_tokens if need_fisher else 0,
+            "fisher_cal_s": fisher_cal_s,
+            "min_neurons_per_layer": args.min_neurons_per_layer,
+            "results": results,
+            "wall_s": time.perf_counter() - t_start,
+        }, indent=2), encoding="utf-8")
+        tmp_p.replace(out_p)
 
     def show(name: str, r: dict) -> None:
         f = results["full"]
-        print(f"[{name:20s}] GSM8K={r['gsm8k']['accuracy']:6.1%} ({r['gsm8k']['accuracy'] - f['gsm8k']['accuracy']:+.1%})"
+        print(f"[{name:24s}] GSM8K={r['gsm8k']['accuracy']:6.1%} ({r['gsm8k']['accuracy'] - f['gsm8k']['accuracy']:+.1%})"
               f"  ppl math={r['ppl_gsm8k_solutions']:.2f} wiki={r['ppl_wikitext']:.2f}"
               f"  size={r['model_params'] / f['model_params']:.0%}  decode={r['decode_tok_s'] / f['decode_tok_s']:.2f}x"
               f"  ({r['gsm8k']['wall_s']:.0f}s)", flush=True)
@@ -357,16 +428,21 @@ def main() -> None:
         save()
     show("full", results["full"])
     for b in [float(x) for x in args.budgets.split(",")]:
-        for kind in [x.strip() for x in args.indexes.split(",") if x.strip()]:
+        for kind in req_indexes:
             if f"{kind}@{b}" in results:
                 continue
             idx = build_index(kind, b)
             r = evaluate(idx, recon=kind.endswith("+recon"))
             r.update(index=kind, budget=b)
             if not kind.startswith("random"):
-                src, mode = kind.removesuffix("+recon").split("-")
-                s = score["math_energy" if mode == "energy" else src]
-                r["contribution_kept"] = float(sum(s[li, idx[li]].sum() for li in range(L)) / s.sum())
+                src, mode = kind.removesuffix("+recon").split("-", 1)
+                if mode.startswith("fisher"):
+                    s = score["math_fisher"]
+                elif mode == "energy":
+                    s = score["math_energy"]
+                else:
+                    s = score[src]
+                r["contribution_kept"] = float(sum(s[li, idx[li]].sum() for li in range(L)) / s.sum().clamp_min(1e-12))
             name = f"{kind}@{b}"
             results[name] = r
             save()
@@ -376,8 +452,22 @@ def main() -> None:
         mi, wi = build_index("math-uniform", b), build_index("wiki-uniform", b)
         ov = sum(len(set(mi[li].tolist()) & set(wi[li].tolist())) for li in range(L)) / sum(len(x) for x in mi)
         results.setdefault("index_overlap_math_wiki", {})[str(b)] = round(ov, 4)
+
+        fg_key = f"math-fisher_global+recon@{b}"
+        if fg_key in results and "per_problem" in results[fg_key].get("gsm8k", {}):
+            fg_per = results[fg_key]["gsm8k"]["per_problem"]
+            for cmp_kind, out_key in (
+                ("math-energy+recon", "paired_fisher_global_vs_energy"),
+                ("math-global+recon", "paired_fisher_global_vs_global"),
+            ):
+                cmp_key = f"{cmp_kind}@{b}"
+                if cmp_key in results and "per_problem" in results[cmp_key].get("gsm8k", {}):
+                    ci = _paired_ci(fg_per, results[cmp_key]["gsm8k"]["per_problem"])
+                    results.setdefault(out_key, {})[str(b)] = ci
     save()
     print("math vs wiki index overlap:", results["index_overlap_math_wiki"])
+    if "paired_fisher_global_vs_energy" in results:
+        print("paired fisher_global+recon vs energy+recon:", results["paired_fisher_global_vs_energy"])
     print(f"Saved {out_p} ({time.perf_counter() - t_start:.0f}s)")
 
 
