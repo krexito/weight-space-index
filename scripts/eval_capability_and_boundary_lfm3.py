@@ -227,6 +227,87 @@ def _fire_flags_for_arm(
     return [bool(x) for x in tel.get("_fire_flags", [False] * len(formatted_prompts))]
 
 
+@torch.no_grad()
+def _resolve_fast_bs(
+    model: nn.Module,
+    tok: Any,
+    probe: list[str],
+    dev: torch.device,
+    batch_size: int,
+) -> int:
+    if batch_size <= 1 or len(probe) < 2:
+        return 1
+    exact_bs = vr._probe_left_pad_safe(model, tok, probe, dev, batch_size=batch_size)
+    if exact_bs > 1:
+        return exact_bs
+
+    eos_id, pad_id = sr._tok_eos_pad(tok)
+    pad_val = pad_id if pad_id is not None else (eos_id if eos_id is not None else 0)
+    enc: list[list[int]] = [
+        [int(t) for t in (tok.encode(p, add_special_tokens=False) or [eos_id or 1])]
+        for p in probe[: min(4, len(probe))]
+    ]
+    if len(enc) < 2 or len({len(x) for x in enc}) < 2:
+        return 1
+
+    ref_stack = torch.stack(
+        [
+            model(input_ids=torch.tensor([ids], dtype=torch.long, device=dev), use_cache=False).logits[0, -1].float()
+            for ids in enc
+        ],
+        dim=0,
+    )
+
+    cands: list[int] = []
+    for c in (int(batch_size), 8, 4):
+        if 1 < c <= int(batch_size) and c not in cands:
+            cands.append(c)
+
+    for cand in cands:
+        sub = enc[: min(cand, len(enc))]
+        max_len = max(len(x) for x in sub)
+        inp_t = torch.full((len(sub), max_len), pad_val, dtype=torch.long, device=dev)
+        attn_t = torch.zeros((len(sub), max_len), dtype=torch.long, device=dev)
+        for row_i, ids in enumerate(sub):
+            off = max_len - len(ids)
+            inp_t[row_i, off:] = torch.tensor(ids, dtype=torch.long, device=dev)
+            attn_t[row_i, off:] = 1
+        try:
+            bat_logits = model(input_ids=inp_t, attention_mask=attn_t, use_cache=False).logits[:, -1].float()
+        except Exception:
+            continue
+        sub_ref = ref_stack[: len(sub)]
+        if bool(torch.equal(sub_ref.argmax(dim=-1), bat_logits.argmax(dim=-1))):
+            max_diff = float((sub_ref - bat_logits).abs().max().item())
+            if max_diff < 0.25:
+                return cand
+    return 1
+
+
+def _generate_with_progress(
+    model: nn.Module,
+    tok: Any,
+    formatted: list[str],
+    dev: torch.device,
+    *,
+    max_new_tokens: int,
+    batch_size: int,
+    tag: str,
+) -> list[dict[str, Any]]:
+    if not formatted:
+        return []
+    out: list[dict[str, Any]] = []
+    chunk = max(int(batch_size) * 2, 16)
+    t0 = time.perf_counter()
+    total = len(formatted)
+    for start in range(0, total, chunk):
+        sub = formatted[start : start + chunk]
+        out.extend(sr._generate_texts(model, tok, sub, dev, max_new_tokens=max_new_tokens, batch_size=batch_size))
+        done = min(start + len(sub), total)
+        print(f"  [{tag}] {done}/{total} ({time.perf_counter() - t0:.1f}s, bs={batch_size})", flush=True)
+    return out
+
+
 def _resolve_mmlu_letter_ids(tok: Any) -> dict[str, list[int]]:
     out: dict[str, list[int]] = {}
     for ch in ("A", "B", "C", "D"):
@@ -346,18 +427,45 @@ def _eval_gsm8k_arm(
     mode: str,
     dev: torch.device,
     *,
+    arm_name: str = "",
     max_new_tokens: int,
     batch_size: int,
     base_correct: list[bool] | None = None,
     base_texts: list[str] | None = None,
 ) -> tuple[dict[str, Any], list[bool], list[str]]:
     fire_flags = _fire_flags_for_arm(model, tok, patch, mode, formatted, dev)
-    with _patch_ctx(model, patch, mode):
-        outs = sr._generate_texts(
-            model, tok, formatted, dev, max_new_tokens=max_new_tokens, batch_size=batch_size
-        )
-
-    texts = [str(r["text"]) for r in outs]
+    lbl = arm_name or mode
+    if mode == "auto" and base_texts is not None:
+        texts = list(base_texts)
+        fired_idx = [i for i, f in enumerate(fire_flags) if f]
+        print(f"  [gsm8k:{lbl}] fired={len(fired_idx)}/{len(formatted)}", flush=True)
+        if fired_idx:
+            fired_fmt = [formatted[i] for i in fired_idx]
+            sub_bs = min(batch_size, len(fired_idx))
+            with _patch_ctx(model, patch, "always_on"):
+                fired_outs = _generate_with_progress(
+                    model,
+                    tok,
+                    fired_fmt,
+                    dev,
+                    max_new_tokens=max_new_tokens,
+                    batch_size=sub_bs,
+                    tag=f"gsm8k:{lbl}",
+                )
+            for orig_i, r_out in zip(fired_idx, fired_outs):
+                texts[orig_i] = str(r_out["text"])
+    else:
+        with _patch_ctx(model, patch, mode):
+            outs = _generate_with_progress(
+                model,
+                tok,
+                formatted,
+                dev,
+                max_new_tokens=max_new_tokens,
+                batch_size=batch_size,
+                tag=f"gsm8k:{lbl}",
+            )
+        texts = [str(r["text"]) for r in outs]
     preds = [extract_gsm8k_answer(t, is_gold=False) for t in texts]
     correct = [p is not None and p == item["gold"] for p, item in zip(preds, items)]
 
@@ -434,15 +542,20 @@ def _compute_arm_response_kls(
     mode: str,
     base_rows: list[dict[str, Any]],
     base_lps: list[tuple[torch.Tensor, int, torch.Tensor | None]],
+    fire_flags_subset: list[bool] | None = None,
 ) -> list[float]:
     if mode == "base" or patch is None:
         return [0.0] * len(base_rows)
     was_training = bool(model.training)
     model.eval()
     kls: list[float] = []
+    ctx_mode = "always_on" if (mode == "auto" and fire_flags_subset is not None) else mode
     try:
-        with _patch_ctx(model, patch, mode):
-            for r, (ids, p_len, b_lp_cpu) in zip(base_rows, base_lps):
+        with _patch_ctx(model, patch, ctx_mode):
+            for idx_row, (r, (ids, p_len, b_lp_cpu)) in enumerate(zip(base_rows, base_lps)):
+                if fire_flags_subset is not None and not fire_flags_subset[idx_row]:
+                    kls.append(0.0)
+                    continue
                 g_len = int(len(r["gen_ids"]))
                 if b_lp_cpu is None or g_len <= 0:
                     kls.append(0.0)
@@ -467,16 +580,25 @@ def _eval_boundary_suite(
     prompts: list[str],
     dev: torch.device,
     *,
+    suite_name: str = "boundary",
+    precomputed_base_out: list[dict[str, Any]] | None = None,
     max_new_tokens: int,
     batch_size: int,
 ) -> dict[str, Any]:
     formatted = [sr._format_prompt(tok, p, None) for p in prompts]
-    eff_bs = batch_size
-    for _, patch, mode in arms:
-        if mode != "base" and patch is not None and eff_bs > 1:
-            eff_bs = min(eff_bs, vr._resolve_suite_batch_size(model, tok, patch, formatted, dev, eff_bs))
+    eff_bs = _resolve_fast_bs(model, tok, formatted[:8], dev, batch_size) if batch_size > 1 else 1
+    if eff_bs > 1:
+        for _, patch, mode in arms:
+            if mode != "base" and patch is not None:
+                with patch.enable_routed(model, mode="always_on"):
+                    eff_bs = min(eff_bs, _resolve_fast_bs(model, tok, formatted[:8], dev, eff_bs))
 
-    base_out = sr._generate_texts(model, tok, formatted, dev, max_new_tokens=max_new_tokens, batch_size=eff_bs)
+    if precomputed_base_out is not None and len(precomputed_base_out) == len(prompts):
+        base_out = list(precomputed_base_out)
+    else:
+        base_out = _generate_with_progress(
+            model, tok, formatted, dev, max_new_tokens=max_new_tokens, batch_size=eff_bs, tag=f"{suite_name}:base"
+        )
     base_ref = [bool(r["refused"]) for r in base_out]
     nonref_idx = [i for i, flag in enumerate(base_ref) if not flag]
     ref_idx = [i for i, flag in enumerate(base_ref) if flag]
@@ -486,14 +608,42 @@ def _eval_boundary_suite(
 
     arm_reports: dict[str, Any] = {}
     for arm_name, patch, mode in arms:
+        fire_flags = _fire_flags_for_arm(model, tok, patch, mode, formatted, dev)
         if mode == "base":
             outs = base_out
+        elif mode == "auto":
+            outs = list(base_out)
+            fired_idx = [i for i, f in enumerate(fire_flags) if f]
+            print(f"  [{suite_name}:{arm_name}] fired={len(fired_idx)}/{len(formatted)}", flush=True)
+            if fired_idx:
+                fired_fmt = [formatted[i] for i in fired_idx]
+                sub_bs = min(eff_bs, len(fired_idx))
+                with _patch_ctx(model, patch, "always_on"):
+                    fired_outs = _generate_with_progress(
+                        model,
+                        tok,
+                        fired_fmt,
+                        dev,
+                        max_new_tokens=max_new_tokens,
+                        batch_size=sub_bs,
+                        tag=f"{suite_name}:{arm_name}",
+                    )
+                for orig_i, r_out in zip(fired_idx, fired_outs):
+                    outs[orig_i] = r_out
         else:
             with _patch_ctx(model, patch, mode):
-                outs = sr._generate_texts(model, tok, formatted, dev, max_new_tokens=max_new_tokens, batch_size=eff_bs)
+                outs = _generate_with_progress(
+                    model,
+                    tok,
+                    formatted,
+                    dev,
+                    max_new_tokens=max_new_tokens,
+                    batch_size=eff_bs,
+                    tag=f"{suite_name}:{arm_name}",
+                )
 
-        fire_flags = _fire_flags_for_arm(model, tok, patch, mode, formatted, dev)
-        nonref_kls = _compute_arm_response_kls(model, patch, mode, nonref_rows, base_nonref_lps)
+        fire_nonref = [fire_flags[i] for i in nonref_idx] if mode == "auto" else None
+        nonref_kls = _compute_arm_response_kls(model, patch, mode, nonref_rows, base_nonref_lps, fire_nonref)
 
         # Metrics strictly on borderline benign prompts (`base_nonrefused`)
         nr_fired = [i for k, i in enumerate(nonref_idx) if fire_flags[i]]
@@ -580,6 +730,7 @@ def run_evaluation(
     gsm_max_new_tokens: int = 512,
     boundary_max_new_tokens: int = 128,
     batch_size: int = 16,
+    precomputed_or_base_out: list[dict[str, Any]] | None = None,
     out_path: str | Path | None = None,
 ) -> dict[str, Any]:
     t0 = time.perf_counter()
@@ -593,10 +744,13 @@ def run_evaluation(
     # 1. GSM8K
     t_gsm = time.perf_counter()
     gsm_fmt = [_format_gsm8k_prompt(tok, item["question"]) for item in gsm_items]
-    gsm_bs = batch_size
-    for _, patch, mode in arms:
-        if mode != "base" and patch is not None and gsm_bs > 1:
-            gsm_bs = min(gsm_bs, vr._resolve_suite_batch_size(model, tok, patch, gsm_fmt, dev, gsm_bs))
+    gsm_bs = _resolve_fast_bs(model, tok, gsm_fmt[:8], dev, batch_size) if batch_size > 1 else 1
+    if gsm_bs > 1:
+        for _, patch, mode in arms:
+            if mode != "base" and patch is not None:
+                with patch.enable_routed(model, mode="always_on"):
+                    gsm_bs = min(gsm_bs, _resolve_fast_bs(model, tok, gsm_fmt[:8], dev, gsm_bs))
+    print(f"[gsm8k] resolved batch_size={gsm_bs} for n={len(gsm_items)}", flush=True)
 
     gsm_res: dict[str, Any] = {}
     base_gsm_correct: list[bool] | None = None
@@ -610,6 +764,7 @@ def run_evaluation(
             patch,
             mode,
             dev,
+            arm_name=arm_name,
             max_new_tokens=gsm_max_new_tokens,
             batch_size=gsm_bs,
             base_correct=base_gsm_correct,
@@ -668,6 +823,8 @@ def run_evaluation(
         arms,
         or_half_b_prompts,
         dev,
+        suite_name="or_half_b",
+        precomputed_base_out=precomputed_or_base_out,
         max_new_tokens=boundary_max_new_tokens,
         batch_size=batch_size,
     )
@@ -677,6 +834,7 @@ def run_evaluation(
         arms,
         jbb_benign_prompts,
         dev,
+        suite_name="jbb_benign",
         max_new_tokens=boundary_max_new_tokens,
         batch_size=batch_size,
     )
@@ -921,12 +1079,16 @@ def main() -> None:
 
     or_all, _ = sr._load_or_bench_and_controls(a.n_or_bench, 10, a.seed)
     or_fmt = [sr._format_prompt(tok, p, None) for p in or_all]
-    or_bs = vr._probe_left_pad_safe(model, tok, or_fmt[:8], dev, batch_size=a.batch_size) if len(or_fmt) >= 2 else 1
-    base_or_all = sr._generate_texts(model, tok, or_fmt, dev, max_new_tokens=a.boundary_max_new_tokens, batch_size=or_bs)
+    or_bs = _resolve_fast_bs(model, tok, or_fmt[:8], dev, batch_size=a.batch_size) if len(or_fmt) >= 2 else 1
+    print(f"[setup] splitting OR-Bench ({len(or_all)} prompts, bs={or_bs})...", flush=True)
+    base_or_all = _generate_with_progress(
+        model, tok, or_fmt, dev, max_new_tokens=a.boundary_max_new_tokens, batch_size=or_bs, tag="or_split"
+    )
     ref_idx = [i for i, r in enumerate(base_or_all) if r["refused"]]
     nonref_idx = [i for i, r in enumerate(base_or_all) if not r["refused"]]
     or_b_idx = ref_idx[1::2] + nonref_idx[1::2]
     or_half_b = [or_all[i] for i in or_b_idx]
+    or_half_b_base_out = [base_or_all[i] for i in or_b_idx]
 
     jbb_all = vr._read_jbb_csv_or_dataset("data/benign-behaviors.csv", "benign")
     rng = random.Random(a.seed)
@@ -947,6 +1109,7 @@ def main() -> None:
         gsm_max_new_tokens=a.gsm_max_new_tokens,
         boundary_max_new_tokens=a.boundary_max_new_tokens,
         batch_size=a.batch_size,
+        precomputed_or_base_out=or_half_b_base_out,
         out_path=a.out,
     )
     print(json.dumps(rep["summary"], indent=2))
