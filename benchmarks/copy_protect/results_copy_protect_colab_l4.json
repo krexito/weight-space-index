@@ -1,0 +1,1378 @@
+{
+ "run": {
+  "model": "/content/base",
+  "work": "work_gsm8k",
+  "layers": [
+   13,
+   14
+  ],
+  "neurons": 16,
+  "alpha": 12.0,
+  "tokens_a": {
+   "loop": 12288,
+   "copy": 21476,
+   "other": 50778,
+   "healthy_answers": 24
+  },
+  "tokens_b": {
+   "loop": 20992,
+   "copy": 30321,
+   "other": 60142,
+   "healthy_answers": 23
+  },
+  "columns": {
+   "orig": {
+    "13": [
+     7,
+     16,
+     98,
+     123,
+     142,
+     145,
+     154,
+     284,
+     343,
+     516,
+     546,
+     1103,
+     1127,
+     1138,
+     1301,
+     2054
+    ],
+    "14": [
+     6,
+     29,
+     43,
+     90,
+     103,
+     239,
+     265,
+     274,
+     334,
+     347,
+     390,
+     638,
+     782,
+     852,
+     947,
+     1626
+    ]
+   },
+   "gen_skip10": {
+    "13": [
+     16,
+     58,
+     236,
+     261,
+     438,
+     505,
+     516,
+     525,
+     546,
+     674,
+     753,
+     771,
+     795,
+     1201,
+     2054,
+     2601
+    ],
+    "14": [
+     29,
+     43,
+     47,
+     102,
+     103,
+     239,
+     265,
+     274,
+     334,
+     347,
+     638,
+     712,
+     782,
+     852,
+     947,
+     1626
+    ]
+   },
+   "copy_skip10": {
+    "13": [
+     1,
+     16,
+     120,
+     236,
+     247,
+     275,
+     438,
+     505,
+     546,
+     753,
+     836,
+     1245,
+     1392,
+     1453,
+     1970,
+     2705
+    ],
+    "14": [
+     5,
+     29,
+     47,
+     100,
+     103,
+     239,
+     265,
+     316,
+     347,
+     544,
+     712,
+     1107,
+     1322,
+     1391,
+     1447,
+     1626
+    ]
+   },
+   "gen_skip25": {
+    "13": [
+     16,
+     58,
+     236,
+     261,
+     505,
+     516,
+     525,
+     546,
+     674,
+     795,
+     836,
+     1201,
+     1245,
+     1505,
+     1970,
+     2054
+    ],
+    "14": [
+     29,
+     43,
+     47,
+     102,
+     103,
+     239,
+     265,
+     274,
+     334,
+     347,
+     712,
+     782,
+     852,
+     947,
+     1192,
+     1626
+    ]
+   },
+   "copy_skip25": {
+    "13": [
+     1,
+     4,
+     16,
+     120,
+     170,
+     236,
+     247,
+     275,
+     505,
+     546,
+     836,
+     1062,
+     1392,
+     1453,
+     2376,
+     2705
+    ],
+    "14": [
+     29,
+     47,
+     100,
+     103,
+     201,
+     239,
+     265,
+     316,
+     347,
+     544,
+     712,
+     1107,
+     1391,
+     1447,
+     1626,
+     2685
+    ]
+   },
+   "fo_loop": {
+    "13": [
+     7,
+     19,
+     98,
+     123,
+     142,
+     145,
+     154,
+     284,
+     312,
+     343,
+     387,
+     516,
+     573,
+     1301,
+     1995,
+     2054
+    ],
+    "14": [
+     6,
+     24,
+     29,
+     43,
+     47,
+     103,
+     158,
+     239,
+     274,
+     334,
+     347,
+     390,
+     521,
+     638,
+     1063,
+     1391
+    ]
+   },
+   "fo_spec1": {
+    "13": [
+     4,
+     7,
+     16,
+     56,
+     145,
+     170,
+     223,
+     236,
+     337,
+     341,
+     505,
+     546,
+     571,
+     593,
+     872,
+     1301
+    ],
+    "14": [
+     1,
+     10,
+     17,
+     29,
+     47,
+     103,
+     239,
+     347,
+     360,
+     544,
+     638,
+     888,
+     987,
+     1330,
+     1391,
+     2014
+    ]
+   },
+   "fo_spec3": {
+    "13": [
+     4,
+     16,
+     56,
+     108,
+     223,
+     236,
+     337,
+     341,
+     392,
+     418,
+     565,
+     571,
+     593,
+     735,
+     872,
+     895
+    ],
+    "14": [
+     1,
+     10,
+     17,
+     29,
+     47,
+     100,
+     103,
+     233,
+     239,
+     347,
+     360,
+     682,
+     888,
+     1330,
+     1391,
+     2014
+    ]
+   }
+  },
+  "summary": {
+   "orig": {
+    "loop": 0.32214,
+    "copy": 0.04002,
+    "other": 0.00685,
+    "healthy_answers": 0.00426,
+    "loop_vs_orig": 1.0,
+    "copy_vs_orig": 1.0,
+    "loop_vs_orig_ci95": [
+     1.0,
+     1.0
+    ],
+    "copy_vs_orig_ci95": [
+     1.0,
+     1.0
+    ],
+    "overlap_with_orig": 32,
+    "predicted_first_order": {
+     "loop": 0.0129,
+     "copy": 0.01005,
+     "other": -0.00395
+    },
+    "pass": false
+   },
+   "gen_skip10": {
+    "loop": 0.15207,
+    "copy": 0.01312,
+    "other": 0.00549,
+    "healthy_answers": 0.00386,
+    "loop_vs_orig": 0.472,
+    "copy_vs_orig": 0.328,
+    "loop_vs_orig_ci95": [
+     0.409,
+     0.541
+    ],
+    "copy_vs_orig_ci95": [
+     0.203,
+     0.362
+    ],
+    "overlap_with_orig": 17,
+    "predicted_first_order": {
+     "loop": 0.00476,
+     "copy": -0.00021,
+     "other": -0.004
+    },
+    "pass": false
+   },
+   "copy_skip10": {
+    "loop": 0.01645,
+    "copy": 0.00022,
+    "other": 0.00809,
+    "healthy_answers": 0.00525,
+    "loop_vs_orig": 0.051,
+    "copy_vs_orig": 0.005,
+    "loop_vs_orig_ci95": [
+     0.041,
+     0.063
+    ],
+    "copy_vs_orig_ci95": [
+     -0.051,
+     0.018
+    ],
+    "overlap_with_orig": 8,
+    "predicted_first_order": {
+     "loop": 0.00277,
+     "copy": -0.00558,
+     "other": -0.00112
+    },
+    "pass": false
+   },
+   "gen_skip25": {
+    "loop": 0.14,
+    "copy": 0.01223,
+    "other": 0.00507,
+    "healthy_answers": 0.00349,
+    "loop_vs_orig": 0.435,
+    "copy_vs_orig": 0.306,
+    "loop_vs_orig_ci95": [
+     0.373,
+     0.505
+    ],
+    "copy_vs_orig_ci95": [
+     0.178,
+     0.337
+    ],
+    "overlap_with_orig": 16,
+    "predicted_first_order": {
+     "loop": 0.00442,
+     "copy": -0.00038,
+     "other": -0.00418
+    },
+    "pass": false
+   },
+   "copy_skip25": {
+    "loop": 0.01526,
+    "copy": -0.00032,
+    "other": 0.00832,
+    "healthy_answers": 0.00568,
+    "loop_vs_orig": 0.047,
+    "copy_vs_orig": -0.008,
+    "loop_vs_orig_ci95": [
+     0.038,
+     0.058
+    ],
+    "copy_vs_orig_ci95": [
+     -0.075,
+     0.004
+    ],
+    "overlap_with_orig": 8,
+    "predicted_first_order": {
+     "loop": 0.00272,
+     "copy": -0.00617,
+     "other": -0.00125
+    },
+    "pass": false
+   },
+   "fo_loop": {
+    "loop": 0.09211,
+    "copy": 0.02373,
+    "other": 0.01096,
+    "healthy_answers": 0.00879,
+    "loop_vs_orig": 0.286,
+    "copy_vs_orig": 0.593,
+    "loop_vs_orig_ci95": [
+     0.249,
+     0.328
+    ],
+    "copy_vs_orig_ci95": [
+     0.515,
+     1.027
+    ],
+    "overlap_with_orig": 21,
+    "predicted_first_order": {
+     "loop": 0.0153,
+     "copy": 0.01263,
+     "other": -0.00526
+    },
+    "pass": false
+   },
+   "fo_spec1": {
+    "loop": 0.01342,
+    "copy": 0.00199,
+    "other": 0.01143,
+    "healthy_answers": 0.00745,
+    "loop_vs_orig": 0.042,
+    "copy_vs_orig": 0.05,
+    "loop_vs_orig_ci95": [
+     0.033,
+     0.051
+    ],
+    "copy_vs_orig_ci95": [
+     0.02,
+     0.093
+    ],
+    "overlap_with_orig": 10,
+    "predicted_first_order": {
+     "loop": 0.00614,
+     "copy": -0.00664,
+     "other": -0.00147
+    },
+    "pass": false
+   },
+   "fo_spec3": {
+    "loop": 0.00591,
+    "copy": -0.00212,
+    "other": 0.0128,
+    "healthy_answers": 0.00664,
+    "loop_vs_orig": 0.018,
+    "copy_vs_orig": -0.053,
+    "loop_vs_orig_ci95": [
+     0.014,
+     0.023
+    ],
+    "copy_vs_orig_ci95": [
+     -0.139,
+     -0.038
+    ],
+    "overlap_with_orig": 5,
+    "predicted_first_order": {
+     "loop": 0.00069,
+     "copy": -0.01114,
+     "other": 2e-05
+    },
+    "pass": false
+   },
+   "random": {
+    "loop": -3e-05,
+    "copy": -0.0,
+    "other": 0.00027,
+    "healthy_answers": 0.00028,
+    "loop_vs_orig": -0.0,
+    "copy_vs_orig": -0.0,
+    "loop_vs_orig_ci95": [
+     -0.001,
+     0.001
+    ],
+    "copy_vs_orig_ci95": [
+     -0.005,
+     0.006
+    ],
+    "overlap_with_orig": null,
+    "predicted_first_order": null,
+    "pass": false
+   }
+  },
+  "best": null,
+  "passed": [],
+  "damage_map": {
+   "orig": {
+    "own_thinking": {
+     "n_tokens": 16352,
+     "dnll": 0.00871,
+     "kl": 0.00758,
+     "kl_p99": 0.07264,
+     "hit_share": 0.00581,
+     "top1_agree": 0.97444,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.04625,
+      "layers.14.mlp.down_proj": 0.04366
+     },
+     "worst": [
+      {
+       "kl": 2.9167,
+       "seq": 14,
+       "pos": 75,
+       "before": " the rest enrolled in hip-hop dance. What percentage of the entire students enrolled in hip-hop dance?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": ":"
+      },
+      {
+       "kl": 2.7156,
+       "seq": 10,
+       "pos": 83,
+       "before": "0% in the third month. How many downloads did the program have total over the three months?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": ":"
+      },
+      {
+       "kl": 2.6658,
+       "seq": 22,
+       "pos": 78,
+       "before": " His last 3 customers don't buy any DVDs. How many DVDs did Billy sell on Tuesday?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": ":"
+      },
+      {
+       "kl": 2.3126,
+       "seq": 18,
+       "pos": 52,
+       "before": "let every morning for breakfast.  How many dozens of eggs will she eat in 4 weeks?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": ":"
+      },
+      {
+       "kl": 1.7501,
+       "seq": 8,
+       "pos": 127,
+       "before": "80 mph.  How far is he from home at the end of those 4 hours?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": ":"
+      }
+     ]
+    },
+    "math": {
+     "n_tokens": 6311,
+     "dnll": 0.0002,
+     "kl": 0.00596,
+     "kl_p99": 0.05082,
+     "hit_share": 0.00222,
+     "top1_agree": 0.97512,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.04512,
+      "layers.14.mlp.down_proj": 0.05033
+     },
+     "worst": [
+      {
+       "kl": 0.2889,
+       "seq": 11,
+       "pos": 208,
+       "before": " 4 x 15 = <<4*15=60>>60\nHe earned $35 shoveling driveways because 110 - 60 - ",
+       "actual": "1",
+       "base_top1": "3",
+       "patched_top1": "3"
+      },
+      {
+       "kl": 0.2878,
+       "seq": 20,
+       "pos": 61,
+       "before": " a truck design, and some had a rose design. Bella bought 11 snowflake stamps. She bought 9 more truck stamps than snowflake stamps, and 13 fewer rose stamps than",
+       "actual": " truck",
+       "base_top1": " truck",
+       "patched_top1": " truck"
+      },
+      {
+       "kl": 0.1949,
+       "seq": 30,
+       "pos": 35,
+       "before": "Ann, Bill, Cate, and Dale each buy personal pan pizzas cut into 4 pieces. If Bill and Dale eat 50% of their pizzas and Ann and",
+       "actual": " C",
+       "base_top1": " C",
+       "patched_top1": " C"
+      },
+      {
+       "kl": 0.175,
+       "seq": 5,
+       "pos": 194,
+       "before": "28>>28 flowers.\nThat means in Mark's garden there are 25/100 * 28 = <<25/100*28=7",
+       "actual": ">>",
+       "base_top1": ".",
+       "patched_top1": "0"
+      },
+      {
+       "kl": 0.1314,
+       "seq": 15,
+       "pos": 262,
+       "before": " the cost of creating the movie he has a profit of 450,000-2000=$<<450000-2000=44",
+       "actual": "8",
+       "base_top1": "8",
+       "patched_top1": "8"
+      }
+     ]
+    },
+    "prose": {
+     "n_tokens": 16352,
+     "dnll": 0.00512,
+     "kl": 0.0052,
+     "kl_p99": 0.03568,
+     "hit_share": 0.00086,
+     "top1_agree": 0.96453,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.05054,
+      "layers.14.mlp.down_proj": 0.0457
+     },
+     "worst": [
+      {
+       "kl": 0.8823,
+       "seq": 8,
+       "pos": 416,
+       "before": " \u00c1d\u00e1m Bogd\u00e1n was ruled out with an ankle injury picked up in training . On 21 February 2015 he made his Bolton debut as a substitute for the injured Lon",
+       "actual": "erg",
+       "base_top1": "erg",
+       "patched_top1": "erg"
+      },
+      {
+       "kl": 0.3363,
+       "seq": 3,
+       "pos": 496,
+       "before": " southern road toward Pugong @-@ ni and C Company . Major Lloyd K. Jenson , executive officer of the 2nd Battalion , accompanied F Company down the Pugong @-@ ni",
+       "actual": " road",
+       "base_top1": " @",
+       "patched_top1": " @"
+      },
+      {
+       "kl": 0.3204,
+       "seq": 22,
+       "pos": 489,
+       "before": " the empire , but according to the historian Tacitus he was viewed by the Roman people as compulsive and corrupt . He ordered theatres built and promoted athletic games . During his reign , the redoub",
+       "actual": "table",
+       "base_top1": "t",
+       "patched_top1": "led"
+      },
+      {
+       "kl": 0.2834,
+       "seq": 19,
+       "pos": 475,
+       "before": " university . \" I look at this new challenge of not changing and sticking to your core values and making sure you remain humble as a great coaching opportunity . \" \n\n\n = = = 2010",
+       "actual": " \u2013",
+       "base_top1": " off",
+       "patched_top1": " off"
+      },
+      {
+       "kl": 0.2168,
+       "seq": 0,
+       "pos": 293,
+       "before": " the 2007 theatre production of How to Curse directed by Josie Rourke . How to Curse was performed at Bush Theatre in the London Borough of Hammersmith and Fulham . Boul",
+       "actual": "ter",
+       "base_top1": "ner",
+       "patched_top1": "man"
+      }
+     ]
+    },
+    "code": {
+     "n_tokens": 4428,
+     "dnll": 0.00353,
+     "kl": 0.00332,
+     "kl_p99": 0.03101,
+     "hit_share": 0.0009,
+     "top1_agree": 0.97809,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.03425,
+      "layers.14.mlp.down_proj": 0.03979
+     },
+     "worst": [
+      {
+       "kl": 0.2009,
+       "seq": 10,
+       "pos": 196,
+       "before": "        return ''\n\n    beginning_of_suffix = 0\n\n    while not is_palindrome(string[beginning_of_suffix:]):\n        beginning_of_suffix += 1\n\n    return string + string",
+       "actual": "[:",
+       "base_top1": "[",
+       "patched_top1": "["
+      },
+      {
+       "kl": 0.1656,
+       "seq": 8,
+       "pos": 108,
+       "before": ".\n    >>> sum_product([])\n    (0, 1)\n    >>> sum_product([1, 2, 3, 4])\n    (10, ",
+       "actual": "2",
+       "base_top1": "2",
+       "patched_top1": "2"
+      },
+      {
+       "kl": 0.1478,
+       "seq": 25,
+       "pos": 126,
+       "before": "2, 2]\n    >>> factorize(25)\n    [5, 5]\n    >>> factorize(70)\n    [2, 5, ",
+       "actual": "7",
+       "base_top1": "7",
+       "patched_top1": "7"
+      },
+      {
+       "kl": 0.1018,
+       "seq": 1,
+       "pos": 150,
+       "before": "']\n    \"\"\"\n    result = []\n    current_string = []\n    current_depth = 0\n\n    for c in paren_string:\n        if c == '(':\n            current",
+       "actual": "_depth",
+       "base_top1": "_string",
+       "patched_top1": "_string"
+      },
+      {
+       "kl": 0.0903,
+       "seq": 6,
+       "pos": 196,
+       "before": " max_depth = max(depth, max_depth)\n            else:\n                depth -= 1\n\n        return max_depth\n\n    return [parse_paren_group(x) for x in paren_string.split",
+       "actual": "('",
+       "base_top1": "('",
+       "patched_top1": "('"
+      }
+     ]
+    },
+    "chat": {
+     "n_tokens": 15716,
+     "dnll": -0.00205,
+     "kl": 0.00676,
+     "kl_p99": 0.04895,
+     "hit_share": 0.00242,
+     "top1_agree": 0.9601,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.04421,
+      "layers.14.mlp.down_proj": 0.0442
+     },
+     "worst": [
+      {
+       "kl": 0.8824,
+       "seq": 26,
+       "pos": 268,
+       "before": " more opportunities and making the city more resilient to economic shocks.<|im_end|>\n<|im_start|>user\nThat's interesting. Can you provide some statistics on the job growth in Birmingham's diversified sectors?<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": "assistant"
+      },
+      {
+       "kl": 0.7069,
+       "seq": 27,
+       "pos": 484,
+       "before": " heights, shapes, and embellishments reflecting the prevailing aesthetics of different periods. In the 20th and 21st centuries, designers like Christian Louboutin, Manolo Blah",
+       "actual": "nik",
+       "base_top1": "nik",
+       "patched_top1": "iss"
+      },
+      {
+       "kl": 0.586,
+       "seq": 24,
+       "pos": 104,
+       "before": " children\u2019s reach. Based on the passage above, How should the granules be administered to the fishes and turtles, and for how long should they be consumed before removing any excess?<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "<think>",
+       "patched_top1": "\n"
+      },
+      {
+       "kl": 0.4068,
+       "seq": 6,
+       "pos": 359,
+       "before": "eros, an elephant, and a bear, all holding hands or paws. This will help emphasize the idea that all animals should have equal rights and be treated with respect and dignity.<|im_end|>\n<|im_start|>",
+       "actual": "user",
+       "base_top1": "user",
+       "patched_top1": "user"
+      },
+      {
+       "kl": 0.3522,
+       "seq": 23,
+       "pos": 386,
+       "before": "bt mich mehr als eine Milliarde Dinge.\nEr liebt mich, wenn ich meine fr\u00f6hlichen Volksm\u00e4rchen-Rhymes singe.\nEr ist gut, nicht nur gut,",
+       "actual": " tats\u00e4chlich",
+       "base_top1": " in",
+       "patched_top1": " sondern"
+      }
+     ]
+    },
+    "spanish": {
+     "n_tokens": 7811,
+     "dnll": 0.00152,
+     "kl": 0.00361,
+     "kl_p99": 0.02563,
+     "hit_share": 0.00077,
+     "top1_agree": 0.96082,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.06689,
+      "layers.14.mlp.down_proj": 0.04748
+     },
+     "worst": [
+      {
+       "kl": 0.217,
+       "seq": 27,
+       "pos": 120,
+       "before": "ADIANOS: Este individuo ha dicho que \u00e9l cree que sus sentimientos pueden encaminarlo equivocadamente. - \u00bfQu\u00e9 pasa, cari\u00f1o? Henoko.net es un blog actualizado con asiduid",
+       "actual": "ad",
+       "base_top1": "ad",
+       "patched_top1": "os"
+      },
+      {
+       "kl": 0.2134,
+       "seq": 17,
+       "pos": 167,
+       "before": " Era el segundo hijo del Rey Eduardo VII y la Reina Alejandra. Fue el primer monarca en pertenecer a la Casa de Windsor, que se cre\u00f3 de la Casa de Sajonia-Cob",
+       "actual": "urgo",
+       "base_top1": "urgo",
+       "patched_top1": "urg"
+      },
+      {
+       "kl": 0.1896,
+       "seq": 17,
+       "pos": 168,
+       "before": " el segundo hijo del Rey Eduardo VII y la Reina Alejandra. Fue el primer monarca en pertenecer a la Casa de Windsor, que se cre\u00f3 de la Casa de Sajonia-Coburgo",
+       "actual": "-G",
+       "base_top1": "-G",
+       "patched_top1": "-G"
+      },
+      {
+       "kl": 0.14,
+       "seq": 5,
+       "pos": 35,
+       "before": "Por favor, compraste a Dixon un estudio de grabaci\u00f3n para una semana, y luego financiaste mi spot comercial. S\u00f3lo en 48 estados. Adem\u00e1s, anfet",
+       "actual": "amin",
+       "base_top1": "ol",
+       "patched_top1": "ina"
+      },
+      {
+       "kl": 0.1292,
+       "seq": 17,
+       "pos": 169,
+       "before": " segundo hijo del Rey Eduardo VII y la Reina Alejandra. Fue el primer monarca en pertenecer a la Casa de Windsor, que se cre\u00f3 de la Casa de Sajonia-Coburgo-G",
+       "actual": "oth",
+       "base_top1": "oth",
+       "patched_top1": "oth"
+      }
+     ]
+    },
+    "chinese": {
+     "n_tokens": 9561,
+     "dnll": 0.00406,
+     "kl": 0.00505,
+     "kl_p99": 0.03312,
+     "hit_share": 0.00063,
+     "top1_agree": 0.95084,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.03481,
+      "layers.14.mlp.down_proj": 0.04244
+     },
+     "worst": [
+      {
+       "kl": 0.1926,
+       "seq": 14,
+       "pos": 510,
+       "before": "\u8ba1\u5212\u201d\u4e2d\u88ab\u5217\u4e3a\u9ad8\u5ea6\u4f18\u5148\u7684\u5e02\u8f96\u533a\u5185\u66f4\u52a0\u6df1\u5165\u5730\u5f00\u5c55\u536b\u751f\u6559\u80b2\u6d3b\u52a8\uff1b\u901a\u8fc7\u201c\u5bb6\u5ead\u4fdd\u5065\u65b9\u6848\u201d\u3001\u201c\u793e\u4f1a\u4fdd\u5065\u4ee3\u7406\u201d\u4ee5\u53ca\u4e3a\u201c\u513f\u7ae5\u7684\u7530\u56ed\u8fd0\u52a8\u201d\u5de5\u4f5c\u7684\u4ee3\u7406\uff0c\u66f4\u52a0\u6df1\u5165\u5730\u4f20\u64ad\u970d",
+       "actual": "\u4e71",
+       "base_top1": "\u4e71",
+       "patched_top1": "\u4e71"
+      },
+      {
+       "kl": 0.1557,
+       "seq": 31,
+       "pos": 173,
+       "before": "\u8b66\u5bdf\u6d3e\u9063\u56fd\u7f14\u7ed3\u8c05\u89e3\u5907\u5fd8\u5f55\u4e4b\u524d\uff0c\u4e0a\u8ff0\u7ecf\u8d39\u5305\u62ec\u6309\u7167\u6b63\u5728\u8c08\u5224\u7684\u8c05\u89e3\u5907\u5fd8\u5f55\u507f\u8fd8\u6d3e\u9063\u56fd\u653f\u5e9c\u81ea\u6211\u7ef4\u6301\u8d39\u7528\u7684\u4f30\u8ba1\u6240\u9700\u7ecf\u8d39\u3002 32. \u8054\u5408\u56fd\u65b0\u95fb\u4e2d\u5fc3\u5165\u53e3(www.un",
+       "actual": ".org",
+       "base_top1": ".org",
+       "patched_top1": "news"
+      },
+      {
+       "kl": 0.1431,
+       "seq": 17,
+       "pos": 45,
+       "before": "\u5634\uff0c \u5426\u5219\u6211\u4eec \u65e2\u4e0b\u53bb\u3002 \u5982\u6b64\u771f\u5207 \u4ee5\u81f3\u4e8e\u6bcf\u5e74\u4ed6\u4eec\u90fd\u96c6\u5408\u5728 92. 2001\u5e74\uff0c\u7537\u6027\u5931\u4e1a\u7387\u4e3a8.7%\uff0c\u800c\u5973\u6027\u5931\u4e1a\u7387\u8f83",
+       "actual": "\u4e0a",
+       "base_top1": "\u7537\u6027",
+       "patched_top1": "\u7537\u6027"
+      },
+      {
+       "kl": 0.1236,
+       "seq": 0,
+       "pos": 142,
+       "before": "\u4eba\u5458\u4e2d\u3002\u4f4620\u4e16\u7eaa90\u5e74\u4ee3\u67d0\u79cd\u672a\u77e5\u539f\u56e0\u5bfc\u81f4\u516c\u4f17\u75c5\u6bd2\u611f\u67d3\u7387\u66b4\u589e\u3002\u88ab\u75c5\u6bd2\u611f\u67d3\u7684\u5357\u975e\u6c11\u4f17\u6570\u91cf\uff08\u76f8\u5f53\u4e8e\u4e39\u9ea6\u5168\u56fd\u4eba\u53e3\uff09\u8d85\u8fc7\u4e86\u76f8\u90bb\u83ab\u6851\u6bd4\u514b\u3001\u83b1",
+       "actual": "\u7d22",
+       "base_top1": "\u7d22",
+       "patched_top1": "\u7d22"
+      },
+      {
+       "kl": 0.1194,
+       "seq": 0,
+       "pos": 244,
+       "before": "\u81ea\u7531\u5982\u6b64\u4e0d\u53d7\u5c0a\u91cd\u3002 \u201c6.\u3000\u53c8\u6b22\u8fce\u7ecf\u6d4e\u8f6c\u578b\u56fd\u5bb6\u6e34\u671b\u8fdb\u4e00\u6b65\u5f00\u5c55\u533a\u57df\u3001\u6b21\u533a\u57df\u548c\u533a\u57df\u95f4\u5408\u4f5c\uff0c\u8bf7\u8054\u5408\u56fd\u7cfb\u7edf\u52a0\u5f3a\u540c\u5176\u6210\u5458\u5305\u62ec\u7ecf\u6d4e\u8f6c\u578b\u56fd\u5bb6\u7684\u5404\u533a\u57df\u548c",
+       "actual": "\u6b21",
+       "base_top1": "\u6b21",
+       "patched_top1": "\u533a\u57df"
+      }
+     ]
+    }
+   },
+   "random": {
+    "own_thinking": {
+     "n_tokens": 16352,
+     "dnll": -0.00225,
+     "kl": 0.00111,
+     "kl_p99": 0.01178,
+     "hit_share": 0.00018,
+     "top1_agree": 0.98942,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.02569,
+      "layers.14.mlp.down_proj": 0.02813
+     },
+     "worst": [
+      {
+       "kl": 0.2165,
+       "seq": 29,
+       "pos": 91,
+       "before": " of heels costs $33 and the other costs twice as much, how many dollars are the boots?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>",
+       "actual": "assistant",
+       "base_top1": "assistant",
+       "patched_top1": "assistant"
+      },
+      {
+       "kl": 0.1095,
+       "seq": 30,
+       "pos": 67,
+       "before": "162, calculate Allen's age 10 years from now.\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant\n<think>\nHere's",
+       "actual": " a",
+       "base_top1": " a",
+       "patched_top1": " a"
+      },
+      {
+       "kl": 0.1019,
+       "seq": 0,
+       "pos": 87,
+       "before": "2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>",
+       "actual": "assistant",
+       "base_top1": "assistant",
+       "patched_top1": "assistant"
+      },
+      {
+       "kl": 0.0929,
+       "seq": 6,
+       "pos": 69,
+       "before": ", Charleston, and Seattle have together if Seattle has 20 sheep?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant\n<think>\nHere's",
+       "actual": " a",
+       "base_top1": " a",
+       "patched_top1": " a"
+      },
+      {
+       "kl": 0.0852,
+       "seq": 5,
+       "pos": 83,
+       "before": " 16 glasses. How much does he need to pay for them?\nPlease reason step by step, and put your final answer within \\boxed{}.<|im_end|>\n<|im_start|>assistant\n<think>\nHere's",
+       "actual": " a",
+       "base_top1": " a",
+       "patched_top1": " a"
+      }
+     ]
+    },
+    "math": {
+     "n_tokens": 6311,
+     "dnll": 0.00053,
+     "kl": 0.00077,
+     "kl_p99": 0.00454,
+     "hit_share": 0.0,
+     "top1_agree": 0.99144,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.02415,
+      "layers.14.mlp.down_proj": 0.02331
+     },
+     "worst": [
+      {
+       "kl": 0.0196,
+       "seq": 5,
+       "pos": 95,
+       "before": " How many flowers does Mark have in his garden?\nThere are 80/100 * 10 = <<80/100*10=8>>8 more",
+       "actual": " purple",
+       "base_top1": " purple",
+       "patched_top1": " purple"
+      },
+      {
+       "kl": 0.0126,
+       "seq": 2,
+       "pos": 156,
+       "before": "0.\nThis means, Betty needs 100 - 50 - 30 - 15 = $<<100-50-30-15=",
+       "actual": "5",
+       "base_top1": "1",
+       "patched_top1": "1"
+      },
+      {
+       "kl": 0.0112,
+       "seq": 30,
+       "pos": 140,
+       "before": "*50*.01=4>>4 pieces.\nAnn and Cate eat 2 x 4 x 75% = <<2*4*75*.01=",
+       "actual": "6",
+       "base_top1": "6",
+       "patched_top1": "6"
+      },
+      {
+       "kl": 0.0112,
+       "seq": 9,
+       "pos": 113,
+       "before": " hours a day for $18 per hour so she makes 8*18 = $<<8*18=144.00>>144.00 per ",
+       "actual": "8",
+       "base_top1": "8",
+       "patched_top1": "8"
+      },
+      {
+       "kl": 0.0086,
+       "seq": 5,
+       "pos": 92,
+       "before": " purple flowers. How many flowers does Mark have in his garden?\nThere are 80/100 * 10 = <<80/100*10=8",
+       "actual": ">>",
+       "base_top1": ">>",
+       "patched_top1": ">>"
+      }
+     ]
+    },
+    "prose": {
+     "n_tokens": 16352,
+     "dnll": 0.00033,
+     "kl": 0.00113,
+     "kl_p99": 0.0052,
+     "hit_share": 0.0,
+     "top1_agree": 0.98202,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.0231,
+      "layers.14.mlp.down_proj": 0.02523
+     },
+     "worst": [
+      {
+       "kl": 0.0173,
+       "seq": 17,
+       "pos": 73,
+       "before": " first week of October 1944 , the 6th Airborne Armoured Reconnaissance Regiment underwent an extensive reorganization , in which it was completely restructured , and all the remaining T",
+       "actual": "etr",
+       "base_top1": "etr",
+       "patched_top1": "etr"
+      },
+      {
+       "kl": 0.0159,
+       "seq": 19,
+       "pos": 364,
+       "before": " Cubs vs. Florida Marlins game in Chicago on May 10 . \" It 's all been very surreal , \" Stevens said . \" If you are the runner @-@ up , you don",
+       "actual": " '",
+       "base_top1": " '",
+       "patched_top1": " '"
+      },
+      {
+       "kl": 0.0157,
+       "seq": 22,
+       "pos": 489,
+       "before": " the empire , but according to the historian Tacitus he was viewed by the Roman people as compulsive and corrupt . He ordered theatres built and promoted athletic games . During his reign , the redoub",
+       "actual": "table",
+       "base_top1": "t",
+       "patched_top1": "led"
+      },
+      {
+       "kl": 0.0132,
+       "seq": 24,
+       "pos": 49,
+       "before": " , net worth , investment and paid @-@ up capital , has its headquarters along United Nations Avenue in Ermita . Unilever Philippines has its corporate office along United Nations Avenue in Paco",
+       "actual": " .",
+       "base_top1": ",",
+       "patched_top1": ","
+      },
+      {
+       "kl": 0.0127,
+       "seq": 27,
+       "pos": 14,
+       "before": " . Meanwhile , BPSB is responsible for cargo handling at the Bint",
+       "actual": "ulu",
+       "base_top1": "an",
+       "patched_top1": "an"
+      }
+     ]
+    },
+    "code": {
+     "n_tokens": 4428,
+     "dnll": 0.00197,
+     "kl": 0.0006,
+     "kl_p99": 0.0043,
+     "hit_share": 0.0,
+     "top1_agree": 0.99232,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.031,
+      "layers.14.mlp.down_proj": 0.03113
+     },
+     "worst": [
+      {
+       "kl": 0.015,
+       "seq": 19,
+       "pos": 200,
+       "before": " 'six': 6,\n        'seven': 7,\n        'eight': 8,\n        'nine': 9\n    }\n    return ' '.join(sorted([",
+       "actual": "x",
+       "base_top1": "value",
+       "patched_top1": "value"
+      },
+      {
+       "kl": 0.0114,
+       "seq": 16,
+       "pos": 27,
+       "before": "\n\ndef count_distinct_characters(string: str) -> int:\n    \"\"\" Given a string, find out how many distinct characters (",
+       "actual": "reg",
+       "base_top1": "case",
+       "patched_top1": "case"
+      },
+      {
+       "kl": 0.0111,
+       "seq": 14,
+       "pos": 81,
+       "before": "')\n    ['a', 'ab', 'abc']\n    \"\"\"\n    result = []\n\n    for i in range(len(string)):\n        result.append(string[:i+1])\n",
+       "actual": "   ",
+       "base_top1": "   ",
+       "patched_top1": "   "
+      },
+      {
+       "kl": 0.0101,
+       "seq": 10,
+       "pos": 194,
+       "before": ":\n        return ''\n\n    beginning_of_suffix = 0\n\n    while not is_palindrome(string[beginning_of_suffix:]):\n        beginning_of_suffix += 1\n\n    return string",
+       "actual": " +",
+       "base_top1": "[:",
+       "patched_top1": "[:"
+      },
+      {
+       "kl": 0.01,
+       "seq": 6,
+       "pos": 180,
+       "before": ":\n            if c == '(':\n                depth += 1\n                max_depth = max(depth, max_depth)\n            else:\n                depth -= 1\n\n        return max_depth",
+       "actual": "\n\n",
+       "base_top1": "\n\n",
+       "patched_top1": "\n\n"
+      }
+     ]
+    },
+    "chat": {
+     "n_tokens": 15716,
+     "dnll": -0.00726,
+     "kl": 0.00179,
+     "kl_p99": 0.01101,
+     "hit_share": 6e-05,
+     "top1_agree": 0.9797,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.02511,
+      "layers.14.mlp.down_proj": 0.02906
+     },
+     "worst": [
+      {
+       "kl": 0.1198,
+       "seq": 11,
+       "pos": 276,
+       "before": " economies had profound economic and social consequences.<|im_end|>\n<|im_start|>user\nThat's interesting. Did any Eastern European countries fail to recover from the economic impact of the Soviet Union's fall?<|im_end|>\n<|im_start|>assistant",
+       "actual": "\n",
+       "base_top1": "\n",
+       "patched_top1": "\n"
+      },
+      {
+       "kl": 0.0817,
+       "seq": 30,
+       "pos": 211,
+       "before": " around, oh so dazed\nHis obsession now left in a craze\nHe searched without rest\nTill he realized, crest\nHe was missing a meal he once praised!<|im_end|>\n<|im_start|>",
+       "actual": "user",
+       "base_top1": "assistant",
+       "patched_top1": "assistant"
+      },
+      {
+       "kl": 0.0457,
+       "seq": 20,
+       "pos": 448,
+       "before": " rewarding yourself for achieving them.\n10. Use FinQuiz resources: Make full use of FinQuiz's study materials, mock exams, and tutorials to prepare effectively for the exam.<|im_end|>\n<|im_start|>",
+       "actual": "user",
+       "base_top1": "user",
+       "patched_top1": "user"
+      },
+      {
+       "kl": 0.0362,
+       "seq": 13,
+       "pos": 375,
+       "before": "assistant\nTo request voice recorded alert messages for urgent situations, you can send an email to support@beehively.com. These messages are being rolled out school by school upon request.<|im_end|>\n<|im_start|>",
+       "actual": "user",
+       "base_top1": "user",
+       "patched_top1": "user"
+      },
+      {
+       "kl": 0.0361,
+       "seq": 27,
+       "pos": 484,
+       "before": " heights, shapes, and embellishments reflecting the prevailing aesthetics of different periods. In the 20th and 21st centuries, designers like Christian Louboutin, Manolo Blah",
+       "actual": "nik",
+       "base_top1": "nik",
+       "patched_top1": "nik"
+      }
+     ]
+    },
+    "spanish": {
+     "n_tokens": 7811,
+     "dnll": 0.00128,
+     "kl": 0.00089,
+     "kl_p99": 0.00407,
+     "hit_share": 0.0,
+     "top1_agree": 0.98067,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.02125,
+      "layers.14.mlp.down_proj": 0.02514
+     },
+     "worst": [
+      {
+       "kl": 0.0149,
+       "seq": 30,
+       "pos": 241,
+       "before": " compra de su propio coche. Para ser testigos, significa darse del todo y totalmente a las manos de Dios, dar por completo nuestro ser, vivir el mensaje del evangelio antes de que lo dig",
+       "actual": "amos",
+       "base_top1": "amos",
+       "patched_top1": "amos"
+      },
+      {
+       "kl": 0.0114,
+       "seq": 10,
+       "pos": 24,
+       "before": "La siguiente historia se llama... \u00a1D\u00eda de arcilla! El usa a la gente para obtener informacion. Ten",
+       "actual": "iendo",
+       "base_top1": "iendo",
+       "patched_top1": "iendo"
+      },
+      {
+       "kl": 0.0104,
+       "seq": 17,
+       "pos": 40,
+       "before": "Dos: que actu\u00f3 premeditadamente... Vamos. \u00a1Fuera de la calle! Por \u00faltimo, en el informe se indicar\u00e1n los m\u00e9todos que permitan, en cada etapa del proyecto, cont",
+       "actual": "ener",
+       "base_top1": "ener",
+       "patched_top1": "ener"
+      },
+      {
+       "kl": 0.0092,
+       "seq": 24,
+       "pos": 181,
+       "before": " de riesgos. No, no, tenemos tiempo. Parking gratis frente a la pensi\u00f3n. Su enorme pito afroamericano. S\u00e9 cu\u00e1les eran las mentiras. Adem\u00e1s de las orientaciones de Servicio-al",
+       "actual": "-",
+       "base_top1": "um",
+       "patched_top1": "um"
+      },
+      {
+       "kl": 0.009,
+       "seq": 27,
+       "pos": 96,
+       "before": " magn\u00e1nimo cuando b\u00e1sicamente acaba de ganar la elecci\u00f3n. - Fui un ejemplo de monogamia. PLEYADIANOS: Este individuo ha dicho que \u00e9l cree que sus sentimientos pueden enc",
+       "actual": "amin",
+       "base_top1": "ender",
+       "patched_top1": "ender"
+      }
+     ]
+    },
+    "chinese": {
+     "n_tokens": 9561,
+     "dnll": 0.00032,
+     "kl": 0.00115,
+     "kl_p99": 0.00442,
+     "hit_share": 0.0,
+     "top1_agree": 0.97573,
+     "activity": {
+      "layers.13.mlp.down_proj": 0.02598,
+      "layers.14.mlp.down_proj": 0.02752
+     },
+     "worst": [
+      {
+       "kl": 0.019,
+       "seq": 7,
+       "pos": 89,
+       "before": " \u4ec0\u4e48\u6709\"E \u53c2\u8bae\u9662\u600e\u80fd\u63a5\u7eb3 \u4e00\u4f4d\u6beb\u65e0\u7ecf\u9a8c\u7684\u6210\u5458... \u4e00\u4f4d\u4e0d\u80fd\u81ea\u6b3a\u6b3a\u4eba... \u6ca1\u80fd\u529b\u6307\u5bfc\u4ed6\u4eba\u7684\u6210\u5458\uff1f \u5173\u4e8e\u79d1\u7d22\u6c83\u7279\u6d3e\u56e2\uff0c\u6b27\u6d32\u4eba\u6743",
+       "actual": "\u6cd5\u9662",
+       "base_top1": "\u59d4\u5458\u4f1a",
+       "patched_top1": "\u6cd5\u9662"
+      },
+      {
+       "kl": 0.0185,
+       "seq": 17,
+       "pos": 167,
+       "before": "A/C.5/56/L.28(\u7b2c\u4e8c\u90e8\u5206),\u7b2c33\u6bb5)\u3002 18\uff0e \u6700\u540e\u7ed3\u679c\u6587\u4ef6\u7b2c\u4e8c\u90e8\u5206\u5ba1\u67e5\u548c\u8bc4\u4f30\u4e86\u6267\u884c\u9996\u8111\u4f1a\u8bae\u300a\u54e5\u672c\u54c8",
+       "actual": "\u6839",
+       "base_top1": "\u6839",
+       "patched_top1": "\u6839"
+      },
+      {
+       "kl": 0.0154,
+       "seq": 27,
+       "pos": 288,
+       "before": "\u7ef4\u62a4\u56fd\u9645\u548c\u5e73\u4e0e\u5b89\u5168\u3002 \u5e26\u8fdb\u6765\uff0c\u5582\u5582\uff0c\u8fdb\u6765\uff0c\u5144\u5f1f\u4eec 7. \u5c65\u884c\u673a\u6784\u9f13\u52b1\u975e\u9644\u4ef6\u4e00\u7f14\u7ea6\u65b9\u5728\u5b8c\u6210\u5f53\u524d\u56fd\u5bb6\u4fe1\u606f\u901a\u62a5\u4e4b\u524d\u63d0\u4ea4\u8d44\u52a9\u5176\u540e\u7eed\u56fd\u5bb6\u4fe1\u606f",
+       "actual": "\u901a\u62a5",
+       "base_top1": "\u901a\u62a5",
+       "patched_top1": "\u901a\u62a5"
+      },
+      {
+       "kl": 0.0128,
+       "seq": 21,
+       "pos": 59,
+       "before": ". Polybrominated diphenyl ethers in precipitation in Southern Sweden (Sk\u00e5ne, Lund). Atmos. Environ. 36: 4015-4022.",
+       "actual": " ",
+       "base_top1": "\n",
+       "patched_top1": "\n"
+      },
+      {
+       "kl": 0.0125,
+       "seq": 19,
+       "pos": 2,
+       "before": "\u7532\u66ff",
+       "actual": "\u785d",
+       "base_top1": "\u661f",
+       "patched_top1": "\u661f"
+      }
+     ]
+    }
+   }
+  },
+  "wall_s": 360.2
+ },
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-0.8B",
+  "commit": "f828c2b1820b36c4c8fa531c8b851542f90e0ba9",
+  "notebook": "copy_protect_colab.ipynb",
+  "gpu": "NVIDIA L4",
+  "saved_utc": "2026-11-21T18:12:50+00:00"
+ }
+}
