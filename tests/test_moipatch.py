@@ -878,3 +878,55 @@ def test_explicit_v_edit_save_load_attach_routed_and_format() -> None:
         from safetensors import safe_open
         with safe_open(str(path), "pt") as f:
             assert json.loads(f.metadata()["moipatch"])["format"] == "moipatch/1"
+
+
+def test_patch_handle_composes_multi_rank_edits_same_module() -> None:
+    """Multiple sequential edits targeting the same module must compose (not overwrite) in PatchHandle."""
+    torch.manual_seed(21)
+    model = _TinyRoutableLM(n_layers=3, hidden=16, inter=32, vocab=32).eval()
+    orig_w = model.model.layers[1].mlp.down_proj.weight.detach().clone()
+    # Two orthonormal directions u0, u1 on the same module
+    q, _ = torch.linalg.qr(torch.randn(16, 2))
+    u0 = q[:, 0]
+    u1 = q[:, 1]
+    from wsi.moipatch import _dtype_name, _sha256
+
+    patch = MoIPatch(
+        edits=[
+            Edit(
+                module="layers.1.mlp.down_proj",
+                u=u0,
+                alpha=-2.0,
+                base_sha256=_sha256(orig_w),
+                base_dtype=_dtype_name(orig_w.dtype),
+                shape=tuple(orig_w.shape),
+            ),
+            Edit(
+                module="layers.1.mlp.down_proj",
+                u=u1,
+                alpha=-3.0,
+                base_sha256=_sha256(orig_w),
+                base_dtype=_dtype_name(orig_w.dtype),
+                shape=tuple(orig_w.shape),
+            ),
+        ],
+        meta={"name": "multi-rank-compose"},
+    )
+    expected_w = apply_edit(apply_edit(orig_w, u0, None, -2.0), u1, None, -3.0)
+    ids = torch.tensor([[1, 2, 7, 3]], dtype=torch.long)
+
+    with torch.no_grad():
+        with patch.enable_routed(model, mode="always_on") as rh:
+            out_routed = model(ids).logits
+            assert rh.mode == "always_on"
+        handle = patch.attach(model)
+        assert len(handle.params) == 1
+        assert handle.fingerprint_ok()
+        handle.on()
+        assert torch.equal(model.model.layers[1].mlp.down_proj.weight, expected_w)
+        out_attach = model(ids).logits
+        assert torch.allclose(out_routed, out_attach, atol=1e-4, rtol=1e-4)
+        handle.off()
+        assert handle.check_restored()
+        assert handle.fingerprint_ok()
+        assert torch.equal(model.model.layers[1].mlp.down_proj.weight, orig_w)
