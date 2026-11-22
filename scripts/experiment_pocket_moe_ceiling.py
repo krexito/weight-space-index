@@ -47,7 +47,6 @@ if str(ROOT) not in sys.path:
 if str(HERE) not in sys.path:
     sys.path.insert(0, str(HERE))
 
-import discover_math500_blind as dm  # noqa: E402
 import moi_loop_router_vllm as lr  # noqa: E402
 from experiment_reasoning_distill_pilot import (  # noqa: E402
     _PlantedReasoningLM,
@@ -949,15 +948,91 @@ def _bake_full_checkpoint(base_dir: Path, param_updates: dict[str, torch.Tensor]
     return out_dir
 
 
-def _vllm_generate(model_dir: str, tok: Any, prompts_ids: list[list[int]], seeds: list[int], *, max_new_tokens: int, dtype_str: str, base_seed: int) -> list[dict[str, Any]]:
-    from vllm import SamplingParams
+def _vllm_generate(
+    model_dir: str,
+    tok: Any,
+    prompts_ids: list[list[int]],
+    seeds: list[int],
+    *,
+    max_new_tokens: int,
+    dtype_str: str,
+    base_seed: int,
+) -> list[dict[str, Any]]:
+    import loop_kill_v2
+    from vllm import LLM, SamplingParams
     from vllm.inputs import TokensPrompt
+
+    os.environ.setdefault("VLLM_ALLOW_INSECURE_SERIALIZATION", "1")
+    os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
+    py_parts = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]
+    if not py_parts or py_parts[0] != str(HERE):
+        os.environ["PYTHONPATH"] = os.pathsep.join([str(HERE)] + [p for p in py_parts if p != str(HERE)])
 
     eos_list = lr.eos_ids(tok)
     kill_eos = eos_list[-1]
     max_len = max(len(p) for p in prompts_ids) + int(max_new_tokens) + 64
-    cfg = {"base_dir": str(tok.name_or_path), "seed": int(base_seed), "eos": eos_list, "sampling": lr.SAMPLING}
-    llm, kill = dm._llm_fast(str(model_dir), cfg, max_len, dtype_str, 0.88)
+    if torch.cuda.is_available():
+        free_b, total_b = torch.cuda.mem_get_info()
+        gpu_mem = round(min(0.82, max(0.55, (free_b / max(1, total_b)) - 0.08)), 3)
+    else:
+        gpu_mem = 0.80
+
+    base_kw: dict[str, Any] = dict(
+        model=str(model_dir),
+        tokenizer=str(tok.name_or_path),
+        dtype=dtype_str,
+        max_model_len=max_len,
+        gpu_memory_utilization=gpu_mem,
+        enable_prefix_caching=True,
+        enforce_eager=True,
+        seed=int(base_seed),
+        trust_remote_code=True,
+    )
+    extras: dict[str, Any] = {
+        "limit_mm_per_prompt": {"image": 0, "video": 0},
+        "enable_chunked_prefill": True,
+        "max_num_seqs": 64,
+    }
+    proc = loop_kill_v2.processor()
+    if proc is not None:
+        extras["logits_processors"] = [proc]
+
+    drop_order = [
+        [],
+        ["max_num_seqs"],
+        ["max_num_seqs", "enable_chunked_prefill"],
+        ["max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt"],
+        ["max_num_seqs", "enable_chunked_prefill", "logits_processors"],
+        ["max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt", "logits_processors"],
+    ]
+
+    llm = None
+    kill = False
+    last_err: Exception | None = None
+    t_boot = time.perf_counter()
+    for drop in drop_order:
+        kw = {**base_kw, **{k: v for k, v in extras.items() if k not in drop}}
+        try:
+            llm = LLM(**kw)
+            kill = "logits_processors" in kw
+            print(
+                f"[vllm-eager] booted in {time.perf_counter() - t_boot:.1f}s "
+                f"(gpu_mem={gpu_mem}, chunked={'enable_chunked_prefill' in kw}, "
+                f"max_seqs={kw.get('max_num_seqs', 'default')}, early_loop_stop={kill})",
+                flush=True,
+            )
+            break
+        except Exception as err:  # noqa: BLE001
+            last_err = err
+            print(
+                f"[vllm-eager] refused {sorted(set(extras) - set(drop))}: {type(err).__name__}: {str(err)[:220]}",
+                flush=True,
+            )
+            gc.collect()
+    if llm is None:
+        assert last_err is not None
+        raise last_err
+
     try:
         sps = [
             SamplingParams(
@@ -970,19 +1045,38 @@ def _vllm_generate(model_dir: str, tok: Any, prompts_ids: list[list[int]], seeds
             for s in seeds
         ]
         tok_prompts = [TokensPrompt(prompt_token_ids=p) for p in prompts_ids]
+        t_gen = time.perf_counter()
         try:
             outs = llm.generate(tok_prompts, sps, use_tqdm=False)
         except Exception as err:  # noqa: BLE001
             if not kill:
                 raise
-            print(f"[vllm] early loop stop failed ({type(err).__name__}); retrying without it", flush=True)
+            print(f"[vllm-eager] early loop stop failed ({type(err).__name__}); retrying without it", flush=True)
             sps = [
                 SamplingParams(**lr.SAMPLING, max_tokens=int(max_new_tokens), seed=int(s), stop_token_ids=eos_list)
                 for s in seeds
             ]
             outs = llm.generate(tok_prompts, sps, use_tqdm=False)
+        print(f"[vllm-eager] generated {len(outs)} prompts in {time.perf_counter() - t_gen:.1f}s", flush=True)
         return [{"token_ids": list(o.outputs[0].token_ids), "finish_reason": o.outputs[0].finish_reason} for o in outs]
     finally:
+        try:
+            eng = getattr(llm, "llm_engine", None)
+            ec = getattr(eng, "engine_core", None)
+            if ec is not None and hasattr(ec, "shutdown"):
+                ec.shutdown()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from vllm.distributed.parallel_state import (
+                destroy_distributed_environment,
+                destroy_model_parallel,
+            )
+
+            destroy_model_parallel()
+            destroy_distributed_environment()
+        except Exception:  # noqa: BLE001
+            pass
         del llm
         gc.collect()
         if torch.cuda.is_available():
