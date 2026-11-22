@@ -958,15 +958,15 @@ def _vllm_generate(
     dtype_str: str,
     base_seed: int,
 ) -> list[dict[str, Any]]:
-    import loop_kill_v2
-    from vllm import LLM, SamplingParams
-    from vllm.inputs import TokensPrompt
-
     os.environ.setdefault("VLLM_ALLOW_INSECURE_SERIALIZATION", "1")
     os.environ.setdefault("VLLM_WORKER_MULTIPROC_METHOD", "spawn")
     py_parts = [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]
     if not py_parts or py_parts[0] != str(HERE):
         os.environ["PYTHONPATH"] = os.pathsep.join([str(HERE)] + [p for p in py_parts if p != str(HERE)])
+
+    import loop_kill_v2
+    from vllm import LLM, SamplingParams
+    from vllm.inputs import TokensPrompt
 
     eos_list = lr.eos_ids(tok)
     kill_eos = eos_list[-1]
@@ -1010,6 +1010,11 @@ def _vllm_generate(
     kill = False
     last_err: Exception | None = None
     t_boot = time.perf_counter()
+    print(
+        f"[vllm-eager] launching {Path(model_dir).name} "
+        f"(enforce_eager=True, kv_cache=auto, gpu_mem={gpu_mem}, max_len={max_len})...",
+        flush=True,
+    )
     for drop in drop_order:
         kw = {**base_kw, **{k: v for k, v in extras.items() if k not in drop}}
         try:
