@@ -429,6 +429,7 @@ def test_json_budget_48_layers_with_clinical_history(tmp_path: Path) -> None:
     pack = build_frozen_probe_pack(use_hf_datasets=False)
     history = sxa.CLINICAL_HISTORY_SEEDS["LiquidAI/LFM3-1.7B"]
 
+    dbg: dict[str, object] = {}
     card = scan_model_xray(
         model,
         tok,
@@ -436,11 +437,13 @@ def test_json_budget_48_layers_with_clinical_history(tmp_path: Path) -> None:
         probe_pack=pack,
         clinical_history=history,
         skip_generation=True,
+        debug_out=dbg,
     )
     txt = format_compact_xray_json(card)
     n_bytes = len(txt.encode("utf-8"))
-    assert 1500 <= n_bytes <= 5500, f"Unexpected JSON size: {n_bytes} bytes"
+    assert 1200 <= n_bytes <= 4800, f"Unexpected JSON size: {n_bytes} bytes"
     assert "NaN" not in txt and "Infinity" not in txt
+    assert "refusal_samples" not in card and "math_greedy_sample" not in card
 
     p = save_xray_json(card, tmp_path / "48l.xray.json")
     roundtrip = load_xray_json(p)
@@ -508,3 +511,349 @@ def test_summarize_xray_atlas(tmp_path: Path) -> None:
     assert "mixer_deltanet_vs_gqa" in summary["contrasts"]
     assert len(summary["biomarker_correlations"]) >= 1
     assert "Qwen/Qwen3.5-4B" in summary["markdown_table"]
+
+
+def test_eos_pad_trimming_and_loop_mean_len() -> None:
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    lm = _build_tiny_llama(len(tok), n_layers=2, hidden=16, inter=32)
+    eos_id = int(tok.eos_token_id)
+    pad_id = int(tok.pad_token_id)
+    w_ids = [int(tok.encode(w, add_special_tokens=False)[0]) for w in ("w0", "w1", "w2")]
+
+    def _fake_generate(input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None, max_new_tokens: int = 44, **kw):
+        bs = input_ids.shape[0]
+        tail_row = w_ids + [eos_id] + [pad_id] * max(0, int(max_new_tokens) - len(w_ids) - 1)
+        tail = torch.tensor(tail_row[: int(max_new_tokens)], dtype=input_ids.dtype, device=input_ids.device)
+        return torch.cat([input_ids, tail.unsqueeze(0).expand(bs, -1)], dim=1)
+
+    lm.generate = _fake_generate  # type: ignore[method-assign]
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+    card = scan_model_xray(lm, tok, repo_id="toy/eos-pad", probe_pack=pack, loop_max_new=44, skip_generation=False)
+    mg = card["pathologies"]["loops"]["microgen_decoding"]
+    assert mg["greedy_mean_len"] == pytest.approx(3.0)
+    assert mg["sampled_mean_len"] == pytest.approx(3.0)
+    assert mg["greedy_rep16_rate"] == pytest.approx(0.0)
+    assert mg["sampled_rep16_rate"] == pytest.approx(0.0)
+
+
+def test_unembed_anisotropy_uncentered() -> None:
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    model = _ToyArchModel("dense_gqa", vocab_size=len(tok), n_layers=2, d=24, inter=48)
+    torch.manual_seed(42)
+    with torch.no_grad():
+        base_dir = torch.ones(24)
+        model.lm_head.weight.copy_(base_dir.unsqueeze(0) + torch.randn(len(tok), 24) * 0.02)
+        model.norm.weight.fill_(1.0)
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+    card = scan_model_xray(model, tok, repo_id="toy/aniso", probe_pack=pack, skip_generation=True)
+    aniso = card["anatomy"]["static_weights"]["unembed_anisotropy_cos"]
+    assert aniso is not None and aniso > 0.85
+
+
+def test_olmo2_post_rmsnorm_with_qk_norm() -> None:
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    d, inter = 16, 32
+
+    class _Olmo2Attn(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.q_norm = nn.RMSNorm(d)
+            self.k_norm = nn.RMSNorm(d)
+            self.o_proj = nn.Linear(d, d, bias=False)
+
+        def forward(self, x):
+            return self.o_proj(self.q_norm(x) + self.k_norm(x))
+
+    class _Olmo2MLP(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.gate_proj = nn.Linear(d, inter, bias=False)
+            self.up_proj = nn.Linear(d, inter, bias=False)
+            self.down_proj = nn.Linear(inter, d, bias=False)
+
+        def forward(self, x):
+            return self.down_proj(F.silu(self.gate_proj(x)) * self.up_proj(x))
+
+    class _Olmo2Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.self_attn = _Olmo2Attn()
+            self.mlp = _Olmo2MLP()
+            self.post_attention_layernorm = nn.RMSNorm(d)
+            self.post_feedforward_layernorm = nn.RMSNorm(d)
+
+        def forward(self, x):
+            x = x + self.post_attention_layernorm(self.self_attn(x))
+            x = x + self.post_feedforward_layernorm(self.mlp(x))
+            return x
+
+    class _Olmo2Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(
+                model_type="olmo2",
+                hidden_size=d,
+                num_hidden_layers=3,
+                num_attention_heads=4,
+                num_key_value_heads=4,
+                hidden_act="silu",
+                tie_word_embeddings=False,
+            )
+            self.embed_tokens = nn.Embedding(len(tok), d)
+            self.layers = nn.ModuleList([_Olmo2Block() for _ in range(3)])
+            self.norm = nn.RMSNorm(d)
+            self.lm_head = nn.Linear(d, len(tok), bias=False)
+
+        def get_input_embeddings(self):
+            return self.embed_tokens
+
+        def get_output_embeddings(self):
+            return self.lm_head
+
+        def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None, use_cache: bool = False):
+            x = self.embed_tokens(input_ids)
+            for blk in self.layers:
+                x = blk(x)
+            return SimpleNamespace(logits=self.lm_head(self.norm(x)))
+
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+    card = scan_model_xray(_Olmo2Model(), tok, repo_id="toy/olmo2", probe_pack=pack, skip_generation=True)
+    assert card["identity"]["norm_type"] == "post_rmsnorm"
+
+
+def test_zamba2_hybrid_mamba_gqa_shared_attn() -> None:
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    d = 16
+
+    class _SharedAttn(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.o_proj = nn.Linear(d, d, bias=False)
+
+        def forward(self, x):
+            return self.o_proj(x)
+
+    class _SharedTransformer(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.input_layernorm = nn.RMSNorm(d)
+            self.self_attn = _SharedAttn()
+
+        def forward(self, x):
+            return self.self_attn(self.input_layernorm(x))
+
+    class _MambaSub(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.out_proj = nn.Linear(d, d, bias=False)
+
+        def forward(self, x):
+            return self.out_proj(x)
+
+    class _Zamba2MambaBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.mamba = _MambaSub()
+            self.input_layernorm = nn.RMSNorm(d)
+
+        def forward(self, x):
+            return x + self.mamba(self.input_layernorm(x))
+
+    class _Zamba2HybridBlock(nn.Module):
+        def __init__(self, shared_tr: nn.Module):
+            super().__init__()
+            self.mamba_decoder = _Zamba2MambaBlock()
+            self.shared_transformer = shared_tr
+
+        def forward(self, x):
+            return self.mamba_decoder(x + self.shared_transformer(x))
+
+    class _Zamba2Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(
+                model_type="zamba2",
+                hidden_size=d,
+                num_hidden_layers=4,
+                num_attention_heads=4,
+                num_key_value_heads=2,
+                hidden_act="gelu",
+                tie_word_embeddings=False,
+                hybrid_layer_ids=[1, 3],
+                layers_block_type=["mamba", "hybrid", "mamba", "hybrid"],
+            )
+            self.embed_tokens = nn.Embedding(len(tok), d)
+            shared_tr = _SharedTransformer()
+            self.layers = nn.ModuleList(
+                [_Zamba2MambaBlock(), _Zamba2HybridBlock(shared_tr), _Zamba2MambaBlock(), _Zamba2HybridBlock(shared_tr)]
+            )
+            self.norm = nn.RMSNorm(d)
+            self.lm_head = nn.Linear(d, len(tok), bias=False)
+
+        def get_input_embeddings(self):
+            return self.embed_tokens
+
+        def get_output_embeddings(self):
+            return self.lm_head
+
+        def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None, use_cache: bool = False):
+            x = self.embed_tokens(input_ids)
+            for blk in self.layers:
+                x = blk(x)
+            return SimpleNamespace(logits=self.lm_head(self.norm(x)))
+
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+    card = scan_model_xray(_Zamba2Model(), tok, repo_id="toy/zamba2", probe_pack=pack, skip_generation=True)
+    assert card["identity"]["arch_family"] == "hybrid_mamba_gqa"
+    assert card["identity"]["layer_mix"]["shared_attn"] == 2
+    assert card["identity"]["layer_mix"]["mamba_ssm"] == 2
+
+
+def test_non_linear_moe_tuple_router_entropy() -> None:
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    d, inter, n_experts = 16, 32, 4
+
+    class _TupleTopKRouter(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.weight = nn.Parameter(torch.randn(n_experts, d))
+
+        def forward(self, hidden_states: torch.Tensor):
+            flat = hidden_states.reshape(-1, d)
+            probs = torch.full((flat.shape[0], n_experts), 0.01, dtype=torch.float32, device=flat.device)
+            probs[:, 0] = 0.97
+            top_v, top_i = torch.topk(probs, 2, dim=-1)
+            return probs, top_v, top_i
+
+    class _OlmoeExpert(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.down_proj = nn.Linear(inter, d, bias=False)
+            self.up_proj = nn.Linear(d, inter, bias=False)
+
+        def forward(self, x):
+            return self.down_proj(F.silu(self.up_proj(x)))
+
+    class _OlmoeBlock(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.input_layernorm = nn.RMSNorm(d)
+            self.post_attention_layernorm = nn.RMSNorm(d)
+
+            class _Attn(nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.q_norm = nn.RMSNorm(d)
+                    self.k_norm = nn.RMSNorm(d)
+                    self.o_proj = nn.Linear(d, d, bias=False)
+
+                def forward(self, x):
+                    return self.o_proj(self.q_norm(x) + self.k_norm(x))
+
+            class _MoE(nn.Module):
+                def __init__(self):
+                    super().__init__()
+                    self.gate = _TupleTopKRouter()
+                    self.experts = nn.ModuleList([_OlmoeExpert() for _ in range(n_experts)])
+
+                def forward(self, x):
+                    probs, _, _ = self.gate(x)
+                    out = torch.zeros_like(x)
+                    p = probs.reshape(x.shape[0], x.shape[1], n_experts)
+                    for idx, exp in enumerate(self.experts):
+                        out = out + p[..., idx : idx + 1] * exp(x)
+                    return out
+
+            self.self_attn = _Attn()
+            self.mlp = _MoE()
+
+        def forward(self, x):
+            x = x + self.self_attn(self.input_layernorm(x))
+            x = x + self.mlp(self.post_attention_layernorm(x))
+            return x
+
+    class _OlmoeModel(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.config = SimpleNamespace(
+                model_type="olmoe",
+                hidden_size=d,
+                num_hidden_layers=3,
+                num_attention_heads=4,
+                num_key_value_heads=4,
+                num_experts=n_experts,
+                num_experts_per_tok=2,
+                hidden_act="silu",
+                tie_word_embeddings=False,
+            )
+            self.embed_tokens = nn.Embedding(len(tok), d)
+            self.layers = nn.ModuleList([_OlmoeBlock() for _ in range(3)])
+            self.norm = nn.RMSNorm(d)
+            self.lm_head = nn.Linear(d, len(tok), bias=False)
+
+        def get_input_embeddings(self):
+            return self.embed_tokens
+
+        def get_output_embeddings(self):
+            return self.lm_head
+
+        def forward(self, input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None, use_cache: bool = False):
+            x = self.embed_tokens(input_ids)
+            for blk in self.layers:
+                x = blk(x)
+            return SimpleNamespace(logits=self.lm_head(self.norm(x)))
+
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+    card = scan_model_xray(_OlmoeModel(), tok, repo_id="toy/olmoe", probe_pack=pack, skip_generation=True)
+    assert card["identity"]["norm_type"] == "pre_rmsnorm"
+    assert card["identity"]["moe"]["moe_layers"] == 3
+    assert card["identity"]["moe"]["n_experts"] == 4
+    ent = card["anatomy"]["forward_profile"].get("moe_router_entropy_mean")
+    assert ent is not None and ent < 0.35
+
+
+def test_self_healing_bs1_fallback_and_debug_out() -> None:
+    from tokenizers import Tokenizer, models, pre_tokenizers
+    from transformers import PreTrainedTokenizerFast
+
+    vocab_words = [
+        "<pad>", "<eos>", "<unk>", "user:", "assistant:",
+        "I", "cannot", "fulfill", "that", "request.", "The", "answer", "is", "Paris.",
+    ] + [f"w{i}" for i in range(60)]
+    vocab = {w: i for i, w in enumerate(vocab_words)}
+    tk = Tokenizer(models.WordLevel(vocab, unk_token="<unk>"))
+    tk.pre_tokenizer = pre_tokenizers.Whitespace()
+    tok = PreTrainedTokenizerFast(tokenizer_object=tk, pad_token="<pad>", eos_token="<eos>", unk_token="<unk>")
+    tok.chat_template = "{% for m in messages %}{{ m['role'] }}: {{ m['content'] }} {% endfor %}assistant:"
+
+    lm = _build_tiny_llama(len(tok), n_layers=2, hidden=16, inter=32)
+    struct = scan_model_xray.__globals__["_discover_xray_structure"](lm, tok, "toy/fallback-bs1")
+    eos_id = int(tok.eos_token_id)
+    batched_ids = tok.encode("The answer is Paris.", add_special_tokens=False) + [eos_id]
+    refusal_ids = tok.encode("I cannot fulfill that request.", add_special_tokens=False) + [eos_id]
+
+    def _fake_generate(input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None, max_new_tokens: int = 32, **kw):
+        bs = input_ids.shape[0]
+        seq = batched_ids if bs > 1 else refusal_ids
+        tail = torch.tensor(seq, dtype=input_ids.dtype, device=input_ids.device).unsqueeze(0).expand(bs, -1)
+        return torch.cat([input_ids, tail], dim=1)
+
+    lm.generate = _fake_generate  # type: ignore[method-assign]
+    custom_pack = {
+        "overrefusal": [{"prompt": f"w10 w{i}"} for i in range(4)],
+        "toxic": [{"prompt": f"w20 w{i}", "category": "c"} for i in range(4)],
+        "everyday_controls": [f"w30 w{i}" for i in range(4)],
+        "toxic_framed": [{"raw_idx": i, "framing": "edu", "category": "c", "prompt": f"w40 w{i}"} for i in range(4)],
+    }
+    dbg: dict[str, object] = {}
+    res, _ = _scan_over_refusal(
+        lm, struct, tok, custom_pack, torch.device("cpu"), int(tok.pad_token_id), 4, skip_generation=False, debug_out=dbg
+    )
+    assert res["gen_fallback_bs1"] is True
+    assert res["base_toxic_ref_rate"] is not None and res["base_toxic_ref_rate"] > 0.5
+    samples = dbg["refusal_samples"]
+    assert isinstance(samples, list) and len(samples) == 5
+    groups = [s["group"] for s in samples]
+    assert groups.count("overrefusal") == 2
+    assert groups.count("toxic") == 2
+    assert groups.count("everyday_control") == 1

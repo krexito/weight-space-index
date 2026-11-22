@@ -266,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
         ap.error("--out-dir is required unless --list-models is set")
 
     os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     import torch
     from huggingface_hub import snapshot_download
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -292,6 +293,15 @@ def main(argv: list[str] | None = None) -> int:
 
     errors_path = out_dir / "scan_errors.json"
     errors: dict[str, Any] = json.loads(errors_path.read_text(encoding="utf-8")) if errors_path.exists() else {}
+    debug_path = out_dir / "scan_debug_samples.json"
+    debug_samples: dict[str, Any] = json.loads(debug_path.read_text(encoding="utf-8")) if debug_path.exists() else {}
+
+    def _load_hf_model(model_dir: str, **extra_kw: Any):
+        kw = {"trust_remote_code": True, "low_cpu_mem_usage": True, **extra_kw}
+        try:
+            return AutoModelForCausalLM.from_pretrained(model_dir, dtype=dt, **kw)
+        except TypeError:
+            return AutoModelForCausalLM.from_pretrained(model_dir, torch_dtype=dt, **kw)
 
     for idx, repo_id in enumerate(models, 1):
         slug = repo_slug(repo_id)
@@ -313,17 +323,20 @@ def main(argv: list[str] | None = None) -> int:
                 ignore_patterns=["*.msgpack", "*.h5", "flax_model*", "tf_model*", "rust_model*", "*.ot"],
             )
             tok = AutoTokenizer.from_pretrained(str(tmp_dir), trust_remote_code=True)
-            load_kw: dict[str, Any] = {"trust_remote_code": True}
+            model = _load_hf_model(str(tmp_dir))
             if use_cuda:
-                load_kw["device_map"] = "auto"
-            try:
-                model = AutoModelForCausalLM.from_pretrained(str(tmp_dir), dtype=dt, **load_kw)
-            except TypeError:
-                model = AutoModelForCausalLM.from_pretrained(str(tmp_dir), torch_dtype=dt, **load_kw)
-            if not use_cuda:
+                try:
+                    model = model.to(dev)
+                except torch.cuda.OutOfMemoryError:
+                    del model
+                    gc.collect()
+                    torch.cuda.empty_cache()
+                    model = _load_hf_model(str(tmp_dir), device_map="auto")
+            else:
                 model = model.to(dev)
             model.eval()
 
+            sample_debug: dict[str, Any] = {}
             card = scan_model_xray(
                 model,
                 tok,
@@ -335,9 +348,14 @@ def main(argv: list[str] | None = None) -> int:
                 loop_max_new=args.loop_max_new,
                 skip_generation=args.skip_generation,
                 wsi_commit=wsi_commit,
+                debug_out=sample_debug,
             )
             save_xray_json(card, out_file)
             _sync_file(out_file, sync_dir)
+            if sample_debug:
+                debug_samples[repo_id] = sample_debug
+                _atomic_write_text(debug_path, json.dumps(debug_samples, indent=2, ensure_ascii=False))
+                _sync_file(debug_path, sync_dir)
             errors.pop(repo_id, None)
             _atomic_write_text(errors_path, json.dumps(errors, indent=2))
             _sync_file(errors_path, sync_dir)

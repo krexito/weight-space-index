@@ -6,6 +6,7 @@ capturing depth-normalized anatomy, empirical Fisher sensitivity, and linear pat
 """
 from __future__ import annotations
 
+import gc
 import json
 import math
 import os
@@ -98,7 +99,7 @@ def _round_num(val: float) -> float | None:
         return None
     if 0.0 < abs(val) < 0.01:
         return round(val, 5)
-    return round(val, 4)
+    return round(val, 3)
 
 
 def _sanitize(obj: Any) -> Any:
@@ -124,14 +125,14 @@ def _is_primitive(v: Any) -> bool:
 
 
 def _format_json_node(obj: Any, level: int = 0) -> str:
-    pad = " " * (2 * level)
-    pad_in = " " * (2 * (level + 1))
+    pad = " " * level
+    pad_in = " " * (level + 1)
     if isinstance(obj, list):
         if not obj:
             return "[]"
         if all(_is_primitive(v) for v in obj):
-            inline = json.dumps(obj, ensure_ascii=False, separators=(", ", ": "))
-            if len(inline) <= 110:
+            inline = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+            if len(inline) <= 180:
                 return inline
         parts = [_format_json_node(v, level + 1) for v in obj]
         return "[\n" + ",\n".join(f"{pad_in}{p}" for p in parts) + f"\n{pad}]"
@@ -139,10 +140,10 @@ def _format_json_node(obj: Any, level: int = 0) -> str:
         if not obj:
             return "{}"
         if all(_is_primitive(v) for v in obj.values()):
-            inline = json.dumps(obj, ensure_ascii=False, separators=(", ", ": "))
-            if len(inline) <= 110:
+            inline = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+            if len(inline) <= 180:
                 return inline
-        items = [f"{json.dumps(str(k), ensure_ascii=False)}: {_format_json_node(v, level + 1)}" for k, v in obj.items()]
+        items = [f"{json.dumps(str(k), ensure_ascii=False)}:{_format_json_node(v, level + 1)}" for k, v in obj.items()]
         return "{\n" + ",\n".join(f"{pad_in}{it}" for it in items) + f"\n{pad}}}"
     return json.dumps(obj, ensure_ascii=False)
 
@@ -373,6 +374,22 @@ def _get_submod(root: nn.Module, dotted: str) -> nn.Module | None:
     return cur if isinstance(cur, nn.Module) else None
 
 
+def _router_dims(sub: nn.Module, hidden_size: int | None = None) -> tuple[int, int] | None:
+    if _is_linear(sub):
+        return _io_dims(sub)
+    w = getattr(sub, "weight", None)
+    if isinstance(w, torch.Tensor) and w.dim() == 2:
+        if hidden_size is None or w.shape[1] == hidden_size:
+            return int(w.shape[1]), int(w.shape[0])
+        if w.shape[0] == hidden_size:
+            return int(w.shape[0]), int(w.shape[1])
+        return None
+    lay = getattr(sub, "layer", None)
+    if isinstance(lay, nn.Module) and _is_linear(lay):
+        return _io_dims(lay)
+    return None
+
+
 def _find_decoder_blocks(backbone: nn.Module, n_cfg: int | None) -> tuple[str, nn.ModuleList]:
     cands: list[tuple[tuple[int, int, int, int], str, nn.ModuleList]] = []
     for name, mod in backbone.named_modules():
@@ -445,6 +462,10 @@ def _discover_xray_structure(model: nn.Module, tok: Any, repo_id: str | None) ->
             break
 
     layer_types = getattr(text_cfg, "layer_types", None) if text_cfg is not None else None
+    layers_block_type = getattr(text_cfg, "layers_block_type", None) if text_cfg is not None else None
+    hybrid_layer_ids = {
+        int(x) for x in (getattr(text_cfg, "hybrid_layer_ids", None) or []) if isinstance(x, (int, np.integer))
+    }
     entries: list[_BlockEntry] = []
     norm_name_counter: Counter[str] = Counter()
     norm_has_bias = any(getattr(final_norm, "bias", None) is not None for _ in (0,) if final_norm is not None)
@@ -524,28 +545,95 @@ def _discover_xray_structure(model: nn.Module, tok: Any, repo_id: str | None) ->
             elif "mamba" in lt and mixer_kind in ("full_attn", "none"):
                 mixer_kind = "mamba_ssm"
 
+        is_shared_hybrid = (
+            hasattr(blk, "shared_transformer")
+            or any("shared_transformer." in sn for sn, _ in blk.named_modules())
+            or (i in hybrid_layer_ids)
+            or (
+                isinstance(layers_block_type, (list, tuple))
+                and i < len(layers_block_type)
+                and "hybrid" in str(layers_block_type[i]).lower()
+            )
+        )
+        if is_shared_hybrid:
+            mixer_kind = "shared_attn"
+            if mixer_out is None:
+                sa = _get_submod(blk, "shared_transformer.self_attn.o_proj")
+                if sa is not None and _is_linear(sa):
+                    _, d_out = _io_dims(sa)
+                    if d_out == hidden_size:
+                        mixer_out = (f"{blk_name}.shared_transformer.self_attn.o_proj", sa)
+
         # 3) MoE router + experts
         moe_router: tuple[str, nn.Module] | None = None
         for rpath in _MOE_ROUTER_PATHS:
             sub = _get_submod(blk, rpath)
-            if sub is not None and _is_linear(sub):
-                d_in, d_out = _io_dims(sub)
+            if sub is None:
+                continue
+            rdims = _router_dims(sub, hidden_size)
+            if rdims is not None:
+                d_in, d_out = rdims
                 if d_in == hidden_size and d_out > 1:
                     moe_router = (f"{blk_name}.{rpath}", sub)
                     n_experts_found = max(n_experts_found, d_out)
                     break
+        if moe_router is None:
+            for sub_n, sub in blk.named_modules():
+                low = sub_n.lower()
+                if not sub_n or not low.endswith(("gate", "router", "gating")):
+                    continue
+                if any(bad in low for bad in ("gate_proj", "gate_up_proj", "attn", "conv", "mamba", "mixer", "ssm")):
+                    continue
+                rdims = _router_dims(sub, hidden_size)
+                if rdims is not None:
+                    d_in, d_out = rdims
+                    if d_in == hidden_size and 1 < d_out <= 512:
+                        moe_router = (f"{blk_name}.{sub_n}", sub)
+                        n_experts_found = max(n_experts_found, d_out)
+                        break
         has_experts = moe_router is not None or any(
             ".experts" in sub_n or sub_n.endswith("experts") for sub_n, _ in blk.named_modules()
         )
 
-        # 4) Block norms
+        # 4) Block norms (exclude Q/K head norms and internal mixer norms)
         norms: list[tuple[str, nn.Module]] = []
         for sub_n, sub in blk.named_modules():
             if not sub_n:
                 continue
+            low = sub_n.lower()
+            parts = low.split(".")
+            if len(parts) > 1 and parts[0] in (
+                "self_attn",
+                "attn",
+                "attention",
+                "self_attention",
+                "linear_attn",
+                "conv",
+                "mamba",
+                "mixer",
+                "ssm",
+                "mamba_decoder",
+            ):
+                if not (parts[0] == "mamba_decoder" and len(parts) == 2 and "input_layernorm" in parts[1]):
+                    continue
+            if any(
+                k in low
+                for k in (
+                    "q_norm",
+                    "k_norm",
+                    "v_norm",
+                    "qk_norm",
+                    "q_layernorm",
+                    "k_layernorm",
+                    "dt_layernorm",
+                    "dt_norm",
+                    "b_layernorm",
+                    "c_layernorm",
+                )
+            ):
+                continue
             w = getattr(sub, "weight", None)
             if isinstance(w, torch.Tensor) and w.dim() == 1 and w.shape[0] == hidden_size:
-                low = sub_n.lower()
                 if "norm" in low or re.search(r"(^|\.)ln_?\d*$", low):
                     norms.append((sub_n, sub))
                     norm_name_counter[sub_n] += 1
@@ -597,9 +685,9 @@ def _discover_xray_structure(model: nn.Module, tok: Any, repo_id: str | None) ->
         arch_family = "hybrid_shortconv_gqa"
     elif kind_counts["linear_attn"] > 0:
         arch_family = "hybrid_deltanet_gqa"
-    elif kind_counts["mamba_ssm"] > 0 and kind_counts["full_attn"] > 0:
+    elif kind_counts["mamba_ssm"] > 0 and (kind_counts["full_attn"] > 0 or kind_counts["shared_attn"] > 0):
         arch_family = "hybrid_mamba_gqa"
-    elif kind_counts["mamba_ssm"] > 0 and kind_counts["full_attn"] == 0:
+    elif kind_counts["mamba_ssm"] > 0:
         arch_family = "pure_mamba_ssm"
     elif isinstance(n_kv_heads, int) and isinstance(n_heads, int) and n_kv_heads < n_heads:
         arch_family = "dense_gqa"
@@ -629,7 +717,7 @@ def _discover_xray_structure(model: nn.Module, tok: Any, repo_id: str | None) ->
     model_type = str(getattr(text_cfg, "model_type", None) or getattr(cfg, "model_type", None) or type(model).__name__)
 
     full_attn_depths = [
-        round(e.idx / max(n_layers - 1, 1), 3) for e in entries if e.mixer_kind == "full_attn"
+        round(e.idx / max(n_layers - 1, 1), 3) for e in entries if e.mixer_kind in ("full_attn", "shared_attn")
     ]
     layer_mix: dict[str, Any] = {k: int(v) for k, v in kind_counts.items() if v > 0}
     if n_moe_layers > 0:
@@ -681,7 +769,12 @@ def _discover_xray_structure(model: nn.Module, tok: Any, repo_id: str | None) ->
 
 
 # ----------------------------------------------------------------------------------------------- helpers for forward & chat
-def _effective_unembed_tensor(struct: _ModelStructure, dev: torch.device) -> torch.Tensor | None:
+def _effective_unembed_tensor(
+    struct: _ModelStructure,
+    dev: torch.device,
+    *,
+    center_vocab: bool = True,
+) -> torch.Tensor | None:
     if struct.unembed is None or not hasattr(struct.unembed, "weight"):
         return None
     u = struct.unembed.weight.detach().float()
@@ -690,7 +783,7 @@ def _effective_unembed_tensor(struct: _ModelStructure, dev: torch.device) -> tor
         u = u * g.unsqueeze(0)
         if getattr(struct.final_norm, "bias", None) is not None:
             u = u - u.mean(dim=1, keepdim=True)
-    if u.shape[0] > 1:
+    if center_vocab and u.shape[0] > 1:
         u = u - u.mean(dim=0, keepdim=True)
     return u.to(dev)
 
@@ -829,6 +922,16 @@ def _batched_generate(
     toks_out: list[list[int]] = [[] for _ in range(n)]
     extra = dict(gen_kwargs or {})
 
+    eos_ids: set[int] = set()
+    for src in (tok, getattr(model, "generation_config", None), getattr(model, "config", None)):
+        ev = getattr(src, "eos_token_id", None) if src is not None else None
+        if isinstance(ev, (list, tuple, set)):
+            for x in ev:
+                if isinstance(x, (int, np.integer)):
+                    eos_ids.add(int(x))
+        elif isinstance(ev, (int, np.integer)):
+            eos_ids.add(int(ev))
+
     idx = 0
     while idx < n:
         cur_bs = min(bs, n - idx)
@@ -840,16 +943,34 @@ def _batched_generate(
             inp[r, max_len - len(seq) :] = torch.tensor(seq, dtype=torch.long, device=dev)
             att[r, max_len - len(seq) :] = 1
         try:
-            g = model.generate(
-                input_ids=inp,
-                attention_mask=att,
-                max_new_tokens=int(max_new_tokens),
-                do_sample=bool(do_sample),
-                pad_token_id=pad_id,
-                **extra,
-            )
+            try:
+                g = model.generate(
+                    input_ids=inp,
+                    attention_mask=att,
+                    max_new_tokens=int(max_new_tokens),
+                    do_sample=bool(do_sample),
+                    pad_token_id=pad_id,
+                    **{"use_cache": True, **extra},
+                )
+            except TypeError:
+                g = model.generate(
+                    input_ids=inp,
+                    attention_mask=att,
+                    max_new_tokens=int(max_new_tokens),
+                    do_sample=bool(do_sample),
+                    pad_token_id=pad_id,
+                    **extra,
+                )
             for r in range(cur_bs):
-                gen_ids = [int(t) for t in g[r, max_len:].tolist()]
+                raw_ids = [int(t) for t in g[r, max_len:].tolist()]
+                cut = len(raw_ids)
+                for j, tid in enumerate(raw_ids):
+                    if tid in eos_ids:
+                        cut = j
+                        break
+                gen_ids = raw_ids[:cut]
+                while gen_ids and gen_ids[-1] == pad_id:
+                    gen_ids.pop()
                 toks_out[idx + r] = gen_ids
                 texts[idx + r] = tok.decode(gen_ids, skip_special_tokens=True)
             idx += cur_bs
@@ -903,18 +1024,20 @@ def _attach_grad_anchor_safe(model: nn.Module, struct: _ModelStructure) -> list[
 
 @torch.no_grad()
 def _scan_static_weights(struct: _ModelStructure, dev: torch.device) -> dict[str, Any]:
-    u_eff = _effective_unembed_tensor(struct, dev)
+    u_raw = _effective_unembed_tensor(struct, dev, center_vocab=False)
     anisotropy: float | None = None
     u_norm: torch.Tensor | None = None
-    if u_eff is not None and u_eff.shape[0] >= 2:
-        v_tot = u_eff.shape[0]
+    if u_raw is not None and u_raw.shape[0] >= 2:
+        v_tot = u_raw.shape[0]
         n_samp = min(4096, v_tot)
-        idx = torch.linspace(0, v_tot - 1, n_samp, dtype=torch.long, device=u_eff.device)
-        u_sub = u_eff.index_select(0, idx)
-        u_norm = F.normalize(u_sub, dim=-1)
-        s = u_norm.sum(dim=0)
-        pair_sum = float((s @ s - (u_norm * u_norm).sum()).item())
+        idx = torch.linspace(0, v_tot - 1, n_samp, dtype=torch.long, device=u_raw.device)
+        u_raw_norm = F.normalize(u_raw.index_select(0, idx), dim=-1)
+        s = u_raw_norm.sum(dim=0)
+        pair_sum = float((s @ s - (u_raw_norm * u_raw_norm).sum()).item())
         anisotropy = pair_sum / (n_samp * (n_samp - 1))
+
+        u_centered = u_raw - u_raw.mean(dim=0, keepdim=True)
+        u_norm = F.normalize(u_centered.index_select(0, idx), dim=-1)
 
     mlp_eranks: list[float | None] = []
     mlp_top1s: list[float | None] = []
@@ -1056,11 +1179,38 @@ def _scan_forward_profile(
                 handles.append(b_entry.mlp_down[1].register_forward_hook(_mlp_hk))
 
             if b_entry.moe_router is not None:
-                def _moe_hk(_m, _i, out, li=li):
-                    t = _tensor_out(out)
-                    if t is None or t.dim() < 2:
+                rdims = _router_dims(b_entry.moe_router[1])
+                n_exp = rdims[1] if rdims is not None else 0
+
+                def _moe_hk(_m, _i, out, li=li, n_exp=n_exp):
+                    scores: torch.Tensor | None = None
+                    cands: Sequence[Any] = out if isinstance(out, (tuple, list)) else (out,)
+                    for item in cands:
+                        if isinstance(item, torch.Tensor) and item.is_floating_point() and item.dim() >= 2:
+                            if n_exp <= 0 or item.shape[-1] == n_exp:
+                                scores = item
+                                break
+                    if scores is None:
+                        t_fb = _tensor_out(out)
+                        if t_fb is not None and t_fb.is_floating_point() and t_fb.dim() >= 2:
+                            if n_exp <= 0 or t_fb.shape[-1] == n_exp:
+                                scores = t_fb
+                    if scores is None or scores.shape[-1] < 2:
                         return
-                    probs = torch.softmax(t.detach().float().reshape(-1, t.shape[-1]), dim=-1).clamp_min(1e-12)
+                    t2 = scores.detach().float().reshape(-1, scores.shape[-1])
+                    if t2.numel() == 0:
+                        return
+                    row_sums = t2.sum(dim=-1)
+                    already_probs = bool(
+                        (t2 >= -1e-6).all().item()
+                        and (t2 <= 1.0 + 1e-6).all().item()
+                        and (row_sums - 1.0).abs().max().item() < 1e-2
+                    )
+                    if already_probs:
+                        probs = t2.clamp_min(1e-12)
+                        probs = probs / probs.sum(dim=-1, keepdim=True).clamp_min(1e-12)
+                    else:
+                        probs = torch.softmax(t2, dim=-1).clamp_min(1e-12)
                     max_ent = math.log(max(2, probs.shape[-1]))
                     ent = float((-(probs * probs.log()).sum(dim=-1) / max_ent).mean().item())
                     moe_ent_sum[li] += ent
@@ -1231,66 +1381,109 @@ def _scan_fisher_profile(
     was_training = bool(model.training)
     model.eval()
 
+    cur_max_len = max((len(s) for s in fisher_seqs), default=0)
+    used_lens: list[int] = []
     try:
         for seq in fisher_seqs:
             if len(seq) < 2:
                 continue
-            inp = torch.tensor([seq], dtype=torch.long, device=dev)
-            handles = _attach_grad_anchor_safe(model, struct)
-            saved_x: dict[int, list[torch.Tensor]] = {}
+            seq_len = min(len(seq), cur_max_len) if cur_max_len > 0 else len(seq)
+            while True:
+                cur_seq = seq[:seq_len]
+                if len(cur_seq) < 2:
+                    break
+                inp = torch.tensor([cur_seq], dtype=torch.long, device=dev)
+                handles = _attach_grad_anchor_safe(model, struct)
+                saved_x: dict[int, list[torch.Tensor]] = {}
+                seq_blk = torch.zeros_like(block_fisher)
+                seq_col = [torch.zeros_like(cs) if cs is not None else None for cs in col_scores]
 
-            for b_entry in struct.blocks:
-                li = b_entry.idx
+                for b_entry in struct.blocks:
+                    li = b_entry.idx
 
-                def _blk_f_hk(_m, _i, out, li=li):
-                    t = _tensor_out(out)
-                    if isinstance(t, torch.Tensor) and t.requires_grad:
-                        def _gh(grad: torch.Tensor, li=li):
-                            block_fisher[li] += float(grad.detach().float().pow(2).sum().item())
-                        t.register_hook(_gh)
+                    def _blk_f_hk(_m, _i, out, li=li, seq_blk=seq_blk):
+                        t = _tensor_out(out)
+                        if isinstance(t, torch.Tensor) and t.requires_grad:
+                            def _gh(grad: torch.Tensor, li=li, seq_blk=seq_blk):
+                                seq_blk[li] += float(grad.detach().float().pow(2).sum().item())
+                            t.register_hook(_gh)
 
-                handles.append(b_entry.module.register_forward_hook(_blk_f_hk))
+                    handles.append(b_entry.module.register_forward_hook(_blk_f_hk))
 
-            for tgt in target_mods:
-                if tgt is None:
-                    continue
-                li, mod = tgt
-                d_in, d_out = _io_dims(mod)
-                is_conv1d = not isinstance(mod, nn.Linear)
+                for tgt in target_mods:
+                    if tgt is None:
+                        continue
+                    li, mod = tgt
+                    d_in, d_out = _io_dims(mod)
+                    is_conv1d = not isinstance(mod, nn.Linear)
 
-                def _mod_f_hk(_m, i_arg, out, li=li, mod=mod, d_in=d_in, d_out=d_out, is_conv1d=is_conv1d):
-                    x_raw = i_arg[0] if isinstance(i_arg, tuple) and i_arg else i_arg
-                    if isinstance(x_raw, torch.Tensor):
-                        saved_x.setdefault(li, []).append(x_raw.detach().reshape(-1, d_in).cpu())
-                    t = _tensor_out(out)
-                    if isinstance(t, torch.Tensor) and t.requires_grad:
-                        def _m_gh(grad: torch.Tensor, li=li, mod=mod, d_out=d_out, is_conv1d=is_conv1d):
-                            stack = saved_x.get(li)
-                            if not stack or col_scores[li] is None:
-                                return
-                            x_ref = stack.pop()
-                            g2 = grad.detach().reshape(-1, d_out).float()
-                            x_f = x_ref.to(device=g2.device, dtype=torch.float32)
-                            w = mod.weight.detach().float()
-                            if is_conv1d:
-                                w = w.t()
-                            proj = g2 @ w
-                            col_scores[li] += (x_f * proj).pow(2).sum(dim=0).double().cpu()
-                        t.register_hook(_m_gh)
+                    def _mod_f_hk(
+                        _m,
+                        i_arg,
+                        out,
+                        li=li,
+                        mod=mod,
+                        d_in=d_in,
+                        d_out=d_out,
+                        is_conv1d=is_conv1d,
+                        saved_x=saved_x,
+                        seq_col=seq_col,
+                    ):
+                        x_raw = i_arg[0] if isinstance(i_arg, tuple) and i_arg else i_arg
+                        if isinstance(x_raw, torch.Tensor):
+                            saved_x.setdefault(li, []).append(x_raw.detach().reshape(-1, d_in).cpu())
+                        t = _tensor_out(out)
+                        if isinstance(t, torch.Tensor) and t.requires_grad:
+                            def _m_gh(
+                                grad: torch.Tensor,
+                                li=li,
+                                mod=mod,
+                                d_out=d_out,
+                                is_conv1d=is_conv1d,
+                                saved_x=saved_x,
+                                seq_col=seq_col,
+                            ):
+                                stack = saved_x.get(li)
+                                if not stack or seq_col[li] is None:
+                                    return
+                                x_ref = stack.pop()
+                                g2 = grad.detach().reshape(-1, d_out).float()
+                                x_f = x_ref.to(device=g2.device, dtype=torch.float32)
+                                w = mod.weight.detach().float()
+                                if is_conv1d:
+                                    w = w.t()
+                                proj = g2 @ w
+                                seq_col[li] += (x_f * proj).pow(2).sum(dim=0).double().cpu()
+                            t.register_hook(_m_gh)
 
-                handles.append(mod.register_forward_hook(_mod_f_hk))
+                    handles.append(mod.register_forward_hook(_mod_f_hk))
 
-            try:
-                with torch.enable_grad():
-                    logits = _forward_logits(model, inp)[0, :-1].float()
-                    loss = F.nll_loss(F.log_softmax(logits, dim=-1), inp[0, 1:], reduction="mean")
-                    loss.backward()
-            finally:
-                for h in handles:
-                    h.remove()
-                saved_x.clear()
-                if dev.type == "cuda":
-                    torch.cuda.empty_cache()
+                inp = logits = loss = None
+                try:
+                    with torch.enable_grad():
+                        logits = _forward_logits(model, inp := torch.tensor([cur_seq], dtype=torch.long, device=dev))[0, :-1].float()
+                        loss = F.nll_loss(F.log_softmax(logits, dim=-1), inp[0, 1:], reduction="mean")
+                        loss.backward()
+                    block_fisher += seq_blk
+                    for li, sc in enumerate(seq_col):
+                        if sc is not None and col_scores[li] is not None:
+                            col_scores[li] += sc
+                    used_lens.append(len(cur_seq))
+                    break
+                except torch.cuda.OutOfMemoryError:
+                    cands = [c for c in (128, 64, 32) if c < len(cur_seq)]
+                    if not cands:
+                        raise
+                    seq_len = cands[0]
+                    cur_max_len = min(cur_max_len, seq_len) if cur_max_len > 0 else seq_len
+                    gc.collect()
+                finally:
+                    for h in handles:
+                        h.remove()
+                    saved_x.clear()
+                    del inp, logits, loss
+                    if dev.type == "cuda":
+                        torch.cuda.empty_cache()
     finally:
         for p, rq in zip(model.parameters(), orig_req):
             p.requires_grad_(rq)
@@ -1356,6 +1549,7 @@ def _scan_fisher_profile(
 
     return {
         "fisher_target_role": target_role,
+        "fisher_seq_max_len": max(used_lens) if used_lens else None,
         "block_fisher_share_8": _resample_curve(blk_share),
         "block_fisher_late_early_ratio": blk_le_ratio,
         "mlp_fisher_share_8": _resample_curve(col_share),
@@ -1471,6 +1665,8 @@ def _scan_over_refusal(
     batch_size: int,
     *,
     skip_generation: bool = False,
+    force_bs1: bool = False,
+    debug_out: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[int, np.ndarray]]:
     if not struct.identity["has_chat_template"]:
         return {"status": "skipped_no_chat_template"}, {}
@@ -1510,44 +1706,122 @@ def _scan_over_refusal(
         all_texts.append(_format_chat(tok, [{"role": "user", "content": r["prompt"]}], disable_thinking=disable_think))
         tags.append(("framed", i))
 
-    all_ids = _encode_prompts(tok, all_texts, max_length=512)
-    h_all, logits_all = _batched_prefill_hidden(model, struct, all_ids, pad_id, dev, batch_size, capture_hidden=True)
-    assert h_all is not None
+    all_ids_orig = _encode_prompts(tok, all_texts, max_length=512)
+    n_prompts = len(all_ids_orig)
+    perm = np.random.default_rng(0).permutation(n_prompts).tolist()
+    inv_perm = [0] * n_prompts
+    for pos, orig_i in enumerate(perm):
+        inv_perm[orig_i] = pos
+    shuf_ids = [all_ids_orig[orig_i] for orig_i in perm]
+
+    eff_prefill_bs = 1 if force_bs1 else batch_size
+    h_shuf, logits_shuf = _batched_prefill_hidden(
+        model, struct, shuf_ids, pad_id, dev, eff_prefill_bs, capture_hidden=True
+    )
+    assert h_shuf is not None
+    h_all = h_shuf[inv_perm]
+    logits_all = logits_shuf[inv_perm]
     p0 = torch.softmax(logits_all.float(), dim=-1)
     top1_mass = p0.max(dim=-1).values.numpy()
-
-    if skip_generation:
-        gen_texts = [""] * len(all_ids)
-        refused = np.zeros(len(all_ids), dtype=bool)
-    else:
-        ref_max_new = 160 if (think_default and not disable_think) else 48
-        gen_texts, _ = _batched_generate(model, tok, all_ids, pad_id, dev, batch_size, max_new_tokens=ref_max_new)
-        refused = np.array([_is_refusal(t) for t in gen_texts], dtype=bool)
 
     idx_over = [k for k, (g, _) in enumerate(tags) if g == "over"]
     idx_tox = [k for k, (g, _) in enumerate(tags) if g == "tox"]
     idx_ctrl = [k for k, (g, _) in enumerate(tags) if g == "ctrl"]
     idx_framed = [k for k, (g, _) in enumerate(tags) if g == "framed"]
 
-    over_rate = float(refused[idx_over].mean()) if (idx_over and not skip_generation) else None
-    tox_rate = float(refused[idx_tox].mean()) if (idx_tox and not skip_generation) else None
-    ctrl_rate = float(refused[idx_ctrl].mean()) if (idx_ctrl and not skip_generation) else None
-    framed_rate = float(refused[idx_framed].mean()) if (idx_framed and not skip_generation) else None
+    def _compute_refusal_stats(
+        g_texts: list[str],
+    ) -> tuple[np.ndarray, float | None, float | None, float | None, float | None, float | None, float | None, float | None, float]:
+        ref_arr = np.array([_is_refusal(t) for t in g_texts], dtype=bool)
+        if skip_generation:
+            return ref_arr, None, None, None, None, None, None, None, 0.0
+        o_r = float(ref_arr[idx_over].mean()) if idx_over else None
+        t_r = float(ref_arr[idx_tox].mean()) if idx_tox else None
+        c_r = float(ref_arr[idx_ctrl].mean()) if idx_ctrl else None
+        f_r = float(ref_arr[idx_framed].mean()) if idx_framed else None
+        ref_i = [k for k in (idx_over + idx_tox + idx_ctrl) if ref_arr[k]]
+        ans_i = [k for k in (idx_over + idx_tox + idx_ctrl) if not ref_arr[k]]
+        t0_r = float(top1_mass[ref_i].mean()) if ref_i else None
+        op_ent: float | None = None
+        top_op: float | None = None
+        empty_ans_rate = 0.0
+        if ans_i:
+            openings_all = [_opening(g_texts[k]) for k in ans_i]
+            empty_ans_rate = float(sum(1 for op in openings_all if not op) / len(ans_i))
+            openings = [op for op in openings_all if op]
+            open_cnt = Counter(openings)
+            tot_ans = sum(open_cnt.values())
+            if tot_ans > 0:
+                probs_o = np.array([c / tot_ans for c in open_cnt.values()], dtype=np.float64)
+                op_ent = float(-(probs_o * np.log(np.clip(probs_o, 1e-12, 1.0))).sum())
+                top_op = float(max(open_cnt.values()) / tot_ans)
+        return ref_arr, o_r, t_r, c_r, f_r, t0_r, op_ent, top_op, empty_ans_rate
 
-    ref_indices = [k for k in (idx_over + idx_tox + idx_ctrl) if refused[k]]
-    ans_indices = [k for k in (idx_over + idx_tox + idx_ctrl) if not refused[k]]
-    tok0_ref = float(top1_mass[ref_indices].mean()) if ref_indices else None
+    gen_fallback_bs1 = bool(force_bs1)
+    if skip_generation:
+        gen_texts = [""] * n_prompts
+    else:
+        ref_max_new = 160 if (think_default and not disable_think) else 48
+        eff_bs = 1 if force_bs1 else batch_size
+        shuf_texts, _ = _batched_generate(
+            model, tok, shuf_ids, pad_id, dev, eff_bs, max_new_tokens=ref_max_new
+        )
+        gen_texts = [shuf_texts[inv_perm[orig_i]] for orig_i in range(n_prompts)]
 
-    opening_ent: float | None = None
-    top_open_share: float | None = None
-    if not skip_generation and ans_indices:
-        openings = [_opening(gen_texts[k]) for k in ans_indices if _opening(gen_texts[k])]
-        open_cnt = Counter(openings)
-        tot_ans = sum(open_cnt.values())
-        if tot_ans > 0:
-            probs_o = np.array([c / tot_ans for c in open_cnt.values()], dtype=np.float64)
-            opening_ent = float(-(probs_o * np.log(np.clip(probs_o, 1e-12, 1.0))).sum())
-            top_open_share = float(max(open_cnt.values()) / tot_ans)
+    refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
+        gen_texts
+    )
+
+    if (
+        not skip_generation
+        and not force_bs1
+        and batch_size > 1
+        and over_rate == 0.0
+        and tox_rate == 0.0
+        and ((top_open_share or 0.0) > 0.35 or empty_ans_rate > 0.5)
+    ):
+        probe_idx = idx_tox[:4] + idx_over[:4]
+        if probe_idx:
+            probe_ids = [all_ids_orig[k] for k in probe_idx]
+            probe_texts, _ = _batched_generate(model, tok, probe_ids, pad_id, dev, 1, max_new_tokens=ref_max_new)
+            n_open_diff = sum(1 for pt, k in zip(probe_texts, probe_idx) if _opening(pt) != _opening(gen_texts[k]))
+            if any(_is_refusal(pt) != bool(refused[k]) for pt, k in zip(probe_texts, probe_idx)) or n_open_diff >= 2:
+                gen_fallback_bs1 = True
+                h_u, logits_u = _batched_prefill_hidden(
+                    model, struct, all_ids_orig, pad_id, dev, 1, capture_hidden=True
+                )
+                assert h_u is not None
+                h_all = h_u
+                logits_all = logits_u
+                p0 = torch.softmax(logits_all.float(), dim=-1)
+                top1_mass = p0.max(dim=-1).values.numpy()
+                gen_texts, _ = _batched_generate(
+                    model, tok, all_ids_orig, pad_id, dev, 1, max_new_tokens=ref_max_new
+                )
+                refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
+                    gen_texts
+                )
+
+    if debug_out is not None:
+        ref_samples: list[dict[str, Any]] = []
+        for group_name, grp_idx, lim, rows_src in (
+            ("overrefusal", idx_over, 2, over_rows),
+            ("toxic", idx_tox, 2, tox_rows),
+            ("everyday_control", idx_ctrl, 1, ctrl_rows),
+        ):
+            for k in grp_idx[:lim]:
+                _, item_i = tags[k]
+                raw_p = rows_src[item_i]["prompt"] if isinstance(rows_src[item_i], dict) else rows_src[item_i]
+                ref_samples.append(
+                    {
+                        "group": group_name,
+                        "prompt": str(raw_p)[:200],
+                        "response": gen_texts[k][:400],
+                        "refused": bool(refused[k]),
+                    }
+                )
+        debug_out["refusal_samples"] = ref_samples
+        debug_out["gen_fallback_bs1"] = bool(gen_fallback_bs1)
 
     # Probe 1: refusal separability across layers
     n_layers = len(struct.blocks)
@@ -1617,6 +1891,7 @@ def _scan_over_refusal(
 
     res: dict[str, Any] = {
         "refusal_thinking_disabled": bool(disable_think),
+        "gen_fallback_bs1": bool(gen_fallback_bs1),
         "base_overref_rate": over_rate,
         "base_toxic_ref_rate": tox_rate,
         "base_ctrl_ref_rate": ctrl_rate,
@@ -1907,6 +2182,8 @@ def _scan_loops(
     *,
     loop_max_new: int = 384,
     skip_generation: bool = False,
+    force_bs1: bool = False,
+    debug_out: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     n_layers = len(struct.blocks)
     nll_k1: list[float] = []
@@ -2018,11 +2295,20 @@ def _scan_loops(
             g_ids = _encode_prompts(tok, [fmt(p) for p in g_prompts], max_length=512)
             s_ids = _encode_prompts(tok, [fmt(p) for p in s_prompts], max_length=512)
 
-            g_texts, g_toks = _batched_generate(model, tok, g_ids, pad_id, dev, batch_size, max_new_tokens=loop_max_new, do_sample=False)
+            loop_bs = 1 if force_bs1 else batch_size
+            g_texts, g_toks = _batched_generate(
+                model, tok, g_ids, pad_id, dev, loop_bs, max_new_tokens=loop_max_new, do_sample=False
+            )
             samp_kw, samp_src = _resolve_sampling_config(model)
             s_texts, s_toks = _batched_generate(
-                model, tok, s_ids, pad_id, dev, batch_size, max_new_tokens=loop_max_new, do_sample=True, gen_kwargs=samp_kw
+                model, tok, s_ids, pad_id, dev, loop_bs, max_new_tokens=loop_max_new, do_sample=True, gen_kwargs=samp_kw
             )
+            if debug_out is not None and g_prompts and g_texts:
+                debug_out["math_greedy_sample"] = {
+                    "prompt": str(g_prompts[0])[:200],
+                    "response": g_texts[0][:400],
+                    "n_tokens": len(g_toks[0]),
+                }
             all_gen_texts = g_texts + s_texts
             unclosed = sum(1 for t in all_gen_texts if "<think>" in t.lower() and "</think>" not in t.lower())
             microgen = {
@@ -2030,8 +2316,10 @@ def _scan_loops(
                 "max_new_tokens": int(loop_max_new),
                 "sampling_source": samp_src,
                 "sampling_params": samp_kw,
+                "greedy_mean_len": float(np.mean([len(t) for t in g_toks])),
                 "greedy_rep4_mean": float(np.mean([_rep_ngram_rate(t, 4) for t in g_toks])),
                 "greedy_rep16_rate": float(np.mean([_rep_ngram_rate(t, 16) >= 0.35 for t in g_toks])),
+                "sampled_mean_len": float(np.mean([len(t) for t in s_toks])),
                 "sampled_rep4_mean": float(np.mean([_rep_ngram_rate(t, 4) for t in s_toks])),
                 "sampled_rep16_rate": float(np.mean([_rep_ngram_rate(t, 16) >= 0.35 for t in s_toks])),
                 "think_unclosed_rate": unclosed / max(1, len(all_gen_texts)),
@@ -2062,7 +2350,9 @@ def scan_model_xray(
     batch_size: int = 16,
     loop_max_new: int = 384,
     skip_generation: bool = False,
+    force_bs1: bool = False,
     wsi_commit: str | None = None,
+    debug_out: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run the 6-stage WSI X-Ray diagnostic on an already-loaded model and return a compact ~3-5 KB chart."""
     t0 = time.perf_counter()
@@ -2078,9 +2368,16 @@ def scan_model_xray(
     ]
     cal_seqs = [[int(x) for x in s] for s in cal_seqs if len(s) >= 8]
 
+    def _clear_cuda() -> None:
+        if dev.type == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
     static_weights = _scan_static_weights(struct, dev)
+    _clear_cuda()
     forward_profile, mlp_usage_vecs = _scan_forward_profile(model, struct, cal_seqs, dev)
+    _clear_cuda()
     fisher_profile = _scan_fisher_profile(model, struct, cal_seqs[:8], mlp_usage_vecs, dev)
+    _clear_cuda()
     fact_readout = _scan_fact_readout(
         model,
         struct,
@@ -2088,10 +2385,23 @@ def scan_model_xray(
         [(str(a), str(b)) for a, b in pack.get("fact_readout_prompts", FACT_READOUT_PROMPTS)],
         dev,
     )
+    _clear_cuda()
     over_refusal, u_ref_by_layer = _scan_over_refusal(
-        model, struct, tok, pack, dev, pad_id, batch_size, skip_generation=skip_generation
+        model,
+        struct,
+        tok,
+        pack,
+        dev,
+        pad_id,
+        batch_size,
+        skip_generation=skip_generation,
+        force_bs1=force_bs1,
+        debug_out=debug_out,
     )
-    sycophancy = _scan_sycophancy(model, struct, tok, pack, dev, pad_id, batch_size, u_ref_by_layer)
+    _clear_cuda()
+    syc_bs = 1 if (force_bs1 or over_refusal.get("gen_fallback_bs1")) else batch_size
+    sycophancy = _scan_sycophancy(model, struct, tok, pack, dev, pad_id, syc_bs, u_ref_by_layer)
+    _clear_cuda()
     loops = _scan_loops(
         model,
         struct,
@@ -2102,7 +2412,10 @@ def scan_model_xray(
         batch_size,
         loop_max_new=loop_max_new,
         skip_generation=skip_generation,
+        force_bs1=bool(force_bs1 or over_refusal.get("gen_fallback_bs1")),
+        debug_out=debug_out,
     )
+    _clear_cuda()
 
     p0 = next(model.parameters(), None)
     dtype_str = str(p0.dtype).replace("torch.", "") if p0 is not None else "unknown"
