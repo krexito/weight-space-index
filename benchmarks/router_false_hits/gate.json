@@ -1,0 +1,24 @@
+{
+ "text": {
+  "auc_mean": 0.528,
+  "q05": 0.496,
+  "q95": 0.56
+ },
+ "words": {
+  "auc_mean": 0.701,
+  "q05": 0.645,
+  "q95": 0.763
+ },
+ "both": {
+  "auc_mean": 0.702,
+  "q05": 0.644,
+  "q95": 0.762
+ },
+ "words_shuffled_labels": {
+  "auc_mean": 0.541
+ },
+ "n_templates": 89,
+ "n_splits": 100,
+ "limit": 0.75,
+ "go": true
+}

@@ -1,0 +1,470 @@
+{
+ "note": "One-span edits on apple/GSM-Symbolic main templates (key = dataset id). Short spans only; no dataset text.",
+ "dropped": {
+  "14": "no clean edit",
+  "21": "flip not plausible",
+  "37": "fixed text too short",
+  "38": "flip breaks the grammar",
+  "41": "flip breaks the grammar",
+  "57": "fixed text too short",
+  "80": "flip contradicts the text",
+  "83": "no clean edit",
+  "90": "fixed text too short",
+  "92": "fixed text too short",
+  "24": "blind review: flip unclear (burned calories vs intake target)"
+ },
+ "edits": {
+  "0": {
+   "span": "combined length of",
+   "flip": "average length of",
+   "reword": "total length of"
+  },
+  "1": {
+   "span": "cover the whole city",
+   "flip": "cover half the city",
+   "reword": "cover the entire city"
+  },
+  "2": {
+   "span": "a number greater than",
+   "flip": "a number smaller than",
+   "reword": "a number higher than"
+  },
+  "3": {
+   "span": "is twice the number",
+   "flip": "is half the number",
+   "reword": "is double the number"
+  },
+  "4": {
+   "span": "as the past",
+   "flip": "as the first",
+   "reword": "as the previous"
+  },
+  "5": {
+   "span": "teaspoonfuls of sugar she used",
+   "flip": "cupfuls of water she used",
+   "reword": "teaspoons of sugar she needed"
+  },
+  "6": {
+   "span": "harvest within a year",
+   "flip": "harvest per month",
+   "reword": "harvest during a year"
+  },
+  "7": {
+   "span": "transport all the feed",
+   "flip": "transport half the feed",
+   "reword": "transport all this feed"
+  },
+  "8": {
+   "span": "How many ",
+   "flip": "How many non-",
+   "reword": "How many such "
+  },
+  "9": {
+   "span": "How many bouncy balls came in the tube?",
+   "flip": "How many more bouncy balls than blocks?",
+   "reword": "How many bouncy balls did the tube hold?"
+  },
+  "10": {
+   "span": "that price drops to",
+   "flip": "that price drops by",
+   "reword": "that price falls to"
+  },
+  "11": {
+   "span": "does he have left?",
+   "flip": "does he use up?",
+   "reword": "does he end with?"
+  },
+  "12": {
+   "span": "won't he be able to place",
+   "flip": "will he be able to place",
+   "reword": "will he be unable to place"
+  },
+  "13": {
+   "span": "remain with?",
+   "flip": "give away?",
+   "reword": "still have?"
+  },
+  "15": {
+   "span": "have spots?",
+   "flip": "lack spots?",
+   "reword": "show spots?"
+  },
+  "16": {
+   "span": "earn for two days?",
+   "flip": "earn per day on average?",
+   "reword": "earn over the two days?"
+  },
+  "17": {
+   "span": "is spent on the beach",
+   "flip": "is spent on the sidewalk",
+   "reword": "is used on the beach"
+  },
+  "18": {
+   "span": "spend on everything?",
+   "flip": "spend on average?",
+   "reword": "spend in total?"
+  },
+  "19": {
+   "span": "sure to get?",
+   "flip": "not sure to get?",
+   "reword": "certain to get?"
+  },
+  "20": {
+   "span": "Then he picks",
+   "flip": "Then he loses",
+   "reword": "Then he gathers"
+  },
+  "22": {
+   "span": "gave them to",
+   "flip": "hid them from",
+   "reword": "handed them to"
+  },
+  "23": {
+   "span": "for each of them",
+   "flip": "for one of them",
+   "reword": "for every one of them"
+  },
+  "25": {
+   "span": "are leaving early?",
+   "flip": "are staying behind?",
+   "reword": "are departing early?"
+  },
+  "26": {
+   "span": "does this family eat in one",
+   "flip": "do the adults eat in one",
+   "reword": "do these people eat in one"
+  },
+  "27": {
+   "span": "respond to in a",
+   "flip": "ignore in a",
+   "reword": "reply to in a"
+  },
+  "28": {
+   "span": "number of unoccupied",
+   "flip": "number of occupied",
+   "reword": "number of vacant"
+  },
+  "29": {
+   "span": "is now. How",
+   "flip": "is then. How",
+   "reword": "is today. How"
+  },
+  "30": {
+   "span": "have left after paying",
+   "flip": "use up when paying",
+   "reword": "still have after paying"
+  },
+  "31": {
+   "span": "the average of their ages",
+   "flip": "the sum of their ages",
+   "reword": "the mean of their ages"
+  },
+  "32": {
+   "span": "is the total price",
+   "flip": "is the selling price",
+   "reword": "is the full price"
+  },
+  "33": {
+   "span": "between them by",
+   "flip": "apiece by",
+   "reword": "together by"
+  },
+  "34": {
+   "span": "net proceeds from selling",
+   "flip": "total costs from selling",
+   "reword": "net earnings from selling"
+  },
+  "35": {
+   "span": "missing if he has",
+   "flip": "missing if he owes",
+   "reword": "missing if he holds"
+  },
+  "36": {
+   "span": "the total cost?",
+   "flip": "the average cost?",
+   "reword": "the overall cost?"
+  },
+  "39": {
+   "span": "is spent cleaning",
+   "flip": "isn't spent cleaning",
+   "reword": "is used cleaning"
+  },
+  "40": {
+   "span": "have left?",
+   "flip": "use up?",
+   "reword": "still have?"
+  },
+  "42": {
+   "span": "How much did everything cost?",
+   "flip": "How much did he overpay?",
+   "reword": "How much did he spend?"
+  },
+  "43": {
+   "span": "total number of insects",
+   "flip": "average number of insects",
+   "reword": "overall number of insects"
+  },
+  "44": {
+   "span": "how many kids are",
+   "flip": "how many boys are",
+   "reword": "how many children are"
+  },
+  "45": {
+   "span": "already owns",
+   "flip": "already lost",
+   "reword": "already has"
+  },
+  "46": {
+   "span": "would each graduate receive",
+   "flip": "would all graduates receive",
+   "reword": "would each graduate get"
+  },
+  "47": {
+   "span": "are still hidden in",
+   "flip": "are already found in",
+   "reword": "are still left in"
+  },
+  "48": {
+   "span": "take her to peel and saute",
+   "flip": "take her just to saute",
+   "reword": "take her to skin and saute"
+  },
+  "49": {
+   "span": "bigger than the other",
+   "flip": "smaller than the other",
+   "reword": "larger than the other"
+  },
+  "50": {
+   "span": "the perimeter of the room",
+   "flip": "the width of the room",
+   "reword": "the boundary of the room"
+  },
+  "51": {
+   "span": "to the nearest dollar",
+   "flip": "up to the next dollar",
+   "reword": "to the closest dollar"
+  },
+  "52": {
+   "span": "does he have left?",
+   "flip": "has he spent now?",
+   "reword": "does he still have?"
+  },
+  "53": {
+   "span": "points more than",
+   "flip": "points fewer than",
+   "reword": "points above"
+  },
+  "54": {
+   "span": "did they all eat?",
+   "flip": "did they not eat?",
+   "reword": "did they all have?"
+  },
+  "55": {
+   "span": "re-writes everything she has",
+   "flip": "re-writes half what she has",
+   "reword": "re-copies everything she has"
+  },
+  "56": {
+   "span": "calories did he consume?",
+   "flip": "calories does each have?",
+   "reword": "calories did he take in?"
+  },
+  "58": {
+   "span": "% more with a",
+   "flip": "% less with a",
+   "reword": "% higher with a"
+  },
+  "59": {
+   "span": "How much water is",
+   "flip": "How much non-water is",
+   "reword": "How much actual water is"
+  },
+  "60": {
+   "span": "performed very well for",
+   "flip": "performed very badly for",
+   "reword": "performed really well for"
+  },
+  "61": {
+   "span": "end up with?",
+   "flip": "end up losing?",
+   "reword": "finish up with?"
+  },
+  "62": {
+   "span": "% more",
+   "flip": "% fewer",
+   "reword": "% additional"
+  },
+  "63": {
+   "span": "fewer ",
+   "flip": "more ",
+   "reword": "less "
+  },
+  "64": {
+   "span": "use up all of",
+   "flip": "use up half of",
+   "reword": "finish off all of"
+  },
+  "65": {
+   "span": "/hour in missed",
+   "flip": " total in missed",
+   "reword": "/hour in forgone"
+  },
+  "66": {
+   "span": "of the spools are",
+   "flip": "of the spools aren't",
+   "reword": "of the spools look"
+  },
+  "67": {
+   "span": "% of the weight",
+   "flip": "% above the weight",
+   "reword": "% of that weight"
+  },
+  "68": {
+   "span": "spend playing these games?",
+   "flip": "spend on each on average?",
+   "reword": "spend solving all of these?"
+  },
+  "69": {
+   "span": " combined",
+   "flip": " averaged",
+   "reword": " together"
+  },
+  "70": {
+   "span": "weeks every month",
+   "flip": "weeks every year",
+   "reword": "weeks each month"
+  },
+  "71": {
+   "span": "less than twice",
+   "flip": "more than twice",
+   "reword": "below twice"
+  },
+  "72": {
+   "span": "He stopped being penpals",
+   "flip": "He kept being penpals",
+   "reword": "He quit being penpals"
+  },
+  "73": {
+   "span": "a second time",
+   "flip": "a third time",
+   "reword": "another time"
+  },
+  "74": {
+   "span": "grade boys were at ",
+   "flip": "grade girls were at ",
+   "reword": "grade boys came to "
+  },
+  "75": {
+   "span": "after all the balls",
+   "flip": "after half the balls",
+   "reword": "after all these balls"
+  },
+  "76": {
+   "span": "selling all the",
+   "flip": "selling half the",
+   "reword": "selling all those"
+  },
+  "77": {
+   "span": "have left to write?",
+   "flip": "have written already?",
+   "reword": "still have to write?"
+  },
+  "78": {
+   "span": "How many hours a week",
+   "flip": "How many hours a day",
+   "reword": "How many hours per week"
+  },
+  "79": {
+   "span": "place during that hour?",
+   "flip": "leave out during that hour?",
+   "reword": "set down during that hour?"
+  },
+  "81": {
+   "span": "did the friends find?",
+   "flip": "did the twins find?",
+   "reword": "did their friends find?"
+  },
+  "82": {
+   "span": "stayed at the",
+   "flip": "departed from the",
+   "reword": "remained at the"
+  },
+  "84": {
+   "span": "then decreases",
+   "flip": "then increases",
+   "reword": "then drops"
+  },
+  "85": {
+   "span": "more than ",
+   "flip": "less than ",
+   "reword": "beyond "
+  },
+  "86": {
+   "span": "more than the",
+   "flip": "less than the",
+   "reword": "over what the"
+  },
+  "87": {
+   "span": "How much longer does it take to ride the biggest slide compared to",
+   "flip": "How long altogether does it take to ride the biggest slide combined with",
+   "reword": "How much more time does it take to ride the biggest slide relative to"
+  },
+  "88": {
+   "span": "times faster than she can walk",
+   "flip": "times slower than she can walk",
+   "reword": "times quicker than she can walk"
+  },
+  "89": {
+   "span": "hours free",
+   "flip": "hours extra",
+   "reword": "hours gratis"
+  },
+  "91": {
+   "span": "the combined total of the",
+   "flip": "the difference between the",
+   "reword": "the joint total of the"
+  },
+  "93": {
+   "span": "minutes more than",
+   "flip": "minutes less than",
+   "reword": "minutes over"
+  },
+  "94": {
+   "span": "How many people accept the",
+   "flip": "How many people reject the",
+   "reword": "How many people take the"
+  },
+  "95": {
+   "span": "are there in total?",
+   "flip": "are there per group?",
+   "reword": "are there altogether?"
+  },
+  "96": {
+   "span": "she and her friends all",
+   "flip": "only her friends all",
+   "reword": "she and her buddies all"
+  },
+  "97": {
+   "span": "fast as her",
+   "flip": "slow as her",
+   "reword": "quick as her"
+  },
+  "98": {
+   "span": "each infected person",
+   "flip": "one infected person",
+   "reword": "every infected person"
+  },
+  "99": {
+   "span": "dozens of eggs",
+   "flip": "pairs of eggs",
+   "reword": "dozen fresh eggs"
+  }
+ },
+ "review": {
+  "reviewer": "Claude subagent, label-free shuffled sheet, read nothing else (tool log checked); same model family as the author, and both edits of a template were on the sheet, so this agreement is an upper bound",
+  "pairs": 180,
+  "agree": 179,
+  "unclear": 1,
+  "disagree": 0
+ }
+}
