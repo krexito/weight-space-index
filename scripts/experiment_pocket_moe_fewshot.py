@@ -110,6 +110,14 @@ SKILLS_5: tuple[str, ...] = (
 OLD_SKILLS: tuple[str, ...] = SKILLS_5[:4]
 LAST_SKILL: str = SKILLS_5[4]
 ROUTER_CLASSES: tuple[str, ...] = (*SKILLS_5, "passthrough")
+PASSTHROUGH_SUBCLASSES: tuple[str, ...] = ("pass_math", "pass_mmlu", "pass_prose")
+ROUTER_FIT_CLASSES: tuple[str, ...] = (*SKILLS_5, *PASSTHROUGH_SUBCLASSES)
+
+
+def _predict_fewshot_router(X: torch.Tensor, W: torch.Tensor, b: torch.Tensor) -> list[str]:
+    """Predict router labels over `ROUTER_FIT_CLASSES` and collapse negative subclasses to `passthrough`."""
+    raw = predict_ridge_router(X, W, b, ROUTER_FIT_CLASSES)
+    return [lbl if lbl in SKILLS_5 else "passthrough" for lbl in raw]
 
 _TAX_TRAIN_SCENARIOS: tuple[tuple[str, str, str, str], ...] = (
     ("electric_grid", "municipal utility", "kilowatt-hours", "dollars"),
@@ -596,6 +604,21 @@ def run_smoke() -> dict[str, Any]:
     sm = _summarize_fewshot_arm(fake_rows)
     assert sm["hard_60"]["old_skills_1_to_4_acc"] == 0.0 and sm["hard_60"]["last_skill_5_acc"] == 1.0
 
+    # Balanced subclass Ridge router check: 5 skills + 3 coarse passthrough subclasses -> collapsed `passthrough`
+    x_rows, y_lbls = [], []
+    for cls_i, cls_nm in enumerate(ROUTER_FIT_CLASSES):
+        for j in range(2):
+            vec = torch.zeros(16, dtype=torch.float32)
+            vec[cls_i] = 1.0
+            vec[8 + (j % 4)] = 0.05
+            x_rows.append(vec)
+            y_lbls.append(cls_nm)
+    X_syn = torch.stack(x_rows)
+    W_syn, b_syn = fit_ridge_router(X_syn, y_lbls, ROUTER_FIT_CLASSES, lam=1.0)
+    preds_syn = _predict_fewshot_router(X_syn, W_syn, b_syn)
+    expected_syn = [lb if lb in SKILLS_5 else "passthrough" for lb in y_lbls]
+    assert preds_syn == expected_syn, (preds_syn, expected_syn)
+
     return {
         "mode": "smoke",
         "passed": True,
@@ -604,6 +627,10 @@ def run_smoke() -> dict[str, Any]:
         "summary_split_check": {
             "old_1_to_4": sm["hard_60"]["old_skills_1_to_4_acc"],
             "last_5": sm["hard_60"]["last_skill_5_acc"],
+        },
+        "router_subclass_check": {
+            "fit_classes": list(ROUTER_FIT_CLASSES),
+            "all_collapsed_exact": True,
         },
     }
 
@@ -768,20 +795,34 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
     prose_held_pids = [_format_messages(tok_s, [{"role": "user", "content": p}], add_generation_prompt=True, enable_thinking=False) for p in ds["prose_heldout"]]
 
     r_train_pids = train_pids + guard_r_pids + mmlu_r_pids + prose_r_pids
-    r_train_labels = [it["family"] for it in hard_train] + ["passthrough"] * (len(guard_r_pids) + len(mmlu_r_pids) + len(prose_r_pids))
+    r_train_labels = (
+        [it["family"] for it in hard_train]
+        + ["pass_math"] * len(guard_r_pids)
+        + ["pass_mmlu"] * len(mmlu_r_pids)
+        + ["pass_prose"] * len(prose_r_pids)
+    )
 
     X_r_train = _extract_prompt_hidden_vecs(student_m, r_train_pids, router_layer)
-    W_r, b_r = fit_ridge_router(X_r_train, r_train_labels, ROUTER_CLASSES, lam=1.0)
+    W_r, b_r = fit_ridge_router(X_r_train, r_train_labels, ROUTER_FIT_CLASSES, lam=1.0)
 
-    routed_test_classes = predict_ridge_router(_extract_prompt_hidden_vecs(student_m, test_pids, router_layer), W_r, b_r, ROUTER_CLASSES)
-    routed_mmlu_classes = predict_ridge_router(_extract_prompt_hidden_vecs(student_m, mmlu_test_pids, router_layer), W_r, b_r, ROUTER_CLASSES)
-    routed_prose_classes = predict_ridge_router(_extract_prompt_hidden_vecs(student_m, prose_held_pids, router_layer), W_r, b_r, ROUTER_CLASSES)
+    routed_test_classes = _predict_fewshot_router(_extract_prompt_hidden_vecs(student_m, test_pids, router_layer), W_r, b_r)
+    routed_mmlu_classes = _predict_fewshot_router(_extract_prompt_hidden_vecs(student_m, mmlu_test_pids, router_layer), W_r, b_r)
+    routed_prose_classes = _predict_fewshot_router(_extract_prompt_hidden_vecs(student_m, prose_held_pids, router_layer), W_r, b_r)
 
     hard_r_preds = routed_test_classes[:n_hard]
     guard_r_preds = routed_test_classes[n_hard:]
+    guard_per_fam_pass = {
+        gf: round(
+            sum(1 for p, it in zip(guard_r_preds, guardrail_test) if it["family"] == gf and p == "passthrough")
+            / max(1, sum(1 for it in guardrail_test if it["family"] == gf)),
+            4,
+        )
+        for gf in GUARDRAIL_FAMILIES
+    }
     router_report = {
         "router_layer": router_layer,
         "k_shots_per_skill": int(args.k_shots),
+        "fit_classes": list(ROUTER_FIT_CLASSES),
         "hard_acc": round(sum(p == it["family"] for p, it in zip(hard_r_preds, hard_test)) / len(hard_test), 4),
         "hard_renumbered_acc": round(
             sum(p == it["family"] for p, it in zip(hard_r_preds, hard_test) if it["variant"] == "renumbered")
@@ -794,6 +835,7 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
             4,
         ),
         "guardrail_passthrough_acc": round(sum(p == "passthrough" for p in guard_r_preds) / len(guard_r_preds), 4),
+        "guardrail_per_family_passthrough": guard_per_fam_pass,
         "mmlu_passthrough_acc": round(sum(p == "passthrough" for p in routed_mmlu_classes) / len(mmlu_test), 4),
         "prose_fpr": round(sum(p != "passthrough" for p in routed_prose_classes) / len(routed_prose_classes), 4),
     }
@@ -1216,6 +1258,62 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _print_compact_summary(payload: dict[str, Any]) -> None:
+    """Print human-readable summary (~50 lines) + single-line minified JSON omitting per-item rows."""
+    if payload.get("mode") == "smoke":
+        print(json.dumps(payload, indent=2), flush=True)
+        return
+
+    print("\n=== 1. TIEMPO DE COMPILACION (K=%s trazas/habilidad) & ROUTER ===" % payload.get("k_shots_per_skill"), flush=True)
+    print("Compile time (s):", payload.get("compile_time_s"), flush=True)
+    print("Teacher 4B kept frac:", payload.get("teacher_4b_train_kept_frac"), flush=True)
+    print("Router report:", payload.get("router_report"), flush=True)
+    print("Random r8 overlap:", {k: v.get("overlap_with_wsi") for k, v in payload.get("random_layers_r8", {}).items()}, flush=True)
+
+    prose_kl = payload.get("prose_kl", {})
+    print("\n=== 2. COMPILACION CONTINUA 5 HABILIDADES (9 BRAZOS PAREADOS) ===", flush=True)
+    for arm_nm, st in payload.get("generation_arms", {}).items():
+        h, g = st["hard_60"], st["guardrail_24"]
+        gm = g.get("guardrail_exact_match_vs_base")
+        gm_s = f"{gm*100:5.1f}%" if gm is not None else "   n/a"
+        pkl = prose_kl.get(arm_nm, 0.0)
+        print(
+            f"  {arm_nm:28s} | hard60={h['strict_accuracy']*100:5.1f}% ({h['n_correct']:2d}/60) "
+            f"[old1-4={h['old_skills_1_to_4_acc']*100:5.1f}%, skill5={h['last_skill_5_acc']*100:5.1f}%, "
+            f"ren={h['renumbered_30']*100:5.1f}%, rep={h['rephrased_30']*100:5.1f}%] | "
+            f"guard={g['strict_accuracy']*100:5.1f}% (exact={gm_s}) | prose_kl={pkl:.5f}",
+            flush=True,
+        )
+        print(f"     per_skill={h['per_skill']}", flush=True)
+
+    print("\n=== 3. RETENCION GENERAL EN MMLU ===", flush=True)
+    for arm_nm, vm in payload.get("mmlu_arms", {}).items():
+        a_m, nm = vm["all_400"], vm["non_math"]
+        d_nm = f"{nm['delta_vs_base']*100:+5.1f} pts" if "delta_vs_base" in nm else "     base"
+        print(
+            f"  {arm_nm:28s} | MMLU={a_m['accuracy']*100:5.1f}% | non_math={nm['accuracy']*100:5.1f}% ({d_nm}) | "
+            f"ABCD_mass={a_m['mean_abcd_prob_mass']*100:5.1f}% | fire={vm['router_fire_rate']*100:5.1f}%",
+            flush=True,
+        )
+
+    print("\n=== 4. COMPARACIONES PAREADAS (IC 95% BOOTSTRAP) ===", flush=True)
+    for grp_lbl, grp_key in [("  [hard_60]", "paired_hard_60"), ("  [old_skills_1_to_4 (48)]", "paired_old_skills_48")]:
+        print(grp_lbl, flush=True)
+        for k, v in payload.get(grp_key, {}).items():
+            print(
+                f"    {k:40s}: diff={v['diff']*100:+5.1f} pts "
+                f"CI95=[{v['ci95'][0]*100:+5.1f}, {v['ci95'][1]*100:+5.1f}] (w={v['wins']}/l={v['losses']})",
+                flush=True,
+            )
+
+    print("\nCriteria:", payload.get("criteria"), flush=True)
+    print("Timing (s):", payload.get("timing_s"), flush=True)
+    compact = {k: v for k, v in payload.items() if k != "per_item_generation"}
+    print("<<<COMPACT_JSON_BEGIN>>>", flush=True)
+    print(json.dumps(compact, separators=(",", ":")), flush=True)
+    print("<<<COMPACT_JSON_END>>>", flush=True)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--smoke", action="store_true", help="Run fast deterministic CPU check")
@@ -1238,7 +1336,9 @@ def main() -> None:
     if args.out:
         out_p = _atomic_write_json(args.out, payload)
         print(f"Saved -> {out_p}", flush=True)
-    print(json.dumps(payload, indent=2), flush=True)
+        _print_compact_summary(payload)
+    else:
+        print(json.dumps(payload, indent=2), flush=True)
 
 
 if __name__ == "__main__":
