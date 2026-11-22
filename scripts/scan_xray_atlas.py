@@ -268,8 +268,10 @@ def main(argv: list[str] | None = None) -> int:
     os.environ.setdefault("HF_HUB_ENABLE_HF_TRANSFER", "1")
     os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     import torch
+    import transformers
     from huggingface_hub import snapshot_download
     from transformers import AutoModelForCausalLM, AutoTokenizer
+    print(f"[env] torch={torch.__version__} | transformers={transformers.__version__}", flush=True)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -361,11 +363,12 @@ def main(argv: list[str] | None = None) -> int:
             _sync_file(errors_path, sync_dir)
             n_bytes = out_file.stat().st_size
             oref = card["pathologies"]["over_refusal"].get("base_overref_rate")
+            nocache = card["pathologies"]["over_refusal"].get("gen_fallback_nocache")
             syc = card["pathologies"]["sycophancy"].get("cave_rate_false_pushback")
             print(
                 f"[{idx}/{len(models)}] DONE {repo_id}: {n_bytes} B | "
                 f"{card['identity']['arch_family']} | wall={time.perf_counter() - t0:.1f}s | "
-                f"over_ref={oref} | syc_cave={syc}",
+                f"over_ref={oref} | syc_cave={syc} | nocache={nocache}",
                 flush=True,
             )
         except Exception as exc:

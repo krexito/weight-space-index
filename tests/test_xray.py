@@ -850,6 +850,7 @@ def test_self_healing_bs1_fallback_and_debug_out() -> None:
         lm, struct, tok, custom_pack, torch.device("cpu"), int(tok.pad_token_id), 4, skip_generation=False, debug_out=dbg
     )
     assert res["gen_fallback_bs1"] is True
+    assert res["gen_fallback_nocache"] is False
     assert res["base_toxic_ref_rate"] is not None and res["base_toxic_ref_rate"] > 0.5
     samples = dbg["refusal_samples"]
     assert isinstance(samples, list) and len(samples) == 5
@@ -857,3 +858,74 @@ def test_self_healing_bs1_fallback_and_debug_out() -> None:
     assert groups.count("overrefusal") == 2
     assert groups.count("toxic") == 2
     assert groups.count("everyday_control") == 1
+
+
+def test_self_healing_nocache_fallback_and_propagation() -> None:
+    from tokenizers import Tokenizer, models, pre_tokenizers
+    from transformers import PreTrainedTokenizerFast
+
+    vocab_words = [
+        "<pad>", "<eos>", "<unk>", "user:", "assistant:",
+        "I", "cannot", "fulfill", "that", "request.", "The", "answer", "is", "Paris.", "HTTP",
+    ] + [f"w{i}" for i in range(60)]
+    vocab = {w: i for i, w in enumerate(vocab_words)}
+    tk = Tokenizer(models.WordLevel(vocab, unk_token="<unk>"))
+    tk.pre_tokenizer = pre_tokenizers.Whitespace()
+    tok = PreTrainedTokenizerFast(tokenizer_object=tk, pad_token="<pad>", eos_token="<eos>", unk_token="<unk>")
+    tok.chat_template = "{% for m in messages %}{{ m['role'] }}: {{ m['content'] }} {% endfor %}assistant:"
+
+    lm = _build_tiny_llama(len(tok), n_layers=2, hidden=16, inter=32)
+    eos_id = int(tok.eos_token_id)
+    i_tok_id = int(tok.encode("I", add_special_tokens=False)[0])
+    w0_id = int(tok.encode("w0", add_special_tokens=False)[0])
+    over_id = int(tok.encode("w10", add_special_tokens=False)[0])
+    tox_id = int(tok.encode("w20", add_special_tokens=False)[0])
+    refusal_ids = tok.encode("I cannot fulfill that request.", add_special_tokens=False) + [eos_id]
+    paris_ids = tok.encode("The answer is Paris.", add_special_tokens=False) + [eos_id]
+
+    def _fake_generate(
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor | None = None,
+        max_new_tokens: int = 24,
+        use_cache: bool = True,
+        **kw,
+    ):
+        bs = input_ids.shape[0]
+        if use_cache:
+            tail = [i_tok_id] + [w0_id] * max(1, int(max_new_tokens) - 1)
+            row_t = torch.tensor(tail[: int(max_new_tokens)], dtype=input_ids.dtype, device=input_ids.device)
+            return torch.cat([input_ids, row_t.unsqueeze(0).expand(bs, -1)], dim=1)
+        out_rows = []
+        width = max(len(refusal_ids), len(paris_ids))
+        for r in range(bs):
+            ids_r = set(int(x) for x in input_ids[r].tolist())
+            seq = list(refusal_ids if (tox_id in ids_r or over_id in ids_r) else paris_ids)
+            while len(seq) < width:
+                seq.append(eos_id)
+            out_rows.append(seq[:width])
+        tail = torch.tensor(out_rows, dtype=input_ids.dtype, device=input_ids.device)
+        return torch.cat([input_ids, tail], dim=1)
+
+    lm.generate = _fake_generate  # type: ignore[method-assign]
+    base_pack = build_frozen_probe_pack(use_hf_datasets=False)
+    custom_pack = {
+        **base_pack,
+        "overrefusal": [{"prompt": f"w10 w{i}"} for i in range(4)],
+        "toxic": [{"prompt": f"w20 w{i}", "category": "c"} for i in range(4)],
+        "everyday_controls": [f"w30 HTTP w{i}" for i in range(4)],
+        "toxic_framed": [{"raw_idx": i, "framing": "edu", "category": "c", "prompt": f"w40 w{i}"} for i in range(4)],
+        "math_prompts": [f"w50 w{i}" for i in range(6)],
+    }
+    dbg: dict[str, object] = {}
+    card = scan_model_xray(
+        lm, tok, repo_id="toy/nocache", probe_pack=custom_pack, batch_size=4, loop_max_new=24, skip_generation=False, debug_out=dbg
+    )
+    oref = card["pathologies"]["over_refusal"]
+    mg = card["pathologies"]["loops"]["microgen_decoding"]
+    assert oref["gen_fallback_nocache"] is True
+    assert oref["gen_fallback_bs1"] is False
+    assert oref["base_toxic_ref_rate"] is not None and oref["base_toxic_ref_rate"] > 0.5
+    assert mg["greedy_rep16_rate"] == pytest.approx(0.0)
+    assert mg["gen_fallback_nocache"] is True
+    assert dbg["gen_fallback_nocache"] is True
+    assert "cache_probe" in dbg

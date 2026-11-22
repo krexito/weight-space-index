@@ -915,6 +915,7 @@ def _batched_generate(
     max_new_tokens: int,
     do_sample: bool = False,
     gen_kwargs: dict[str, Any] | None = None,
+    use_cache: bool = True,
 ) -> tuple[list[str], list[list[int]]]:
     n = len(id_seqs)
     bs = max(1, int(batch_size))
@@ -943,6 +944,7 @@ def _batched_generate(
             inp[r, max_len - len(seq) :] = torch.tensor(seq, dtype=torch.long, device=dev)
             att[r, max_len - len(seq) :] = 1
         try:
+            call_kw = {**extra, "use_cache": bool(use_cache)}
             try:
                 g = model.generate(
                     input_ids=inp,
@@ -950,7 +952,7 @@ def _batched_generate(
                     max_new_tokens=int(max_new_tokens),
                     do_sample=bool(do_sample),
                     pad_token_id=pad_id,
-                    **{"use_cache": True, **extra},
+                    **call_kw,
                 )
             except TypeError:
                 g = model.generate(
@@ -1666,6 +1668,7 @@ def _scan_over_refusal(
     *,
     skip_generation: bool = False,
     force_bs1: bool = False,
+    force_no_cache: bool = False,
     debug_out: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[int, np.ndarray]]:
     if not struct.identity["has_chat_template"]:
@@ -1676,7 +1679,9 @@ def _scan_over_refusal(
     think_default = "<think>" in think_probe.lower()
     if not think_default and not skip_generation:
         probe_ids = _encode_prompts(tok, [think_probe], max_length=256)
-        probe_gen, _ = _batched_generate(model, tok, probe_ids, pad_id, dev, 1, max_new_tokens=20)
+        probe_gen, _ = _batched_generate(
+            model, tok, probe_ids, pad_id, dev, 1, max_new_tokens=20, use_cache=not force_no_cache
+        )
         if "<think>" in probe_gen[0].lower():
             think_default = True
     struct.identity["thinking_mode_default"] = bool(think_default)
@@ -1758,49 +1763,119 @@ def _scan_over_refusal(
         return ref_arr, o_r, t_r, c_r, f_r, t0_r, op_ent, top_op, empty_ans_rate
 
     gen_fallback_bs1 = bool(force_bs1)
+    gen_fallback_nocache = bool(force_no_cache)
     if skip_generation:
         gen_texts = [""] * n_prompts
+        gen_toks: list[list[int]] = [[] for _ in range(n_prompts)]
     else:
         ref_max_new = 160 if (think_default and not disable_think) else 48
         eff_bs = 1 if force_bs1 else batch_size
-        shuf_texts, _ = _batched_generate(
-            model, tok, shuf_ids, pad_id, dev, eff_bs, max_new_tokens=ref_max_new
+        shuf_texts, shuf_toks = _batched_generate(
+            model, tok, shuf_ids, pad_id, dev, eff_bs, max_new_tokens=ref_max_new, use_cache=not force_no_cache
         )
         gen_texts = [shuf_texts[inv_perm[orig_i]] for orig_i in range(n_prompts)]
+        gen_toks = [shuf_toks[inv_perm[orig_i]] for orig_i in range(n_prompts)]
 
     refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
         gen_texts
     )
+    mean_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in gen_toks])) if (not skip_generation and gen_toks) else 0.0
+    collapsed = not skip_generation and (
+        (over_rate == 0.0 and tox_rate == 0.0 and ((top_open_share or 0.0) > 0.35 or empty_ans_rate > 0.5))
+        or (mean_rep4 > 0.65)
+    )
+    cache_probe: dict[str, Any] | None = None
 
-    if (
-        not skip_generation
-        and not force_bs1
-        and batch_size > 1
-        and over_rate == 0.0
-        and tox_rate == 0.0
-        and ((top_open_share or 0.0) > 0.35 or empty_ans_rate > 0.5)
-    ):
+    def _rerun_unpadded_prefill_and_gen(*, use_cache_flag: bool) -> None:
+        nonlocal h_all, logits_all, p0, top1_mass, gen_texts, gen_toks
+        h_u, logits_u = _batched_prefill_hidden(
+            model, struct, all_ids_orig, pad_id, dev, 1, capture_hidden=True
+        )
+        assert h_u is not None
+        h_all = h_u
+        logits_all = logits_u
+        p0 = torch.softmax(logits_all.float(), dim=-1)
+        top1_mass = p0.max(dim=-1).values.numpy()
+        gen_texts, gen_toks = _batched_generate(
+            model, tok, all_ids_orig, pad_id, dev, 1, max_new_tokens=ref_max_new, use_cache=use_cache_flag
+        )
+
+    if collapsed:
         probe_idx = idx_tox[:4] + idx_over[:4]
         if probe_idx:
             probe_ids = [all_ids_orig[k] for k in probe_idx]
-            probe_texts, _ = _batched_generate(model, tok, probe_ids, pad_id, dev, 1, max_new_tokens=ref_max_new)
-            n_open_diff = sum(1 for pt, k in zip(probe_texts, probe_idx) if _opening(pt) != _opening(gen_texts[k]))
-            if any(_is_refusal(pt) != bool(refused[k]) for pt, k in zip(probe_texts, probe_idx)) or n_open_diff >= 2:
-                gen_fallback_bs1 = True
-                h_u, logits_u = _batched_prefill_hidden(
-                    model, struct, all_ids_orig, pad_id, dev, 1, capture_hidden=True
+            base_rep4 = float(np.mean([_rep_ngram_rate(gen_toks[k], 4) for k in probe_idx]))
+
+            if not force_no_cache:
+                nc_texts, nc_toks = _batched_generate(
+                    model, tok, probe_ids, pad_id, dev, batch_size, max_new_tokens=ref_max_new, use_cache=False
                 )
-                assert h_u is not None
-                h_all = h_u
-                logits_all = logits_u
-                p0 = torch.softmax(logits_all.float(), dim=-1)
-                top1_mass = p0.max(dim=-1).values.numpy()
-                gen_texts, _ = _batched_generate(
-                    model, tok, all_ids_orig, pad_id, dev, 1, max_new_tokens=ref_max_new
+                nc_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in nc_toks]))
+                nc_ref_diff = any(_is_refusal(pt) != bool(refused[k]) for pt, k in zip(nc_texts, probe_idx))
+                nc_rep_cured = (base_rep4 > 0.50 and nc_rep4 < base_rep4 - 0.25)
+                nc_open_diff = sum(1 for pt, k in zip(nc_texts, probe_idx) if _opening(pt) != _opening(gen_texts[k]))
+                cache_probe = {
+                    "base_rep4": base_rep4,
+                    "nocache_batched_rep4": nc_rep4,
+                    "nocache_batched_sample0": (nc_texts[0][:120] if nc_texts else ""),
+                }
+                if nc_ref_diff or nc_rep_cured or nc_open_diff >= 2:
+                    gen_fallback_nocache = True
+                    if batch_size > 1 and not force_bs1 and (nc_rep4 > 0.50 or not any(_is_refusal(pt) for pt in nc_texts)):
+                        nc1_texts, nc1_toks = _batched_generate(
+                            model, tok, probe_ids[:4], pad_id, dev, 1, max_new_tokens=ref_max_new, use_cache=False
+                        )
+                        nc1_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in nc1_toks]))
+                        cache_probe["nocache_bs1_rep4"] = nc1_rep4
+                        if nc1_rep4 < nc_rep4 - 0.15 or sum(_is_refusal(t) for t in nc1_texts) > sum(
+                            _is_refusal(t) for t in nc_texts[: len(nc1_texts)]
+                        ):
+                            gen_fallback_bs1 = True
+                    if gen_fallback_bs1:
+                        _rerun_unpadded_prefill_and_gen(use_cache_flag=False)
+                    else:
+                        shuf_texts, shuf_toks = _batched_generate(
+                            model, tok, shuf_ids, pad_id, dev, batch_size, max_new_tokens=ref_max_new, use_cache=False
+                        )
+                        gen_texts = [shuf_texts[inv_perm[orig_i]] for orig_i in range(n_prompts)]
+                        gen_toks = [shuf_toks[inv_perm[orig_i]] for orig_i in range(n_prompts)]
+                    refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
+                        gen_texts
+                    )
+
+            if not gen_fallback_nocache and not force_bs1 and batch_size > 1:
+                probe_texts, probe_toks = _batched_generate(
+                    model, tok, probe_ids, pad_id, dev, 1, max_new_tokens=ref_max_new, use_cache=not force_no_cache
                 )
-                refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
-                    gen_texts
-                )
+                bs1_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in probe_toks]))
+                n_open_diff = sum(1 for pt, k in zip(probe_texts, probe_idx) if _opening(pt) != _opening(gen_texts[k]))
+                bs1_rep_cured = (base_rep4 > 0.50 and bs1_rep4 < base_rep4 - 0.25)
+                bs1_ref_diff = any(_is_refusal(pt) != bool(refused[k]) for pt, k in zip(probe_texts, probe_idx))
+                if cache_probe is None:
+                    cache_probe = {"base_rep4": base_rep4}
+                cache_probe["bs1_rep4"] = bs1_rep4
+                if bs1_rep4 > 0.65 and not force_no_cache:
+                    nc1_texts, nc1_toks = _batched_generate(
+                        model, tok, probe_ids[:4], pad_id, dev, 1, max_new_tokens=ref_max_new, use_cache=False
+                    )
+                    nc1_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in nc1_toks]))
+                    cache_probe["nocache_bs1_rep4"] = nc1_rep4
+                    nc1_ref_diff = any(
+                        _is_refusal(pt) != bool(refused[k]) for pt, k in zip(nc1_texts, probe_idx[: len(nc1_texts)])
+                    )
+                    if (bs1_rep4 - nc1_rep4 > 0.25) or nc1_ref_diff:
+                        gen_fallback_nocache = True
+                        gen_fallback_bs1 = True
+                        _rerun_unpadded_prefill_and_gen(use_cache_flag=False)
+                        refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
+                            gen_texts
+                        )
+                if not gen_fallback_nocache and (bs1_ref_diff or bs1_rep_cured or n_open_diff >= 2):
+                    gen_fallback_bs1 = True
+                    _rerun_unpadded_prefill_and_gen(use_cache_flag=not force_no_cache)
+                    refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
+                        gen_texts
+                    )
 
     if debug_out is not None:
         ref_samples: list[dict[str, Any]] = []
@@ -1822,6 +1897,9 @@ def _scan_over_refusal(
                 )
         debug_out["refusal_samples"] = ref_samples
         debug_out["gen_fallback_bs1"] = bool(gen_fallback_bs1)
+        debug_out["gen_fallback_nocache"] = bool(gen_fallback_nocache)
+        if cache_probe is not None:
+            debug_out["cache_probe"] = cache_probe
 
     # Probe 1: refusal separability across layers
     n_layers = len(struct.blocks)
@@ -1892,6 +1970,7 @@ def _scan_over_refusal(
     res: dict[str, Any] = {
         "refusal_thinking_disabled": bool(disable_think),
         "gen_fallback_bs1": bool(gen_fallback_bs1),
+        "gen_fallback_nocache": bool(gen_fallback_nocache),
         "base_overref_rate": over_rate,
         "base_toxic_ref_rate": tox_rate,
         "base_ctrl_ref_rate": ctrl_rate,
@@ -2183,6 +2262,7 @@ def _scan_loops(
     loop_max_new: int = 384,
     skip_generation: bool = False,
     force_bs1: bool = False,
+    force_no_cache: bool = False,
     debug_out: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     n_layers = len(struct.blocks)
@@ -2296,12 +2376,60 @@ def _scan_loops(
             s_ids = _encode_prompts(tok, [fmt(p) for p in s_prompts], max_length=512)
 
             loop_bs = 1 if force_bs1 else batch_size
+            use_cache_flag = not force_no_cache
+            loop_nocache_fallback = bool(force_no_cache)
             g_texts, g_toks = _batched_generate(
-                model, tok, g_ids, pad_id, dev, loop_bs, max_new_tokens=loop_max_new, do_sample=False
+                model,
+                tok,
+                g_ids,
+                pad_id,
+                dev,
+                loop_bs,
+                max_new_tokens=loop_max_new,
+                do_sample=False,
+                use_cache=use_cache_flag,
             )
             samp_kw, samp_src = _resolve_sampling_config(model)
+            g_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in g_toks])) if g_toks else 0.0
+            if use_cache_flag and g_rep4 > 0.85 and len(g_ids) >= 1:
+                probe_len = min(len(g_ids), 2)
+                _nc_g_texts, nc_g_toks = _batched_generate(
+                    model,
+                    tok,
+                    g_ids[:probe_len],
+                    pad_id,
+                    dev,
+                    loop_bs,
+                    max_new_tokens=loop_max_new,
+                    do_sample=False,
+                    use_cache=False,
+                )
+                nc_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in nc_g_toks]))
+                if float(np.mean([_rep_ngram_rate(t, 4) for t in g_toks[:probe_len]])) - nc_rep4 > 0.30:
+                    use_cache_flag = False
+                    loop_nocache_fallback = True
+                    g_texts, g_toks = _batched_generate(
+                        model,
+                        tok,
+                        g_ids,
+                        pad_id,
+                        dev,
+                        loop_bs,
+                        max_new_tokens=loop_max_new,
+                        do_sample=False,
+                        use_cache=False,
+                    )
             s_texts, s_toks = _batched_generate(
-                model, tok, s_ids, pad_id, dev, loop_bs, max_new_tokens=loop_max_new, do_sample=True, gen_kwargs=samp_kw
+                model,
+                tok,
+                s_ids,
+                pad_id,
+                dev,
+                loop_bs,
+                max_new_tokens=loop_max_new,
+                do_sample=True,
+                gen_kwargs=samp_kw,
+                use_cache=use_cache_flag,
             )
             if debug_out is not None and g_prompts and g_texts:
                 debug_out["math_greedy_sample"] = {
@@ -2324,6 +2452,8 @@ def _scan_loops(
                 "sampled_rep16_rate": float(np.mean([_rep_ngram_rate(t, 16) >= 0.35 for t in s_toks])),
                 "think_unclosed_rate": unclosed / max(1, len(all_gen_texts)),
             }
+            if loop_nocache_fallback:
+                microgen["gen_fallback_nocache"] = True
 
     return {
         "forced_rep_nll_k1": mean_nll1,
@@ -2351,6 +2481,7 @@ def scan_model_xray(
     loop_max_new: int = 384,
     skip_generation: bool = False,
     force_bs1: bool = False,
+    force_no_cache: bool = False,
     wsi_commit: str | None = None,
     debug_out: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
@@ -2376,8 +2507,6 @@ def scan_model_xray(
     _clear_cuda()
     forward_profile, mlp_usage_vecs = _scan_forward_profile(model, struct, cal_seqs, dev)
     _clear_cuda()
-    fisher_profile = _scan_fisher_profile(model, struct, cal_seqs[:8], mlp_usage_vecs, dev)
-    _clear_cuda()
     fact_readout = _scan_fact_readout(
         model,
         struct,
@@ -2396,6 +2525,7 @@ def scan_model_xray(
         batch_size,
         skip_generation=skip_generation,
         force_bs1=force_bs1,
+        force_no_cache=force_no_cache,
         debug_out=debug_out,
     )
     _clear_cuda()
@@ -2413,8 +2543,11 @@ def scan_model_xray(
         loop_max_new=loop_max_new,
         skip_generation=skip_generation,
         force_bs1=bool(force_bs1 or over_refusal.get("gen_fallback_bs1")),
+        force_no_cache=bool(force_no_cache or over_refusal.get("gen_fallback_nocache")),
         debug_out=debug_out,
     )
+    _clear_cuda()
+    fisher_profile = _scan_fisher_profile(model, struct, cal_seqs[:8], mlp_usage_vecs, dev)
     _clear_cuda()
 
     p0 = next(model.parameters(), None)
