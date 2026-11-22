@@ -27,3 +27,6 @@ rust/target/
 Thumbs.db
 .vscode/
 .idea/
+
+# Experiment notebooks stay local (uploaded to Colab by hand); already tracked ones are unaffected
+notebooks/*.ipynb
