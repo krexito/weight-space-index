@@ -84,6 +84,14 @@ from .tracer import (
     trace_direction_graph,
     verify_onset_suppression,
 )
+from .xray import (
+    format_compact_xray_json,
+    load_xray_json,
+    save_xray_json,
+    scan_model_xray,
+    summarize_xray_atlas,
+)
+from .xray_probes import build_frozen_probe_pack, load_frozen_probe_pack
 
 __all__ = [
     "ActivationIndex",
@@ -162,8 +170,15 @@ __all__ = [
     "find_mlp_down_projections",
     "load_index",
     "profile_column_fisher",
+    "build_frozen_probe_pack",
+    "format_compact_xray_json",
+    "load_frozen_probe_pack",
+    "load_xray_json",
     "register_moipatch_entry",
+    "save_xray_json",
+    "scan_model_xray",
     "shard_memory_bank",
+    "summarize_xray_atlas",
     "transfer_edit",
     "transfer_transduction_edit",
     "transplant_compositional_and_chain",

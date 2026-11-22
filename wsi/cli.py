@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from .indexer import build_index
 from .query import WeightSpaceIndex
@@ -121,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Which discovered patch variant to save with -o (default: unified_top2)",
     )
     p_disc.add_argument("-o", "--out", default=None, help="Optional output path for the synthesized .moipatch file")
+    p_disc.add_argument("--save-grid-dir", default=None, help="Optional directory to save all union candidate_grid .moipatch files")
     p_disc.add_argument("-i", "--index-dir", help="Optional path to prebuilt index directory")
 
     # wsi diff
@@ -164,7 +166,67 @@ def main(argv: list[str] | None = None) -> int:
     p_mp = sub.add_parser("moipatch", help="Inspect, verify, or run a portable .moipatch file")
     p_mp.add_argument("moipatch_args", nargs=argparse.REMAINDER, help="Arguments passed to python -m wsi.moipatch")
 
+    # wsi xray
+    p_xr = sub.add_parser("xray", help="Scan a model checkpoint into a compact WSI X-ray JSON chart or summarize an atlas")
+    p_xr.add_argument("model_dir", nargs="?", default=None, help="Path or HF repo ID of checkpoint to scan")
+    p_xr.add_argument("-o", "--out", default=None, help="Output JSON path")
+    p_xr.add_argument("--probes", default=None, help="Optional frozen probe pack JSON path")
+    p_xr.add_argument("--dtype", default="auto", choices=["auto", "bfloat16", "float16", "float32"])
+    p_xr.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
+    p_xr.add_argument("--bs", type=int, default=16, help="Batch size for prefill/microgen (default: 16)")
+    p_xr.add_argument("--loop-max-new", type=int, default=384, help="Max tokens for loop stress generation (default: 384)")
+    p_xr.add_argument("--skip-generation", action="store_true", help="Skip autoregressive generation stages")
+    p_xr.add_argument("--summarize-dir", default=None, help="Aggregate all *.xray.json files in this directory")
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "xray":
+        import torch
+        from .xray import format_compact_xray_json, save_xray_json, scan_model_xray, summarize_xray_atlas
+        from .xray_probes import load_frozen_probe_pack
+
+        if args.summarize_dir:
+            summary = summarize_xray_atlas(args.summarize_dir)
+            txt = json.dumps(summary, indent=2, ensure_ascii=False)
+            if args.out:
+                out_p = Path(args.out)
+                out_p.parent.mkdir(parents=True, exist_ok=True)
+                out_p.write_text(txt, encoding="utf-8")
+            print(txt)
+            return 0
+        if not args.model_dir:
+            parser.error("xray requires <model_dir> unless --summarize-dir is set")
+
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        use_cuda = args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available())
+        dev = torch.device("cuda" if use_cuda else "cpu")
+        if args.dtype == "auto":
+            dt: Any = torch.bfloat16 if (use_cuda and torch.cuda.is_bf16_supported()) else (torch.float16 if use_cuda else torch.float32)
+        else:
+            dt = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[args.dtype]
+
+        tok = AutoTokenizer.from_pretrained(args.model_dir, trust_remote_code=True)
+        try:
+            model = AutoModelForCausalLM.from_pretrained(args.model_dir, dtype=dt, trust_remote_code=True)
+        except TypeError:
+            model = AutoModelForCausalLM.from_pretrained(args.model_dir, torch_dtype=dt, trust_remote_code=True)
+        model = model.to(dev).eval()
+        pack = load_frozen_probe_pack(args.probes) if args.probes else None
+        card = scan_model_xray(
+            model,
+            tok,
+            repo_id=str(args.model_dir),
+            probe_pack=pack,
+            device=dev,
+            batch_size=args.bs,
+            loop_max_new=args.loop_max_new,
+            skip_generation=args.skip_generation,
+        )
+        if args.out:
+            save_xray_json(card, args.out)
+        print(format_compact_xray_json(card), end="")
+        return 0
 
     if args.cmd == "moipatch":
         from .moipatch import _main
@@ -261,6 +323,7 @@ def main(argv: list[str] | None = None) -> int:
             top_k_neurons=args.top_k_neurons,
             variant=args.variant,
             save_patch_path=args.out,
+            save_candidate_grid_dir=args.save_grid_dir,
         )
         print(json.dumps(out, indent=2))
 
