@@ -36,7 +36,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - Keep `WSI_SPEC` off for batch evaluation. Structured pruning default: uniform `energy+recon`.
 - Refusal work: screen on the token-0 onset window, batch each control set separately with identical batching in every arm, require `toxic_kept >= 0.90` AND `recovered >= 0.50`, and report `success_with_style`.
 - Agent-tool subagents get this file injected. A truly blind agent needs `claude -p` in a folder outside the repo.
-- Models with remote code (Aion): pin `transformers==5.23.0` (5.24.0 renames the generation cache; Aion then output garbage with no error; cause read from source, not reproduced in isolation); check the unpatched base first.
+- Models with remote code (Aion): pin `transformers==5.23.0` (5.24.0 renames the generation cache; Aion then output garbage with no error; pinning restored the base); check the unpatched base first.
 
 **Loops: Qwen3.5**
 - **`Qwen/Qwen3.5-0.8B`** (GSM8K): blind discovery works; MoI `55.5%` vs base `11%`, restart `35.5%`.
@@ -57,6 +57,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Prose-Preserving `always_on`** and **Paired Capability**: small static edits leave GSM8K/MMLU unchanged within noise; routed arms fire `0/600`.
 - **Tracer Upgrades**: linearized final norm, block gaps, `protect_dir`, multi-hop graph, peeling; speed fix.
 - **Blind agent + WSI vs over-refusal** (Aion): passes the old gates (`64.9%` / `93.3%`) but **fails with style** (41% exam-solver openings).
+- **Over-refusal without the voice change** (Aion): no arm passes; null-space edits lose the effect, the cleaned direction fixes the voice but recovers only `27.7%` (alpha not re-tuned).
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
