@@ -276,6 +276,42 @@ def cmd_stage_workspace(args: argparse.Namespace) -> int:
         )
     else:
         assert not (agent_dir / "atlas").exists(), "wsi_only workspace must not contain atlas/"
+        # Defense-in-depth: remove wsi/atlas.py from wsi_only and strip its import/exports from wsi/__init__.py.
+        atlas_py = agent_dir / "wsi" / "atlas.py"
+        if atlas_py.exists():
+            atlas_py.unlink()
+        init_py = agent_dir / "wsi" / "__init__.py"
+        if init_py.exists():
+            import re
+
+            txt = init_py.read_text(encoding="utf-8")
+            txt = re.sub(r"from \.atlas import \([^)]*\)\n?", "", txt, flags=re.S)
+            for sym in (
+                "ATLAS_SCHEMA_VERSION",
+                "DEFAULT_ATLAS_DIR",
+                "RESERVED_HOLDOUT_MODELS",
+                "consolidate_3tome_atlas",
+                "format_atlas_diagnosis",
+                "load_atlas",
+                "match_xray_neighbors",
+                "validate_no_holdout_leakage",
+            ):
+                txt = txt.replace(f'    "{sym}",\n', "")
+            init_py.write_text(txt, encoding="utf-8")
+        # Verify zero Tome-3 / Atlas clinical markers exist anywhere inside wsi_only workspace.
+        banned_markers = (
+            "fisher_sparse_single_mlp_static",
+            "tome3_clinical_history",
+            "all_layer_ablit_plus_router_cal",
+            "CROSS_TOME_INVARIANT_FINDINGS",
+            "DEFAULT_CLINICAL_HISTORY",
+        )
+        for fp in agent_dir.rglob("*"):
+            if fp.is_file() and fp.suffix in (".py", ".md", ".json"):
+                body = fp.read_text(encoding="utf-8", errors="ignore")
+                for marker in banned_markers:
+                    if marker in body:
+                        raise RuntimeError(f"Atlas/Tome-3 marker {marker!r} leaked into wsi_only file: {fp}")
 
     task_md = render_task_markdown(
         arm=arm,

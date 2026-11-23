@@ -49,163 +49,6 @@ RESERVED_HOLDOUT_MODELS: tuple[str, ...] = (
 
 DEFAULT_ATLAS_DIR = Path(__file__).resolve().parents[1] / "benchmarks" / "xray_atlas"
 
-DEFAULT_CLINICAL_HISTORY: dict[str, list[dict[str, Any]]] = {
-    "LiquidAI/LFM3-1.7B": [
-        {
-            "pathology": "over_refusal",
-            "strategy": "fisher_sparse_single_mlp_static",
-            "target": {"depth_frac": 0.65, "role": "mlp_down", "n_units": 64, "weight_frac": 0.000076},
-            "outcome": "pass",
-            "metrics": {"recovered": 0.85, "prose_kl": 0.00091, "gsm8k_delta": 0.015, "mmlu_delta": 0.02},
-            "caveat": "Static bake has no toxic veto; pair with L24 Sigma_frame router when safety retention matters.",
-        },
-        {
-            "pathology": "over_refusal",
-            "strategy": "routed_2vec_sigma_frame",
-            "target": {"depth_frac": 0.45, "role": "mlp_down+short_conv", "router_depth": 1.0},
-            "outcome": "pass",
-            "metrics": {"recovered": 0.65, "toxic_kept": 0.964, "prose_kl": 0.0},
-            "caveat": "Unvetoed L9 router drops toxic_kept to 0.06; naive veto fails educational framing (0.505).",
-        },
-        {
-            "pathology": "memory_injection",
-            "strategy": "rome_fullname_routed",
-            "target": {"depth_frac": 0.0, "role": "mlp_down", "n_facts": 100},
-            "outcome": "partial",
-            "metrics": {"dev_recall": 0.873, "ppl_delta": 0.0},
-            "caveat": "Earliest layer L0 beats mid layers on ShortConv hybrid; 40 steps under-converged.",
-        },
-        {
-            "pathology": "pruning",
-            "strategy": "fisher_global_mlp_pruning",
-            "target": {"budget": 0.5, "role": "mlp_down"},
-            "outcome": "fail",
-            "metrics": {"gsm8k": 0.37, "vs_uniform_energy": -0.285},
-            "caveat": "Global Fisher starves late layers; use uniform energy+recon for structured pruning.",
-        },
-    ],
-    "Qwen/Qwen3.5-0.8B": [
-        {
-            "pathology": "loops",
-            "strategy": "blind_moi_routed",
-            "target": {"depth_frac": 0.59, "role": "mlp_down", "n_units": 32, "alpha": 12},
-            "outcome": "pass",
-            "metrics": {"gsm8k_acc": 0.555, "vs_restart_ctrl": 0.2, "loop_rate": 0.26},
-            "caveat": "Must beat unpatched restart control (0.355); loop cols share subspace with legit copy.",
-        },
-        {
-            "pathology": "loops",
-            "strategy": "head_ablation_single_or_top4",
-            "target": {"role": "linear_attn_heads"},
-            "outcome": "fail",
-            "metrics": {"other_dnll": 0.43, "top4_dnll": 5.4},
-            "caveat": "No loop-selective head among 336 heads (Spearman 0.89 vs normal tokens).",
-        },
-        {
-            "pathology": "memory_injection",
-            "strategy": "rome_fullname_routed",
-            "target": {"role": "mlp_down", "n_facts": 1000},
-            "outcome": "pass",
-            "metrics": {"para_recall": 0.97, "ppl_delta": 0.0},
-            "caveat": "Needs exact full-name key; reverse queries score 0.0.",
-        },
-    ],
-    "Qwen/Qwen3.5-4B": [
-        {
-            "pathology": "sycophancy",
-            "strategy": "confidence_gated_moi_v3",
-            "target": {"role": "mlp_down", "gated_by_turn1_conf": True},
-            "outcome": "pass",
-            "metrics": {"held": 0.401, "vs_base": 0.252, "accepted_true": 0.907},
-            "caveat": "Un-gated strong patch collapses true pushback acceptance from 0.907 to 0.378.",
-        },
-        {
-            "pathology": "loops",
-            "strategy": "math500_sampled_census",
-            "target": {"role": "decoding_census"},
-            "outcome": "skip",
-            "metrics": {"sampled_loop_rate": 0.007, "base_acc": 0.781},
-            "caveat": "39.1% loop rate was greedy-only; verify target sampling before running discovery.",
-        },
-    ],
-    "microsoft/Aion-1.0-Instruct-2.3B": [
-        {
-            "pathology": "over_refusal",
-            "strategy": "all_layer_ablit_plus_router_cal",
-            "target": {"role": "all_layers", "agent": "blind_v2"},
-            "outcome": "partial",
-            "metrics": {"recovered": 0.649, "toxic_kept": 0.933, "new_template_rate": 0.41},
-            "caveat": "Passed refusal/toxic/control gates but failed style_check (41% exam-solver opening template).",
-        },
-        {
-            "pathology": "over_refusal",
-            "strategy": "single_recipe_biased_agent",
-            "target": {"role": "all_layers", "agent": "blind_v1"},
-            "outcome": "fail",
-            "metrics": {"recovered": 0.468, "toxic_kept": 0.979, "new_template_rate": 0.0},
-            "caveat": "Fixing a single prior recipe anchored agent v1 below the 50% recovery gate.",
-        },
-        {
-            "pathology": "over_refusal",
-            "strategy": "null_space_and_cleaned_direction_ablation",
-            "target": {"role": "all_layers", "agent": "cleaned_dir"},
-            "outcome": "fail",
-            "metrics": {"recovered": 0.277, "toxic_kept": 0.968, "new_template_rate": 0.0},
-            "caveat": (
-                "Null-space projection kills recovery; cleaning the refusal direction eliminates the 41% "
-                "exam-solver opening template (0% new templates) but needs mid-depth localization or alpha "
-                "re-tuning to cross the 50% recovery gate without editing late prose-sensitive layers."
-            ),
-        },
-    ],
-}
-
-CROSS_TOME_INVARIANT_FINDINGS: list[dict[str, str]] = [
-    {
-        "id": "regime_separation_midtrain_vs_posttrain",
-        "source": "Tome 2 (Qwen2.5-1.5B 6-way tree + OLMo-2 1B chain)",
-        "finding": (
-            "Midtraining (Coder/Math) moves 63-108% of total weight norm peaking in early layers (L2-L4, depth "
-            "0.07-0.15) with high rank (rank80 ~ 900+) and 0% over-refusal. Post-training SFT/DPO/RLVR moves "
-            "0.05-1.5% of weights (~100-1000x smaller) peaking in mid-to-late layers (depth 0.50-1.0), where "
-            "over-refusal (+44 to +72 pts) and sycophancy (+50 to +97 pts) are injected or removed."
-        ),
-    },
-    {
-        "id": "late_layer_prose_fisher_hazard",
-        "source": "Tome 2 (trapezoidal attribution + prose_fisher_cost) & Tome 3 (Aion style_check failure)",
-        "finding": (
-            "In dense GQA/MHA Instruct transitions, 39-84% of total collateral prose Fisher damage "
-            "(prose_fisher_cost) concentrates in the final 1-2 decoder layers (depth 0.93-1.0) and embed_head. "
-            "Uniform all-layer weight projection with strong alpha across late layers induces artificial opening "
-            "templates (e.g. 41% exam-solver openings on Aion-2.3B). Restricting or tapering edits away from the "
-            "final layers / high-Fisher prose blocks and screening recovered openings on dev prompts prevents "
-            "style collapse."
-        ),
-    },
-    {
-        "id": "dpo_and_veto_router_calibration",
-        "source": "Tome 1 (veto_framing_shift_to_std) + Tome 2 (olmo2_sft_to_dpo) + Tome 3 (LFM3/Aion routers)",
-        "finding": (
-            "DPO cuts over-refusal by -43.7 pts (65.6% -> 21.9%) while keeping 81.2% toxic refusals using only "
-            "0.085% total weight change (energy_r8 4x more concentrated than SFT). For inference-time routed "
-            "patches (.moipatch), models with veto_framing_shift_to_std > 0.30 shift along the toxic-vs-benign "
-            "axis under educational framing; fitting a 2-gate framing-invariant router "
-            "(wsi.router_cal.fit_framing_invariant_safety_router) with OOF thresholds and zero control fires "
-            "retains >=90-96% toxic refusals and >=90% identical controls."
-        ),
-    },
-    {
-        "id": "mixer_vs_mlp_spectral_rank",
-        "source": "Tome 1 & Tome 2 (all 8 dense/hybrid/MoE transitions)",
-        "finding": (
-            "Attention/mixer output projections (o_proj / out_proj) systematically exhibit lower effective rank "
-            "in post-training deltas (erank_ratio 0.56-0.75, rank80 195-599, energy_r8 up to 28%) than MLP "
-            "down-projections (erank_ratio 0.87-0.96, rank80 624-1529)."
-        ),
-    },
-]
-
 
 def _atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -277,7 +120,7 @@ def _build_atlas_handbook_md(
         "",
         "## Cross-Tome Structural Findings",
     ]
-    for item in CROSS_TOME_INVARIANT_FINDINGS:
+    for item in tome3_bundle.get("cross_tome_findings") or []:
         lines.append(f"- **`{item['id']}`** (*{item['source']}*): {item['finding']}")
 
     lines.extend(
@@ -316,6 +159,7 @@ def consolidate_3tome_atlas(
     out_dir: str | Path = DEFAULT_ATLAS_DIR,
     *,
     clinical_history: Mapping[str, list[dict[str, Any]]] | None = None,
+    cross_tome_findings: Sequence[Mapping[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Consolidate Tome 1, Tome 2, and Tome 3 GPU bundles into `out_dir` with zero hold-out leakage."""
     root = Path(out_dir)
@@ -324,7 +168,20 @@ def consolidate_3tome_atlas(
     t1_dir.mkdir(parents=True, exist_ok=True)
     t2_dir.mkdir(parents=True, exist_ok=True)
 
-    hist_map = dict(DEFAULT_CLINICAL_HISTORY if clinical_history is None else clinical_history)
+    existing_t3_path = root / "tome3_clinical_history.json"
+    existing_t3 = (
+        json.loads(existing_t3_path.read_text(encoding="utf-8")) if existing_t3_path.exists() else {}
+    )
+    hist_map = dict(
+        clinical_history
+        if clinical_history is not None
+        else (existing_t3.get("models") if isinstance(existing_t3.get("models"), Mapping) else {})
+    )
+    findings_list = list(
+        cross_tome_findings
+        if cross_tome_findings is not None
+        else (existing_t3.get("cross_tome_findings") or [])
+    )
 
     t1_raw = json.loads(Path(tome1_bundle_path).read_text(encoding="utf-8"))
     t1_cards_dict = t1_raw.get("cards") or {}
@@ -359,7 +216,7 @@ def consolidate_3tome_atlas(
             "n_models": len(hist_map),
             "n_records": sum(len(v) for v in hist_map.values()),
             "models": hist_map,
-            "cross_tome_findings": CROSS_TOME_INVARIANT_FINDINGS,
+            "cross_tome_findings": findings_list,
         }
     )
 
@@ -426,10 +283,10 @@ def load_atlas(atlas_dir: str | Path = DEFAULT_ATLAS_DIR) -> dict[str, Any]:
         else {
             "schema": ATLAS_SCHEMA_VERSION,
             "tome": "tome3_clinical_history",
-            "n_models": len(DEFAULT_CLINICAL_HISTORY),
-            "n_records": sum(len(v) for v in DEFAULT_CLINICAL_HISTORY.values()),
-            "models": DEFAULT_CLINICAL_HISTORY,
-            "cross_tome_findings": CROSS_TOME_INVARIANT_FINDINGS,
+            "n_models": 0,
+            "n_records": 0,
+            "models": {},
+            "cross_tome_findings": [],
         }
     )
 
@@ -721,7 +578,7 @@ def match_xray_neighbors(
             "nearest_tome1_models": top_neighbors,
             "relevant_tome2_deltas": top_deltas,
             "relevant_tome3_history": matched_history + other_history[:3],
-            "cross_tome_findings": CROSS_TOME_INVARIANT_FINDINGS,
+            "cross_tome_findings": list(t3_bundle.get("cross_tome_findings") or []),
         }
     )
 
@@ -833,9 +690,7 @@ def format_atlas_diagnosis(diagnosis: Mapping[str, Any]) -> str:
 
 __all__ = [
     "ATLAS_SCHEMA_VERSION",
-    "CROSS_TOME_INVARIANT_FINDINGS",
     "DEFAULT_ATLAS_DIR",
-    "DEFAULT_CLINICAL_HISTORY",
     "RESERVED_HOLDOUT_MODELS",
     "consolidate_3tome_atlas",
     "format_atlas_diagnosis",

@@ -159,7 +159,21 @@ def test_stage_workspace_arm_a_vs_arm_b_and_compare(tmp_path: Path) -> None:
     )
     assert rc_a == 0
     assert not (ag_a / "atlas").exists()
+    assert not (ag_a / "wsi" / "atlas.py").exists()
     assert not list(ag_a.rglob("test_*.jsonl"))
+    # Verify wsi still imports cleanly inside wsi_only after stripping atlas.py.
+    imp_proc = subprocess.run(
+        [sys.executable, "-c", "import wsi; print(hasattr(wsi, 'MoIPatch'))"],
+        cwd=str(ag_a),
+        env={**os.environ, "PYTHONPATH": str(ag_a)},
+        capture_output=True,
+        text=True,
+    )
+    assert imp_proc.returncode == 0 and "True" in imp_proc.stdout, imp_proc.stderr
+    # Verify wsi/atlas.py source itself has zero hardcoded Tome-3 clinical findings.
+    atlas_src_txt = (ROOT / "wsi" / "atlas.py").read_text(encoding="utf-8")
+    for banned in ("DEFAULT_CLINICAL_HISTORY", "CROSS_TOME_INVARIANT_FINDINGS", "exam-solver", "0.649", "0.964"):
+        assert banned not in atlas_src_txt
     task_a = (ag_a / "TASK.md").read_text(encoding="utf-8")
     assert "Anatomical Atlas" not in task_a
     assert "new_template_rate <= 20%" in task_a
