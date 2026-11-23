@@ -5,6 +5,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from .indexer import build_index
 from .query import WeightSpaceIndex
@@ -121,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Which discovered patch variant to save with -o (default: unified_top2)",
     )
     p_disc.add_argument("-o", "--out", default=None, help="Optional output path for the synthesized .moipatch file")
+    p_disc.add_argument("--save-grid-dir", default=None, help="Optional directory to save all union candidate_grid .moipatch files")
     p_disc.add_argument("-i", "--index-dir", help="Optional path to prebuilt index directory")
 
     # wsi diff
@@ -164,7 +166,221 @@ def main(argv: list[str] | None = None) -> int:
     p_mp = sub.add_parser("moipatch", help="Inspect, verify, or run a portable .moipatch file")
     p_mp.add_argument("moipatch_args", nargs=argparse.REMAINDER, help="Arguments passed to python -m wsi.moipatch")
 
+    # wsi xray
+    p_xr = sub.add_parser("xray", help="Scan a model checkpoint into a compact WSI X-ray JSON chart or summarize an atlas")
+    p_xr.add_argument("model_dir", nargs="?", default=None, help="Path or HF repo ID of checkpoint to scan")
+    p_xr.add_argument("-o", "--out", default=None, help="Output JSON path")
+    p_xr.add_argument("--probes", default=None, help="Optional frozen probe pack JSON path")
+    p_xr.add_argument("--dtype", default="auto", choices=["auto", "bfloat16", "float16", "float32"])
+    p_xr.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
+    p_xr.add_argument("--bs", type=int, default=16, help="Batch size for prefill/microgen (default: 16)")
+    p_xr.add_argument("--loop-max-new", type=int, default=384, help="Max tokens for loop stress generation (default: 384)")
+    p_xr.add_argument("--skip-generation", action="store_true", help="Skip autoregressive generation stages")
+    p_xr.add_argument("--summarize-dir", default=None, help="Aggregate all *.xray.json files in this directory")
+
+    # wsi delta-xray
+    p_dx = sub.add_parser(
+        "delta-xray",
+        help="Scan a (before -> after) checkpoint transition into a compact .delta.xray.json chart or summarize an atlas",
+    )
+    p_dx.add_argument("before_dir", nargs="?", default=None, help="Path or HF repo ID of before checkpoint")
+    p_dx.add_argument("after_dir", nargs="?", default=None, help="Path or HF repo ID of after checkpoint")
+    p_dx.add_argument("-o", "--out", default=None, help="Output JSON path")
+    p_dx.add_argument("--pair-id", default=None, help="Identifier for the delta pair")
+    p_dx.add_argument("--transition-type", default="custom", help="Transition label (e.g. sft, dpo, rlvr, math_midtrain)")
+    p_dx.add_argument("--family", default="custom", help="Model family label")
+    p_dx.add_argument("--probes", default=None, help="Optional frozen probe pack JSON path")
+    p_dx.add_argument("--dtype", default="auto", choices=["auto", "bfloat16", "float16", "float32"])
+    p_dx.add_argument("--device", default="auto", choices=["auto", "cuda", "cpu"])
+    p_dx.add_argument("--bs", type=int, default=16, help="Batch size for prefill/microgen (default: 16)")
+    p_dx.add_argument("--loop-max-new", type=int, default=384, help="Max tokens for loop stress generation (default: 384)")
+    p_dx.add_argument("--skip-generation", action="store_true", help="Skip autoregressive generation stages")
+    p_dx.add_argument("--no-attribution", action="store_true", help="Skip trapezoidal gradient attribution")
+    p_dx.add_argument("--summarize-dir", default=None, help="Aggregate all *.delta.xray.json files in this directory")
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "delta-xray":
+        import gc
+        import torch
+        from .delta_xray import (
+            accumulate_domain_grad_dots,
+            assemble_delta_attribution,
+            build_delta_xray_card,
+            build_domain_calibration_seqs,
+            capture_domain_probe_state,
+            compare_domain_probe_states,
+            compute_weight_and_spectral_diff,
+            format_compact_delta_xray_json,
+            save_delta_xray_json,
+            scan_delta_xray,
+            summarize_delta_xray_atlas,
+        )
+        from .xray import _discover_xray_structure, scan_model_xray
+        from .xray_probes import build_frozen_probe_pack, load_frozen_probe_pack
+        import time
+
+        if args.summarize_dir:
+            summary = summarize_delta_xray_atlas(args.summarize_dir)
+            txt = json.dumps(summary, indent=2, ensure_ascii=False)
+            if args.out:
+                out_p = Path(args.out)
+                out_p.parent.mkdir(parents=True, exist_ok=True)
+                out_p.write_text(txt, encoding="utf-8")
+            print(txt)
+            return 0
+        if not args.before_dir or not args.after_dir:
+            parser.error("delta-xray requires <before_dir> <after_dir> unless --summarize-dir is set")
+
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        t0 = time.perf_counter()
+        use_cuda = args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available())
+        dev = torch.device("cuda" if use_cuda else "cpu")
+        if args.dtype == "auto":
+            dt: Any = torch.bfloat16 if (use_cuda and torch.cuda.is_bf16_supported()) else (torch.float16 if use_cuda else torch.float32)
+        else:
+            dt = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[args.dtype]
+
+        def _load_m(mpath: str):
+            try:
+                return AutoModelForCausalLM.from_pretrained(mpath, dtype=dt, trust_remote_code=True).to(dev).eval()
+            except TypeError:
+                return AutoModelForCausalLM.from_pretrained(mpath, torch_dtype=dt, trust_remote_code=True).to(dev).eval()
+
+        pack = load_frozen_probe_pack(args.probes) if args.probes else build_frozen_probe_pack(use_hf_datasets=False)
+        tok_b = AutoTokenizer.from_pretrained(args.before_dir, trust_remote_code=True)
+        tok_a = AutoTokenizer.from_pretrained(args.after_dir, trust_remote_code=True)
+        both_local_sf = bool(list(Path(args.before_dir).glob("*.safetensors")) and list(Path(args.after_dir).glob("*.safetensors")))
+        m_b = _load_m(args.before_dir)
+
+        if both_local_sf:
+            struct_b = _discover_xray_structure(m_b, tok_b, repo_id=str(args.before_dir))
+            n_layers = len(struct_b.blocks)
+            cb = scan_model_xray(
+                m_b, tok_b, repo_id=str(args.before_dir), probe_pack=pack, device=dev,
+                batch_size=args.bs, loop_max_new=args.loop_max_new, skip_generation=args.skip_generation,
+            )
+            dom_seqs = build_domain_calibration_seqs(tok_b, pack, max_length=256)
+            st_b = capture_domain_probe_state(m_b, dom_seqs, device=dev)
+            dots_b: dict[str, dict[str, float]] = {}
+            gnll_b: dict[str, float] = {}
+            pf_cost: dict[str, float] = {}
+            used_len = 128
+            if not args.no_attribution:
+                dots_b, gnll_b, pf_cost, used_len = accumulate_domain_grad_dots(
+                    m_b, args.after_dir, dom_seqs, sign=+1.0, device=dev, compute_prose_fisher=True
+                )
+            weight_diff, spectral_diff = compute_weight_and_spectral_diff(
+                args.before_dir, args.after_dir, struct_b, device=dev
+            )
+            del m_b
+            gc.collect()
+            if dev.type == "cuda":
+                torch.cuda.empty_cache()
+
+            m_a = _load_m(args.after_dir)
+            ca = scan_model_xray(
+                m_a, tok_a, repo_id=str(args.after_dir), probe_pack=pack, device=dev,
+                batch_size=args.bs, loop_max_new=args.loop_max_new, skip_generation=args.skip_generation,
+            )
+            domain_shifts = compare_domain_probe_states(st_b, m_a, dom_seqs, device=dev)
+            attr = None
+            if not args.no_attribution:
+                dots_a, gnll_a, _, _ = accumulate_domain_grad_dots(
+                    m_a, args.before_dir, dom_seqs, sign=-1.0, device=dev, max_len=used_len, compute_prose_fisher=False
+                )
+                attr = assemble_delta_attribution(dots_b, dots_a, gnll_b, gnll_a, pf_cost, n_layers, used_len)
+            del m_a
+            pid = args.pair_id or f"{Path(args.before_dir).name}__to__{Path(args.after_dir).name}"
+            card = build_delta_xray_card(
+                pair_id=pid,
+                before_repo=str(args.before_dir),
+                after_repo=str(args.after_dir),
+                transition_type=args.transition_type,
+                family=args.family,
+                struct_before=struct_b,
+                card_before=cb,
+                card_after=ca,
+                weight_diff=weight_diff,
+                spectral_diff=spectral_diff,
+                domain_shifts=domain_shifts,
+                attribution=attr,
+                probe_pack_sha256=str(pack.get("probe_pack_sha256", "")),
+                wall_s=time.perf_counter() - t0,
+            )
+        else:
+            m_a = _load_m(args.after_dir)
+            card = scan_delta_xray(
+                m_b,
+                m_a,
+                tok_b,
+                tok_a,
+                pair_id=args.pair_id,
+                before_repo=str(args.before_dir),
+                after_repo=str(args.after_dir),
+                transition_type=args.transition_type,
+                family=args.family,
+                probe_pack=pack,
+                device=dev,
+                batch_size=args.bs,
+                loop_max_new=args.loop_max_new,
+                skip_generation=args.skip_generation,
+                with_attribution=not args.no_attribution,
+            )
+
+        if args.out:
+            save_delta_xray_json(card, args.out)
+        print(format_compact_delta_xray_json(card), end="")
+        return 0
+
+    if args.cmd == "xray":
+        import torch
+        from .xray import format_compact_xray_json, save_xray_json, scan_model_xray, summarize_xray_atlas
+        from .xray_probes import load_frozen_probe_pack
+
+        if args.summarize_dir:
+            summary = summarize_xray_atlas(args.summarize_dir)
+            txt = json.dumps(summary, indent=2, ensure_ascii=False)
+            if args.out:
+                out_p = Path(args.out)
+                out_p.parent.mkdir(parents=True, exist_ok=True)
+                out_p.write_text(txt, encoding="utf-8")
+            print(txt)
+            return 0
+        if not args.model_dir:
+            parser.error("xray requires <model_dir> unless --summarize-dir is set")
+
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+
+        use_cuda = args.device == "cuda" or (args.device == "auto" and torch.cuda.is_available())
+        dev = torch.device("cuda" if use_cuda else "cpu")
+        if args.dtype == "auto":
+            dt: Any = torch.bfloat16 if (use_cuda and torch.cuda.is_bf16_supported()) else (torch.float16 if use_cuda else torch.float32)
+        else:
+            dt = {"bfloat16": torch.bfloat16, "float16": torch.float16, "float32": torch.float32}[args.dtype]
+
+        tok = AutoTokenizer.from_pretrained(args.model_dir, trust_remote_code=True)
+        try:
+            model = AutoModelForCausalLM.from_pretrained(args.model_dir, dtype=dt, trust_remote_code=True)
+        except TypeError:
+            model = AutoModelForCausalLM.from_pretrained(args.model_dir, torch_dtype=dt, trust_remote_code=True)
+        model = model.to(dev).eval()
+        pack = load_frozen_probe_pack(args.probes) if args.probes else None
+        card = scan_model_xray(
+            model,
+            tok,
+            repo_id=str(args.model_dir),
+            probe_pack=pack,
+            device=dev,
+            batch_size=args.bs,
+            loop_max_new=args.loop_max_new,
+            skip_generation=args.skip_generation,
+        )
+        if args.out:
+            save_xray_json(card, args.out)
+        print(format_compact_xray_json(card), end="")
+        return 0
 
     if args.cmd == "moipatch":
         from .moipatch import _main
@@ -261,6 +477,7 @@ def main(argv: list[str] | None = None) -> int:
             top_k_neurons=args.top_k_neurons,
             variant=args.variant,
             save_patch_path=args.out,
+            save_candidate_grid_dir=args.save_grid_dir,
         )
         print(json.dumps(out, indent=2))
 

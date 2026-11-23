@@ -29,6 +29,14 @@ from .compare import (
     transplant_compositional_and_chain,
     transplant_connected_chain,
 )
+from .delta_xray import (
+    compute_xray_card_delta,
+    format_compact_delta_xray_json,
+    load_delta_xray_json,
+    save_delta_xray_json,
+    scan_delta_xray,
+    summarize_delta_xray_atlas,
+)
 from .fisher import (
     FisherProfile,
     allocate_fisher_global,
@@ -84,6 +92,14 @@ from .tracer import (
     trace_direction_graph,
     verify_onset_suppression,
 )
+from .xray import (
+    format_compact_xray_json,
+    load_xray_json,
+    save_xray_json,
+    scan_model_xray,
+    summarize_xray_atlas,
+)
+from .xray_probes import build_frozen_probe_pack, load_frozen_probe_pack
 
 __all__ = [
     "ActivationIndex",
@@ -162,8 +178,21 @@ __all__ = [
     "find_mlp_down_projections",
     "load_index",
     "profile_column_fisher",
+    "build_frozen_probe_pack",
+    "compute_xray_card_delta",
+    "format_compact_delta_xray_json",
+    "format_compact_xray_json",
+    "load_delta_xray_json",
+    "load_frozen_probe_pack",
+    "load_xray_json",
     "register_moipatch_entry",
+    "save_delta_xray_json",
+    "save_xray_json",
+    "scan_delta_xray",
+    "scan_model_xray",
     "shard_memory_bank",
+    "summarize_delta_xray_atlas",
+    "summarize_xray_atlas",
     "transfer_edit",
     "transfer_transduction_edit",
     "transplant_compositional_and_chain",

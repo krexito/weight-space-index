@@ -355,13 +355,25 @@ class PatchHandle:
 
     def __init__(self, patch: MoIPatch, model, *, verify_fingerprint: bool = True):
         self.patch, self.model, self.active = patch, model, False
-        self.params, self.orig, self.new = [], [], []
-        for _full_name, mod in _resolve_model_modules(model, patch.edits, verify_fingerprint=verify_fingerprint):
-            e = patch.edits[len(self.params)]
+        order_names: list[str] = []
+        orig_by_name: dict[str, torch.Tensor] = {}
+        param_by_name: dict[str, torch.nn.Parameter] = {}
+        running_w: dict[str, torch.Tensor] = {}
+        self._edit_checks: list[tuple[torch.nn.Parameter, Edit]] = []
+        resolved = _resolve_model_modules(model, patch.edits, verify_fingerprint=verify_fingerprint)
+        for (full_name, mod), e in zip(resolved, patch.edits):
             p = mod.weight
-            self.params.append(p)
-            self.orig.append(p.detach().cpu().clone())
-            self.new.append(apply_edit(self.orig[-1], e.u, e.idx, e.alpha, e.v))
+            self._edit_checks.append((p, e))
+            if full_name not in orig_by_name:
+                orig = p.detach().cpu().clone()
+                order_names.append(full_name)
+                param_by_name[full_name] = p
+                orig_by_name[full_name] = orig
+                running_w[full_name] = orig
+            running_w[full_name] = apply_edit(running_w[full_name], e.u, e.idx, e.alpha, e.v)
+        self.params = [param_by_name[fn] for fn in order_names]
+        self.orig = [orig_by_name[fn] for fn in order_names]
+        self.new = [running_w[fn] for fn in order_names]
 
     def __enter__(self) -> "PatchHandle":
         return self
@@ -386,7 +398,7 @@ class PatchHandle:
 
     def fingerprint_ok(self) -> bool:
         return all(_sha256(p.detach().to(_DTYPES[e.base_dtype])) == e.base_sha256
-                   for p, e in zip(self.params, self.patch.edits) if e.base_sha256)
+                   for p, e in self._edit_checks if e.base_sha256)
 
 
 # ------------------------------------------------------------------ 1-line live routed runtime
