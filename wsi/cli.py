@@ -186,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     p_dx.add_argument("before_dir", nargs="?", default=None, help="Path or HF repo ID of before checkpoint")
     p_dx.add_argument("after_dir", nargs="?", default=None, help="Path or HF repo ID of after checkpoint")
     p_dx.add_argument("-o", "--out", default=None, help="Output JSON path")
+    p_dx.add_argument("--detail-out", default=None, help="Optional output path for Level-2 .delta.detail.json entry")
     p_dx.add_argument("--pair-id", default=None, help="Identifier for the delta pair")
     p_dx.add_argument("--transition-type", default="custom", help="Transition label (e.g. sft, dpo, rlvr, math_midtrain)")
     p_dx.add_argument("--family", default="custom", help="Model family label")
@@ -198,20 +199,66 @@ def main(argv: list[str] | None = None) -> int:
     p_dx.add_argument("--no-attribution", action="store_true", help="Skip trapezoidal gradient attribution")
     p_dx.add_argument("--summarize-dir", default=None, help="Aggregate all *.delta.xray.json files in this directory")
 
+    # wsi atlas
+    p_at = sub.add_parser(
+        "atlas",
+        help="Query or summarize the 3-Tome WSI Model Atlas (Tome 1 Static X-Ray, Tome 2 Delta X-Ray, Tome 3 Clinical History)",
+    )
+    p_at.add_argument("--atlas-dir", default=None, help="Path to 3-Tome Atlas directory (default: benchmarks/xray_atlas)")
+    p_at.add_argument("--summary", action="store_true", help="Print JSON summary of all 3 Tomes")
+    p_at.add_argument("--diagnose", default=None, help="Path to a target model .xray.json chart to match against all 3 Tomes")
+    p_at.add_argument("--pathology", default=None, help="Optional pathology focus (e.g. over_refusal, loops, sycophancy)")
+    p_at.add_argument("--top-k", type=int, default=4, help="Number of nearest Tome-1 neighbors (default: 4)")
+    p_at.add_argument("--json", action="store_true", help="Emit raw JSON instead of Markdown for --diagnose")
+    p_at.add_argument("-o", "--out", default=None, help="Optional output file path")
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "atlas":
+        from .atlas import DEFAULT_ATLAS_DIR, format_atlas_diagnosis, load_atlas, match_xray_neighbors
+        from .xray import load_xray_json
+
+        adir = Path(args.atlas_dir) if args.atlas_dir else DEFAULT_ATLAS_DIR
+        if args.diagnose:
+            target_card = load_xray_json(args.diagnose)
+            diag = match_xray_neighbors(target_card, adir, top_k=args.top_k, pathology=args.pathology)
+            out_txt = json.dumps(diag, indent=2, ensure_ascii=False) if args.json else format_atlas_diagnosis(diag)
+        else:
+            loaded = load_atlas(adir)
+            summary_payload = {
+                "schema": loaded["schema"],
+                "atlas_dir": loaded["atlas_dir"],
+                "n_tome1_models": len(loaded["tome1_cards"]),
+                "n_tome2_pairs": len(loaded["tome2_cards"]),
+                "n_tome3_records": loaded["tome3"].get("n_records"),
+                "tome1_models": [c.get("identity", {}).get("repo_id") for c in loaded["tome1_cards"]],
+                "tome2_pairs": [c.get("pair", {}).get("pair_id") for c in loaded["tome2_cards"]],
+                "tome3_models": sorted((loaded["tome3"].get("models") or {}).keys()),
+            }
+            out_txt = json.dumps(summary_payload, indent=2, ensure_ascii=False)
+        if args.out:
+            out_p = Path(args.out)
+            out_p.parent.mkdir(parents=True, exist_ok=True)
+            out_p.write_text(out_txt, encoding="utf-8")
+        print(out_txt)
+        return 0
 
     if args.cmd == "delta-xray":
         import gc
         import torch
         from .delta_xray import (
+            _discover_pytorch_bin_files,
             accumulate_domain_grad_dots,
             assemble_delta_attribution,
             build_delta_xray_card,
+            build_delta_xray_detail,
             build_domain_calibration_seqs,
             capture_domain_probe_state,
             compare_domain_probe_states,
+            compute_exact_layer_attribution,
             compute_weight_and_spectral_diff,
             format_compact_delta_xray_json,
+            save_delta_xray_detail_json,
             save_delta_xray_json,
             scan_delta_xray,
             summarize_delta_xray_atlas,
@@ -251,10 +298,22 @@ def main(argv: list[str] | None = None) -> int:
         pack = load_frozen_probe_pack(args.probes) if args.probes else build_frozen_probe_pack(use_hf_datasets=False)
         tok_b = AutoTokenizer.from_pretrained(args.before_dir, trust_remote_code=True)
         tok_a = AutoTokenizer.from_pretrained(args.after_dir, trust_remote_code=True)
-        both_local_sf = bool(list(Path(args.before_dir).glob("*.safetensors")) and list(Path(args.after_dir).glob("*.safetensors")))
-        m_b = _load_m(args.before_dir)
+        detail_dst: Path | None = None
+        if args.detail_out:
+            detail_dst = Path(args.detail_out)
+        elif args.out and str(args.out).endswith(".delta.xray.json"):
+            detail_dst = Path(str(args.out)[: -len(".delta.xray.json")] + ".delta.detail.json")
+        want_detail = detail_dst is not None
 
-        if both_local_sf:
+        def _has_local_ckpt(d_str: str) -> bool:
+            p_d = Path(d_str)
+            return p_d.is_dir() and bool(list(p_d.glob("*.safetensors")) or _discover_pytorch_bin_files(p_d))
+
+        both_local_ckpt = _has_local_ckpt(args.before_dir) and _has_local_ckpt(args.after_dir)
+        m_b = _load_m(args.before_dir)
+        detail_card: dict[str, Any] | None = None
+
+        if both_local_ckpt:
             struct_b = _discover_xray_structure(m_b, tok_b, repo_id=str(args.before_dir))
             n_layers = len(struct_b.blocks)
             cb = scan_model_xray(
@@ -271,9 +330,14 @@ def main(argv: list[str] | None = None) -> int:
                 dots_b, gnll_b, pf_cost, used_len = accumulate_domain_grad_dots(
                     m_b, args.after_dir, dom_seqs, sign=+1.0, device=dev, compute_prose_fisher=True
                 )
-            weight_diff, spectral_diff = compute_weight_and_spectral_diff(
-                args.before_dir, args.after_dir, struct_b, device=dev
+            ws_res = compute_weight_and_spectral_diff(
+                args.before_dir, args.after_dir, struct_b, device=dev, tok=tok_b, return_detail=want_detail
             )
+            if want_detail:
+                weight_diff, spectral_diff, ws_detail = ws_res  # type: ignore[misc]
+            else:
+                weight_diff, spectral_diff = ws_res  # type: ignore[misc]
+                ws_detail = {}
             del m_b
             gc.collect()
             if dev.type == "cuda":
@@ -286,11 +350,14 @@ def main(argv: list[str] | None = None) -> int:
             )
             domain_shifts = compare_domain_probe_states(st_b, m_a, dom_seqs, device=dev)
             attr = None
+            exact_attr = None
             if not args.no_attribution:
                 dots_a, gnll_a, _, _ = accumulate_domain_grad_dots(
                     m_a, args.before_dir, dom_seqs, sign=-1.0, device=dev, max_len=used_len, compute_prose_fisher=False
                 )
                 attr = assemble_delta_attribution(dots_b, dots_a, gnll_b, gnll_a, pf_cost, n_layers, used_len)
+                if want_detail:
+                    exact_attr = compute_exact_layer_attribution(dots_b, dots_a, gnll_b, gnll_a, pf_cost, n_layers)
             del m_a
             pid = args.pair_id or f"{Path(args.before_dir).name}__to__{Path(args.after_dir).name}"
             card = build_delta_xray_card(
@@ -309,9 +376,17 @@ def main(argv: list[str] | None = None) -> int:
                 probe_pack_sha256=str(pack.get("probe_pack_sha256", "")),
                 wall_s=time.perf_counter() - t0,
             )
+            if want_detail:
+                detail_card = build_delta_xray_detail(
+                    card=card,
+                    card_before=cb,
+                    card_after=ca,
+                    weight_spectral_detail=ws_detail,
+                    exact_attribution=exact_attr,
+                )
         else:
             m_a = _load_m(args.after_dir)
-            card = scan_delta_xray(
+            res_scan = scan_delta_xray(
                 m_b,
                 m_a,
                 tok_b,
@@ -327,10 +402,17 @@ def main(argv: list[str] | None = None) -> int:
                 loop_max_new=args.loop_max_new,
                 skip_generation=args.skip_generation,
                 with_attribution=not args.no_attribution,
+                return_detail=want_detail,
             )
+            if want_detail:
+                card, detail_card = res_scan  # type: ignore[misc]
+            else:
+                card = res_scan  # type: ignore[assignment]
 
         if args.out:
             save_delta_xray_json(card, args.out)
+        if detail_dst is not None and detail_card is not None:
+            save_delta_xray_detail_json(detail_card, detail_dst)
         print(format_compact_delta_xray_json(card), end="")
         return 0
 

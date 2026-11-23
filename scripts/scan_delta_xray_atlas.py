@@ -45,15 +45,20 @@ from scan_xray_atlas import (  # noqa: E402
     repo_slug,
 )
 from wsi.delta_xray import (  # noqa: E402
+    DELTA_XRAY_DETAIL_SCHEMA_VERSION,
     DELTA_XRAY_SCHEMA_VERSION,
     accumulate_domain_grad_dots,
     assemble_delta_attribution,
     build_delta_xray_card,
+    build_delta_xray_detail,
     build_domain_calibration_seqs,
     capture_domain_probe_state,
     compare_domain_probe_states,
+    compute_exact_layer_attribution,
     compute_weight_and_spectral_diff,
+    load_delta_xray_detail_json,
     load_delta_xray_json,
+    save_delta_xray_detail_json,
     save_delta_xray_json,
     summarize_delta_xray_atlas,
 )
@@ -152,6 +157,16 @@ def _is_valid_delta_xray_file(path: Path) -> bool:
     try:
         data = load_delta_xray_json(path)
         return data.get("schema") == DELTA_XRAY_SCHEMA_VERSION and isinstance(data.get("pair"), dict)
+    except Exception:
+        return False
+
+
+def _is_valid_delta_detail_file(path: Path) -> bool:
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+    try:
+        data = load_delta_xray_detail_json(path)
+        return data.get("schema") == DELTA_XRAY_DETAIL_SCHEMA_VERSION and isinstance(data.get("pair"), dict)
     except Exception:
         return False
 
@@ -334,9 +349,14 @@ def main(argv: list[str] | None = None) -> int:
         pending: list[dict[str, str]] = []
         for p in fam_pairs:
             dst = out_dir / f"{p['pair_id']}.delta.xray.json"
-            if not args.force and _is_valid_delta_xray_file(dst):
-                print(f"[SKIP cached] {p['pair_id']} ({dst.stat().st_size} B)", flush=True)
+            dst_det = out_dir / f"{p['pair_id']}.delta.detail.json"
+            if not args.force and _is_valid_delta_xray_file(dst) and _is_valid_delta_detail_file(dst_det):
+                print(
+                    f"[SKIP cached] {p['pair_id']} (card={dst.stat().st_size} B, detail={dst_det.stat().st_size} B)",
+                    flush=True,
+                )
                 _sync_file(dst, sync_dir)
+                _sync_file(dst_det, sync_dir)
             else:
                 pending.append(p)
         if not pending:
@@ -415,8 +435,8 @@ def main(argv: list[str] | None = None) -> int:
                             partner_dir = fam_dirs[p["after"]]
                             try:
                                 t_pair = time.perf_counter()
-                                weight_diff, spectral_diff = compute_weight_and_spectral_diff(
-                                    repo_dir, partner_dir, struct_b, device=dev
+                                weight_diff, spectral_diff, ws_detail = compute_weight_and_spectral_diff(  # type: ignore[misc]
+                                    repo_dir, partner_dir, struct_b, device=dev, tok=tok, return_detail=True
                                 )
                                 dots_b: dict[str, dict[str, float]] = {}
                                 gnll_b: dict[str, float] = {}
@@ -440,6 +460,7 @@ def main(argv: list[str] | None = None) -> int:
                                     "st_b": st_b,
                                     "weight_diff": weight_diff,
                                     "spectral_diff": spectral_diff,
+                                    "ws_detail": ws_detail,
                                     "dots_b": dots_b,
                                     "gnll_b": gnll_b,
                                     "pf_cost": pf_cost,
@@ -472,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
                             dom_seqs = st["dom_seqs"]
                             domain_shifts = compare_domain_probe_states(st.pop("st_b"), model, dom_seqs, device=dev)
                             attr = None
+                            exact_attr = None
                             if not args.no_attribution:
                                 dots_a, gnll_a, _, _ = accumulate_domain_grad_dots(
                                     model,
@@ -490,6 +512,14 @@ def main(argv: list[str] | None = None) -> int:
                                     st["pf_cost"],
                                     int(st["n_layers"]),
                                     int(st["used_len"]),
+                                )
+                                exact_attr = compute_exact_layer_attribution(
+                                    st["dots_b"],
+                                    dots_a,
+                                    st["gnll_b"],
+                                    gnll_a,
+                                    st["pf_cost"],
+                                    int(st["n_layers"]),
                                 )
                             wall_s = float(st["t_accum"]) + (time.perf_counter() - t_a0)
                             # Reconstruct minimal structure wrapper for identity fields without pinning modules.
@@ -515,15 +545,27 @@ def main(argv: list[str] | None = None) -> int:
                                 wall_s=wall_s,
                                 wsi_commit=wsi_commit,
                             )
+                            detail_card = build_delta_xray_detail(
+                                card=delta_card,
+                                card_before=repo_cards[p["before"]],
+                                card_after=card,
+                                weight_spectral_detail=st.get("ws_detail") or {},
+                                exact_attribution=exact_attr,
+                            )
                             dst = out_dir / f"{pid}.delta.xray.json"
+                            dst_det = out_dir / f"{pid}.delta.detail.json"
                             save_delta_xray_json(delta_card, dst)
+                            save_delta_xray_detail_json(detail_card, dst_det)
                             _sync_file(dst, sync_dir)
+                            _sync_file(dst_det, sync_dir)
                             errors.pop(pid, None)
                             _atomic_write_text(errors_path, json.dumps(errors, indent=2))
                             _sync_file(errors_path, sync_dir)
                             sz = dst.stat().st_size
+                            sz_det = dst_det.stat().st_size
                             print(
-                                f"    [PAIR DONE] {pid}: {sz} B | rel_fro={delta_card['weight_diff']['total_rel_fro']} | "
+                                f"    [PAIR DONE] {pid}: card={sz} B, detail={sz_det} B | "
+                                f"rel_fro={delta_card['weight_diff']['total_rel_fro']} | "
                                 f"rank80={delta_card['spectral_diff']['mlp_out'].get('rank80_median')} | "
                                 f"wall={wall_s:.1f}s",
                                 flush=True,

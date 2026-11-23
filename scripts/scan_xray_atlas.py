@@ -159,6 +159,18 @@ CLINICAL_HISTORY_SEEDS: dict[str, list[dict[str, Any]]] = {
             "metrics": {"recovered": 0.468, "toxic_kept": 0.979, "new_template_rate": 0.0},
             "caveat": "Fixing a single prior recipe anchored agent v1 below the 50% recovery gate.",
         },
+        {
+            "pathology": "over_refusal",
+            "strategy": "null_space_and_cleaned_direction_ablation",
+            "target": {"role": "all_layers", "agent": "cleaned_dir"},
+            "outcome": "fail",
+            "metrics": {"recovered": 0.277, "toxic_kept": 0.968, "new_template_rate": 0.0},
+            "caveat": (
+                "Null-space projection kills recovery; cleaning the refusal direction eliminates the 41% "
+                "exam-solver opening template (0% new templates) but needs mid-depth localization or alpha "
+                "re-tuning to cross the 50% recovery gate without editing late prose-sensitive layers."
+            ),
+        },
     ],
 }
 

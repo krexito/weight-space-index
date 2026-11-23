@@ -25,6 +25,7 @@ from .xray import (
     DEPTH_BINS,
     _ModelStructure,
     _discover_xray_structure,
+    _effective_unembed_tensor,
     _extract_flat_biomarkers,
     _forward_logits,
     _gini,
@@ -39,6 +40,7 @@ from .xray import (
 from .xray_probes import CALIBRATION_PASSAGES, build_frozen_probe_pack
 
 DELTA_XRAY_SCHEMA_VERSION = "wsi_delta_xray_v1"
+DELTA_XRAY_DETAIL_SCHEMA_VERSION = "wsi_delta_xray_detail_v1"
 
 ROLE_ORDER: tuple[str, ...] = (
     "mlp_out",
@@ -49,6 +51,23 @@ ROLE_ORDER: tuple[str, ...] = (
     "moe_router",
     "norms",
     "embed_head",
+    "other",
+)
+SUBMATRIX_ORDER: tuple[str, ...] = (
+    "down_proj",
+    "gate_proj",
+    "up_proj",
+    "gate_up_proj",
+    "o_proj",
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "qkv_proj",
+    "ssm_conv",
+    "moe_router",
+    "norms",
+    "embed_tokens",
+    "lm_head",
     "other",
 )
 MLP_ROLES = {"mlp_in", "mlp_out", "moe_router"}
@@ -123,6 +142,59 @@ def classify_param_role(param_name: str, shape: tuple[int, ...] | None = None) -
     if any(tok in p for tok in ("gate_proj", "up_proj", "gate_up_proj", "fc1", "c_fc", "linear_fc1")):
         return "mlp_in"
     return "other"
+
+
+def classify_submatrix_tag(param_name: str, shape: tuple[int, ...] | None = None) -> str:
+    """Classify a parameter tensor into a fine-grained projection tag for Level-2 deep inspection."""
+    p = param_name.lower()
+    role = classify_param_role(param_name, shape)
+    if role == "norms":
+        return "norms"
+    if role == "moe_router":
+        return "moe_router"
+    if role == "ssm_conv":
+        return "ssm_conv"
+    if role == "embed_head":
+        return "lm_head" if "lm_head" in p else "embed_tokens"
+    if role == "attn_out":
+        return "o_proj"
+    if role == "attn_qkv":
+        if "q_proj" in p or ".q." in p or p.endswith(".q.weight"):
+            return "q_proj"
+        if "k_proj" in p or ".k." in p or p.endswith(".k.weight"):
+            return "k_proj"
+        if "v_proj" in p or ".v." in p or p.endswith(".v.weight"):
+            return "v_proj"
+        return "qkv_proj"
+    if role == "mlp_out":
+        return "down_proj"
+    if role == "mlp_in":
+        if "gate_up_proj" in p:
+            return "gate_up_proj"
+        if "gate_proj" in p or ".w1." in p or p.endswith(".w1") or p.endswith(".w1.weight"):
+            return "gate_proj"
+        if "up_proj" in p or ".w3." in p or p.endswith(".w3") or p.endswith(".w3.weight"):
+            return "up_proj"
+        return "gate_up_proj"
+    return "other"
+
+
+def _decode_tok_safe(tok: Any, tid: int) -> str:
+    if tok is None:
+        return f"#{int(tid)}"
+    try:
+        s = tok.decode([int(tid)], skip_special_tokens=False)
+        if isinstance(s, str) and s:
+            return s
+    except Exception:
+        pass
+    try:
+        s2 = tok.convert_ids_to_tokens(int(tid))
+        if isinstance(s2, str) and s2:
+            return s2
+    except Exception:
+        pass
+    return f"#{int(tid)}"
 
 
 def _discover_pytorch_bin_files(root: Path) -> list[Path]:
@@ -559,6 +631,10 @@ def _analyze_matrix_delta(
     hidden_size: int,
     is_conv1d: bool,
     dev: torch.device,
+    u_eff: torch.Tensor | None = None,
+    tok: Any | None = None,
+    n_heads: int | None = None,
+    top_k_tokens: int = 5,
 ) -> dict[str, Any] | None:
     if W_before.dim() != 2 or W_after.dim() != 2 or W_before.shape != W_after.shape:
         return None
@@ -632,7 +708,7 @@ def _analyze_matrix_delta(
         base_ov = None
         base_ov_ratio = None
 
-    return {
+    res: dict[str, Any] = {
         "erank_ratio": float(erank_ratio),
         "energy_r1": energy_r1,
         "energy_r8": energy_r8,
@@ -645,7 +721,42 @@ def _analyze_matrix_delta(
         "top_delta_amp_ratio": float(amp_ratio) if amp_ratio is not None else None,
         "base_top32_overlap": float(base_ov) if base_ov is not None else None,
         "base_top32_overlap_vs_chance": float(base_ov_ratio) if base_ov_ratio is not None else None,
+        "rel_fro": float(dw_norm / max(wb_norm, 1e-12)),
     }
+
+    if u_eff is not None and u_eff.dim() == 2 and u_eff.shape[1] == r and u_eff.shape[0] >= 2:
+        u_top = U_k[:, -1]
+        proj_d = u_top @ dW
+        proj_a = u_top @ Wa
+        if float((proj_a * proj_d).sum().item()) < 0.0:
+            u_top = -u_top
+        scores = u_eff.to(device=u_top.device, dtype=torch.float32) @ u_top
+        k_tok = min(int(top_k_tokens), int(scores.shape[0]))
+        if k_tok > 0:
+            p_vals, p_ids = scores.topk(k_tok)
+            s_vals, s_ids = (-scores).topk(k_tok)
+            res["top_promoted_tokens"] = [
+                {"token_id": int(tid), "token": _decode_tok_safe(tok, int(tid)), "score": float(val)}
+                for val, tid in zip(p_vals.cpu().tolist(), p_ids.cpu().tolist())
+            ]
+            res["top_suppressed_tokens"] = [
+                {"token_id": int(tid), "token": _decode_tok_safe(tok, int(tid)), "score": float(-val)}
+                for val, tid in zip(s_vals.cpu().tolist(), s_ids.cpu().tolist())
+            ]
+
+    if n_heads is not None and isinstance(n_heads, int) and n_heads > 1 and c % n_heads == 0:
+        hd = c // n_heads
+        dW_h = dW.reshape(r, n_heads, hd)
+        Wb_h = Wb.reshape(r, n_heads, hd)
+        head_d_sq = dW_h.pow(2).sum(dim=(0, 2))
+        head_b_sq = Wb_h.pow(2).sum(dim=(0, 2))
+        head_rel = (head_d_sq.sqrt() / head_b_sq.sqrt().clamp_min(1e-12)).cpu().tolist()
+        head_share = (head_d_sq / max(tot_e, 1e-12)).cpu().tolist()
+        res["head_rel_fro"] = [float(x) for x in head_rel]
+        res["head_energy_share"] = [float(x) for x in head_share]
+        res["head_gini"] = float(_gini(head_d_sq.sqrt()))
+
+    return res
 
 
 def _aggregate_spectral_group(
@@ -698,7 +809,9 @@ def compute_weight_and_spectral_diff(
     *,
     device: torch.device | str | None = None,
     max_moe_experts_per_layer: int = 4,
-) -> tuple[dict[str, Any], dict[str, Any]]:
+    tok: Any | None = None,
+    return_detail: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any]] | tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """Stream parameters across `(before, after)` to measure norm diff curves and spectral writer rank."""
     dev = torch.device(device) if device is not None else torch.device("cuda" if torch.cuda.is_available() else "cpu")
     own_b = not isinstance(before_source, _WeightSource)
@@ -709,6 +822,15 @@ def compute_weight_and_spectral_diff(
     n_layers = len(struct_before.blocks)
     role_d_sq = {r: 0.0 for r in ROLE_ORDER}
     role_b_sq = {r: 0.0 for r in ROLE_ORDER}
+    submat_d_sq = {s: 0.0 for s in SUBMATRIX_ORDER}
+    submat_b_sq = {s: 0.0 for s in SUBMATRIX_ORDER}
+    submat_counts = {s: 0 for s in SUBMATRIX_ORDER}
+    layer_submat_d_sq: list[dict[str, float]] = [{} for _ in range(n_layers)]
+    layer_submat_b_sq: list[dict[str, float]] = [{} for _ in range(n_layers)]
+    moe_expert_d_sq: list[dict[int, float]] = [{} for _ in range(n_layers)]
+    moe_expert_b_sq: list[dict[int, float]] = [{} for _ in range(n_layers)]
+    top_embed_tokens: list[dict[str, Any]] = []
+
     layer_d_sq = [0.0] * n_layers
     layer_b_sq = [0.0] * n_layers
     mlp_d_sq = [0.0] * n_layers
@@ -745,6 +867,49 @@ def compute_weight_and_spectral_diff(
             dW = wa - wb
             d_sq = float((dW * dW).sum().item())
             b_sq = float((wb * wb).sum().item())
+
+            role = classify_param_role(k, tuple(sb))
+            submat = classify_submatrix_tag(k, tuple(sb))
+            li = extract_layer_idx(k)
+
+            if return_detail:
+                if li is not None and 0 <= li < n_layers:
+                    nk_clean = _strip_wrapper_prefixes(k)
+                    m_exp = _UNFUSED_EXPERT_RE.match(nk_clean)
+                    if m_exp:
+                        e_idx = int(m_exp.group("idx"))
+                        moe_expert_d_sq[li][e_idx] = moe_expert_d_sq[li].get(e_idx, 0.0) + d_sq
+                        moe_expert_b_sq[li][e_idx] = moe_expert_b_sq[li].get(e_idx, 0.0) + b_sq
+                    elif "expert" in k.lower() and wb.dim() == 3 and wb.shape[0] >= 2:
+                        d_e = (dW * dW).sum(dim=(1, 2)).cpu().tolist()
+                        b_e = (wb * wb).sum(dim=(1, 2)).cpu().tolist()
+                        for e_idx, (dv_e, bv_e) in enumerate(zip(d_e, b_e)):
+                            moe_expert_d_sq[li][e_idx] = moe_expert_d_sq[li].get(e_idx, 0.0) + float(dv_e)
+                            moe_expert_b_sq[li][e_idx] = moe_expert_b_sq[li].get(e_idx, 0.0) + float(bv_e)
+                if (
+                    role == "embed_head"
+                    and not top_embed_tokens
+                    and wb.dim() == 2
+                    and wb.shape[0] > wb.shape[1]
+                    and d_sq > 1e-12
+                ):
+                    row_d = dW.norm(dim=1)
+                    row_b = wb.norm(dim=1).clamp_min(1e-6)
+                    row_rel = row_d / row_b
+                    k_emb = min(10, int((row_d > 1e-6).sum().item()))
+                    if k_emb > 0:
+                        vals, tids = row_rel.topk(k_emb)
+                        top_embed_tokens = [
+                            {
+                                "token_id": int(tid),
+                                "token": _decode_tok_safe(tok, int(tid)),
+                                "rel_fro": float(rv),
+                                "delta_l2": float(row_d[int(tid)].item()),
+                                "source_param": submat,
+                            }
+                            for rv, tid in zip(vals.cpu().tolist(), tids.cpu().tolist())
+                        ]
+
             del wb, wa, dW
 
             n_matched += 1
@@ -753,14 +918,17 @@ def compute_weight_and_spectral_diff(
             total_d_sq += d_sq
             total_b_sq += b_sq
 
-            role = classify_param_role(k, tuple(sb))
             role_d_sq[role] += d_sq
             role_b_sq[role] += b_sq
+            submat_d_sq[submat] = submat_d_sq.get(submat, 0.0) + d_sq
+            submat_b_sq[submat] = submat_b_sq.get(submat, 0.0) + b_sq
+            submat_counts[submat] = submat_counts.get(submat, 0) + 1
 
-            li = extract_layer_idx(k)
             if li is not None and 0 <= li < n_layers:
                 layer_d_sq[li] += d_sq
                 layer_b_sq[li] += b_sq
+                layer_submat_d_sq[li][submat] = layer_submat_d_sq[li].get(submat, 0.0) + d_sq
+                layer_submat_b_sq[li][submat] = layer_submat_b_sq[li].get(submat, 0.0) + b_sq
                 if role in MLP_ROLES:
                     mlp_d_sq[li] += d_sq
                     mlp_b_sq[li] += b_sq
@@ -833,6 +1001,9 @@ def compute_weight_and_spectral_diff(
         }
 
         # Spectral & base-subspace analysis on writer matrices
+        u_eff = _effective_unembed_tensor(struct_before, dev, center_vocab=True) if return_detail else None
+        n_heads_cfg = struct_before.identity.get("n_heads") if isinstance(struct_before.identity, Mapping) else None
+
         mlp_targets, mixer_targets = _collect_block_target_names(struct_before, max_moe_experts_per_layer)
         mlp_per_layer: list[list[dict[str, Any]] | None] = [None] * n_layers
         mix_per_layer: list[list[dict[str, Any]] | None] = [None] * n_layers
@@ -851,7 +1022,13 @@ def compute_weight_and_spectral_diff(
                 if wb_t is None or wa_t is None or wb_t.shape != wa_t.shape:
                     continue
                 st = _analyze_matrix_delta(
-                    wb_t, wa_t, hidden_size=struct_before.hidden_size, is_conv1d=is_conv, dev=dev
+                    wb_t,
+                    wa_t,
+                    hidden_size=struct_before.hidden_size,
+                    is_conv1d=is_conv,
+                    dev=dev,
+                    u_eff=u_eff if return_detail else None,
+                    tok=tok if return_detail else None,
                 )
                 if st is not None:
                     grp_stats.append(st)
@@ -863,8 +1040,17 @@ def compute_weight_and_spectral_diff(
             wb_t, wa_t = src_b.get(pname), src_a.get(pname)
             if wb_t is None or wa_t is None or wb_t.shape != wa_t.shape:
                 continue
+            blk_kind = struct_before.blocks[li].mixer_kind if 0 <= li < len(struct_before.blocks) else ""
+            nh_use = n_heads_cfg if (return_detail and blk_kind in ("full_attn", "shared_attn")) else None
             st = _analyze_matrix_delta(
-                wb_t, wa_t, hidden_size=struct_before.hidden_size, is_conv1d=is_conv, dev=dev
+                wb_t,
+                wa_t,
+                hidden_size=struct_before.hidden_size,
+                is_conv1d=is_conv,
+                dev=dev,
+                u_eff=u_eff if return_detail else None,
+                tok=tok if return_detail else None,
+                n_heads=nh_use,
             )
             if st is not None:
                 mix_per_layer[li] = [st]
@@ -874,6 +1060,228 @@ def compute_weight_and_spectral_diff(
             "mlp_out": _aggregate_spectral_group(mlp_per_layer, n_mlp_mats),
             "mixer_out": _aggregate_spectral_group(mix_per_layer, n_mix_mats),
         }
+
+        if not return_detail:
+            return weight_diff, spectral_diff
+
+        # Assemble Level-2 high-resolution weight, spectral, head/expert, and semantic token detail
+        global_submat: dict[str, dict[str, Any]] = {}
+        for s in SUBMATRIX_ORDER:
+            if submat_b_sq.get(s, 0.0) > 1e-12 or submat_d_sq.get(s, 0.0) > 1e-18:
+                global_submat[s] = {
+                    "rel_fro": math.sqrt(submat_d_sq[s]) / max(math.sqrt(submat_b_sq[s]), 1e-12),
+                    "energy_share": (submat_d_sq[s] / total_d_sq) if total_d_sq > 1e-18 else 0.0,
+                    "n_tensors": int(submat_counts.get(s, 0)),
+                }
+
+        def _summarize_layer_spec(grp: list[dict[str, Any]] | None) -> dict[str, Any] | None:
+            if not grp:
+                return None
+            keys_mean = (
+                "rel_fro",
+                "erank_ratio",
+                "energy_r1",
+                "energy_r8",
+                "energy_r32",
+                "energy_r64",
+                "col_gini",
+                "cos_with_base",
+                "top_delta_amp_ratio",
+                "base_top32_overlap_vs_chance",
+            )
+            out_s: dict[str, Any] = {}
+            for k_m in keys_mean:
+                vals = [float(g[k_m]) for g in grp if g.get(k_m) is not None and math.isfinite(float(g[k_m]))]
+                out_s[k_m] = float(np.mean(vals)) if vals else None
+            for k_med in ("rank80", "rank90"):
+                vals = [float(g[k_med]) for g in grp if g.get(k_med) is not None and math.isfinite(float(g[k_med]))]
+                out_s[k_med] = float(np.median(vals)) if vals else None
+            return out_s
+
+        per_layer_detail: list[dict[str, Any]] = []
+        all_heads: list[dict[str, Any]] = []
+        per_layer_head_summary: list[dict[str, Any]] = []
+        all_experts: list[dict[str, Any]] = []
+        per_layer_expert_summary: list[dict[str, Any]] = []
+        n_near_frozen_experts = 0
+        mlp_sem_candidates: list[tuple[float, dict[str, Any]]] = []
+        mix_sem_candidates: list[tuple[float, dict[str, Any]]] = []
+
+        denom_l = max(n_layers - 1, 1)
+        for li in range(n_layers):
+            blk = struct_before.blocks[li] if li < len(struct_before.blocks) else None
+            d_val = round(li / denom_l, 3)
+            l_d = layer_d_sq[li]
+            sub_dict: dict[str, dict[str, float]] = {}
+            for s in SUBMATRIX_ORDER:
+                sd_v = layer_submat_d_sq[li].get(s, 0.0)
+                sb_v = layer_submat_b_sq[li].get(s, 0.0)
+                if sb_v > 1e-12 or sd_v > 1e-18:
+                    sub_dict[s] = {
+                        "rel_fro": math.sqrt(sd_v) / max(math.sqrt(sb_v), 1e-12),
+                        "layer_energy_share": (sd_v / l_d) if l_d > 1e-18 else 0.0,
+                    }
+
+            mlp_grp = mlp_per_layer[li]
+            mix_grp = mix_per_layer[li]
+            per_layer_detail.append(
+                {
+                    "layer": int(li),
+                    "depth": d_val,
+                    "mixer_kind": blk.mixer_kind if blk is not None else "unknown",
+                    "is_moe": bool(blk.is_moe) if blk is not None else False,
+                    "rel_fro": layer_rel[li],
+                    "energy_share": layer_share[li],
+                    "mlp_rel_fro": mlp_rel[li],
+                    "mixer_rel_fro": mix_rel[li],
+                    "norm_rel_fro": norm_rel[li],
+                    "submatrices": sub_dict,
+                    "spectral_mlp_out": _summarize_layer_spec(mlp_grp),
+                    "spectral_mixer_out": _summarize_layer_spec(mix_grp),
+                }
+            )
+
+            if mlp_grp and mlp_grp[0].get("top_promoted_tokens"):
+                rf_m = float(mlp_grp[0].get("rel_fro") or (mlp_rel[li] or 0.0))
+                mlp_sem_candidates.append(
+                    (
+                        rf_m,
+                        {
+                            "layer": int(li),
+                            "depth": d_val,
+                            "rel_fro": rf_m,
+                            "top_promoted_tokens": mlp_grp[0]["top_promoted_tokens"],
+                            "top_suppressed_tokens": mlp_grp[0].get("top_suppressed_tokens", []),
+                        },
+                    )
+                )
+
+            if mix_grp:
+                st_m = mix_grp[0]
+                if st_m.get("top_promoted_tokens"):
+                    rf_x = float(st_m.get("rel_fro") or (mix_rel[li] or 0.0))
+                    mix_sem_candidates.append(
+                        (
+                            rf_x,
+                            {
+                                "layer": int(li),
+                                "depth": d_val,
+                                "rel_fro": rf_x,
+                                "top_promoted_tokens": st_m["top_promoted_tokens"],
+                                "top_suppressed_tokens": st_m.get("top_suppressed_tokens", []),
+                            },
+                        )
+                    )
+                h_rels = st_m.get("head_rel_fro")
+                h_shares = st_m.get("head_energy_share")
+                if isinstance(h_rels, list) and h_rels and isinstance(h_shares, list):
+                    arr_r = np.asarray(h_rels, dtype=np.float64)
+                    max_hi = int(np.argmax(arr_r))
+                    min_hi = int(np.argmin(arr_r))
+                    per_layer_head_summary.append(
+                        {
+                            "layer": int(li),
+                            "depth": d_val,
+                            "n_heads": len(h_rels),
+                            "head_gini": st_m.get("head_gini"),
+                            "max_head": max_hi,
+                            "max_head_rel_fro": float(arr_r[max_hi]),
+                            "min_head": min_hi,
+                            "min_head_rel_fro": float(arr_r[min_hi]),
+                            "head_rel_fro": [float(x) for x in h_rels],
+                        }
+                    )
+                    for hi, (hr, hs) in enumerate(zip(h_rels, h_shares)):
+                        all_heads.append(
+                            {
+                                "layer": int(li),
+                                "depth": d_val,
+                                "head": int(hi),
+                                "rel_fro": float(hr),
+                                "layer_energy_share": float(hs),
+                            }
+                        )
+
+            exp_d_map = moe_expert_d_sq[li]
+            exp_b_map = moe_expert_b_sq[li]
+            if exp_d_map and exp_b_map:
+                e_ids = sorted(exp_d_map.keys())
+                e_rels: list[tuple[int, float, float]] = []
+                tot_ed = sum(exp_d_map.values())
+                for ei in e_ids:
+                    ed = exp_d_map[ei]
+                    eb = exp_b_map.get(ei, 0.0)
+                    rf_e = math.sqrt(ed) / max(math.sqrt(eb), 1e-12) if eb > 1e-12 else 0.0
+                    sh_e = (ed / tot_ed) if tot_ed > 1e-18 else 0.0
+                    if rf_e < 1e-4:
+                        n_near_frozen_experts += 1
+                    e_rels.append((ei, rf_e, sh_e))
+                    all_experts.append(
+                        {
+                            "layer": int(li),
+                            "depth": d_val,
+                            "expert": int(ei),
+                            "rel_fro": float(rf_e),
+                            "layer_energy_share": float(sh_e),
+                        }
+                    )
+                rf_vec = torch.tensor([x[1] for x in e_rels], dtype=torch.float32)
+                e_sorted = sorted(e_rels, key=lambda t: t[1], reverse=True)
+                per_layer_expert_summary.append(
+                    {
+                        "layer": int(li),
+                        "depth": d_val,
+                        "n_experts": len(e_rels),
+                        "expert_gini": float(_gini(rf_vec)),
+                        "rel_fro_min": float(rf_vec.min().item()),
+                        "rel_fro_median": float(rf_vec.median().item()),
+                        "rel_fro_max": float(rf_vec.max().item()),
+                        "top3_experts": [
+                            {"expert": int(ei), "rel_fro": float(rf_e), "layer_share": float(sh_e)}
+                            for ei, rf_e, sh_e in e_sorted[:3]
+                        ],
+                    }
+                )
+
+        all_heads_sorted = sorted(all_heads, key=lambda h: h["rel_fro"], reverse=True)
+        head_ginis = [float(x["head_gini"]) for x in per_layer_head_summary if x.get("head_gini") is not None]
+        attn_outliers = {
+            "n_attn_layers_profiled": len(per_layer_head_summary),
+            "mean_head_gini": float(np.mean(head_ginis)) if head_ginis else None,
+            "top12_changed_heads": all_heads_sorted[:12],
+            "bottom5_unchanged_heads": list(reversed(all_heads_sorted[-5:])) if all_heads_sorted else [],
+            "per_layer_head_summary": per_layer_head_summary,
+        }
+
+        moe_outliers: dict[str, Any] | None = None
+        if per_layer_expert_summary:
+            all_exp_sorted = sorted(all_experts, key=lambda e: e["rel_fro"], reverse=True)
+            moe_outliers = {
+                "n_moe_layers_profiled": len(per_layer_expert_summary),
+                "n_total_experts_profiled": len(all_experts),
+                "n_near_frozen_experts": int(n_near_frozen_experts),
+                "top12_changed_experts": all_exp_sorted[:12],
+                "bottom5_unchanged_experts": list(reversed(all_exp_sorted[-5:])) if all_exp_sorted else [],
+                "per_layer_expert_summary": per_layer_expert_summary,
+            }
+
+        mlp_sem_candidates.sort(key=lambda t: t[0], reverse=True)
+        mix_sem_candidates.sort(key=lambda t: t[0], reverse=True)
+
+        weight_spectral_detail = {
+            "global_submatrix_breakdown": global_submat,
+            "per_layer": per_layer_detail,
+            "intra_layer_outliers": {
+                "attention_heads": attn_outliers,
+                "moe_experts": moe_outliers,
+            },
+            "semantic_token_shifts": {
+                "top_mlp_writer_layers": [item for _, item in mlp_sem_candidates[:5]],
+                "top_mixer_writer_layers": [item for _, item in mix_sem_candidates[:5]],
+                "top_embed_head_tokens": top_embed_tokens,
+            },
+        }
+        return weight_diff, spectral_diff, weight_spectral_detail
     finally:
         if own_b:
             src_b.close()
@@ -881,8 +1289,6 @@ def compute_weight_and_spectral_diff(
             src_a.close()
         if dev.type == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-    return weight_diff, spectral_diff
 
 
 # ----------------------------------------------------------------------------------------------- Stage 2: domains + grad dot
@@ -1300,6 +1706,61 @@ def assemble_delta_attribution(
     }
 
 
+def compute_exact_layer_attribution(
+    dots_before: Mapping[str, Mapping[str, float]],
+    dots_after: Mapping[str, Mapping[str, float]],
+    grad_nll_before: Mapping[str, float],
+    grad_nll_after: Mapping[str, float],
+    prose_fisher_cost: Mapping[str, float],
+    n_layers: int,
+) -> dict[str, Any]:
+    """Compute exact un-binned `0..n_layers-1` trapezoidal credits, submatrix credits, and top parameters for Level 2."""
+    layer_credits: dict[str, list[float]] = {}
+    submat_credits: dict[str, dict[str, float]] = {}
+    top_params_by_dom: dict[str, list[dict[str, Any]]] = {}
+
+    for dom in ("prose", "math", "code"):
+        if dom not in grad_nll_before or dom not in grad_nll_after:
+            continue
+        db = dots_before.get(dom, {})
+        da = dots_after.get(dom, {})
+        all_names = set(db.keys()) | set(da.keys())
+        l_cred = [0.0] * n_layers
+        s_cred = {s: 0.0 for s in SUBMATRIX_ORDER}
+        p_list: list[tuple[float, str, str, int | None]] = []
+        for pname in all_names:
+            c = 0.5 * (float(db.get(pname, 0.0)) + float(da.get(pname, 0.0)))
+            sm = classify_submatrix_tag(pname)
+            s_cred[sm] = s_cred.get(sm, 0.0) + c
+            li = extract_layer_idx(pname)
+            if li is not None and 0 <= li < n_layers:
+                l_cred[li] += c
+            p_list.append((c, pname, sm, li))
+        layer_credits[dom] = l_cred
+        submat_credits[dom] = {k: v for k, v in s_cred.items() if abs(v) > 1e-12}
+        p_list.sort(key=lambda t: abs(t[0]), reverse=True)
+        top_params_by_dom[dom] = [
+            {"param": nm, "submatrix": sm, "layer": li, "credit": float(c)}
+            for c, nm, sm, li in p_list[:8]
+            if abs(c) > 1e-12
+        ]
+
+    l_fish = [0.0] * n_layers
+    for pname, fv in (prose_fisher_cost or {}).items():
+        li = extract_layer_idx(pname)
+        if li is not None and 0 <= li < n_layers:
+            l_fish[li] += float(fv)
+    tot_f = sum(l_fish)
+    l_fish_share = [(x / tot_f) if tot_f > 1e-18 else 0.0 for x in l_fish]
+
+    return {
+        "layer_credits": layer_credits,
+        "submatrix_credits": submat_credits,
+        "top_credited_params": top_params_by_dom,
+        "prose_fisher_share_by_layer": l_fish_share,
+    }
+
+
 # ----------------------------------------------------------------------------------------------- Stage 3: Tome-1 delta
 _ANATOMY_DELTA_KEYS = (
     "cal_nll",
@@ -1425,6 +1886,123 @@ def load_delta_xray_json(path: str | Path) -> dict[str, Any]:
     return load_xray_json(path)
 
 
+def _extract_tome1_curve_deltas(card_before: Mapping[str, Any], card_after: Mapping[str, Any]) -> dict[str, Any]:
+    """Extract before/after 8-bin curves and qualitative opening phrases from Tome-1 cards for Level-2 zoom."""
+    sb = card_before.get("static_anatomy", {}) if isinstance(card_before, Mapping) else {}
+    sa = card_after.get("static_anatomy", {}) if isinstance(card_after, Mapping) else {}
+    fb = card_before.get("fisher_anatomy", {}) if isinstance(card_before, Mapping) else {}
+    fa = card_after.get("fisher_anatomy", {}) if isinstance(card_after, Mapping) else {}
+    rb = card_before.get("refusal_geometry", {}) if isinstance(card_before, Mapping) else {}
+    ra = card_after.get("refusal_geometry", {}) if isinstance(card_after, Mapping) else {}
+    syb = card_before.get("sycophancy_geometry", {}) if isinstance(card_before, Mapping) else {}
+    sya = card_after.get("sycophancy_geometry", {}) if isinstance(card_after, Mapping) else {}
+
+    def _curve_diff(seq_b: Any, seq_a: Any) -> dict[str, Any] | None:
+        if not isinstance(seq_b, list) and not isinstance(seq_a, list):
+            return None
+        lb = list(seq_b) if isinstance(seq_b, list) else []
+        la = list(seq_a) if isinstance(seq_a, list) else []
+        delta = None
+        if len(lb) == len(la) and lb:
+            delta = [
+                (float(a) - float(b)) if (_is_finite_num(a) and _is_finite_num(b)) else None
+                for b, a in zip(lb, la)
+            ]
+        return {"before": lb or None, "after": la or None, "delta": delta}
+
+    curves: dict[str, Any] = {}
+    for name, vb, va in (
+        ("mlp_erank_ratio_8", sb.get("mlp_erank_ratio_8"), sa.get("mlp_erank_ratio_8")),
+        ("mixer_erank_ratio_8", sb.get("mixer_erank_ratio_8"), sa.get("mixer_erank_ratio_8")),
+        ("fisher_mlp_8", fb.get("fisher_mlp_8"), fa.get("fisher_mlp_8")),
+        ("fisher_mixer_8", fb.get("fisher_mixer_8"), fa.get("fisher_mixer_8")),
+        ("auc_refusal_by_layer_8", rb.get("auc_refusal_by_layer_8"), ra.get("auc_refusal_by_layer_8")),
+        ("auc_veto_by_layer_8", rb.get("auc_veto_by_layer_8"), ra.get("auc_veto_by_layer_8")),
+        ("auc_syc_by_layer_8", syb.get("auc_syc_by_layer_8"), sya.get("auc_syc_by_layer_8")),
+    ):
+        cd = _curve_diff(vb, va)
+        if cd is not None:
+            curves[name] = cd
+
+    return {
+        "curves_8": curves,
+        "opening_signatures": {
+            "before_top_openings": rb.get("top_openings") or rb.get("base_top_openings"),
+            "after_top_openings": ra.get("top_openings") or ra.get("base_top_openings"),
+            "before_ctrl_top_openings": rb.get("ctrl_top_openings"),
+            "after_ctrl_top_openings": ra.get("ctrl_top_openings"),
+        },
+    }
+
+
+def build_delta_xray_detail(
+    *,
+    card: Mapping[str, Any],
+    card_before: Mapping[str, Any],
+    card_after: Mapping[str, Any],
+    weight_spectral_detail: Mapping[str, Any],
+    exact_attribution: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Assemble a self-contained Level-2 high-resolution `.delta.detail.json` Weight-Space Index entry."""
+    per_layer_raw = [dict(row) for row in (weight_spectral_detail.get("per_layer") or [])]
+    if exact_attribution:
+        l_creds = exact_attribution.get("layer_credits", {})
+        f_shares = exact_attribution.get("prose_fisher_share_by_layer", [])
+        for row in per_layer_raw:
+            li = int(row["layer"])
+            attr_row: dict[str, float | None] = {}
+            for dom in ("prose", "math", "code"):
+                dom_c = l_creds.get(dom)
+                if isinstance(dom_c, list) and 0 <= li < len(dom_c):
+                    attr_row[f"{dom}_credit"] = float(dom_c[li])
+            if isinstance(f_shares, list) and 0 <= li < len(f_shares):
+                attr_row["prose_fisher_share"] = float(f_shares[li])
+            row["attribution"] = attr_row
+
+    detail = {
+        "schema": DELTA_XRAY_DETAIL_SCHEMA_VERSION,
+        "probe_pack_sha256": card.get("probe_pack_sha256"),
+        "pair": dict(card.get("pair") or {}),
+        "executive_summary": {
+            "weight_diff": dict(card.get("weight_diff") or {}),
+            "spectral_diff": dict(card.get("spectral_diff") or {}),
+            "domain_shifts": dict(card.get("domain_shifts") or {}),
+            "attribution": dict(card.get("attribution") or {}),
+            "xray_delta": dict(card.get("xray_delta") or {}),
+        },
+        "global_submatrix_breakdown": dict(weight_spectral_detail.get("global_submatrix_breakdown") or {}),
+        "per_layer": per_layer_raw,
+        "intra_layer_outliers": dict(weight_spectral_detail.get("intra_layer_outliers") or {}),
+        "semantic_token_shifts": dict(weight_spectral_detail.get("semantic_token_shifts") or {}),
+        "attribution_detail": (
+            {
+                "submatrix_credits": exact_attribution.get("submatrix_credits", {}),
+                "top_credited_params": exact_attribution.get("top_credited_params", {}),
+            }
+            if exact_attribution
+            else {"status": "skipped"}
+        ),
+        "tome1_curve_deltas": _extract_tome1_curve_deltas(card_before, card_after),
+        "scan_meta": dict(card.get("scan_meta") or {}),
+    }
+    return _sanitize(detail)
+
+
+def save_delta_xray_detail_json(detail_card: dict[str, Any], path: str | Path) -> Path:
+    """Atomically write a Level-2 `.delta.detail.json` entry to disk."""
+    dst = Path(path)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dst.with_suffix(dst.suffix + ".tmp")
+    tmp.write_text(format_compact_delta_xray_json(detail_card), encoding="utf-8")
+    os.replace(tmp, dst)
+    return dst
+
+
+def load_delta_xray_detail_json(path: str | Path) -> dict[str, Any]:
+    """Load a Level-2 `.delta.detail.json` entry from disk."""
+    return load_xray_json(path)
+
+
 def scan_delta_xray(
     model_before: nn.Module,
     model_after: nn.Module,
@@ -1446,7 +2024,8 @@ def scan_delta_xray(
     with_attribution: bool = True,
     grad_seq_max_len: int = 128,
     wsi_commit: str | None = None,
-) -> dict[str, Any]:
+    return_detail: bool = False,
+) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     """High-level Delta X-Ray scan comparing two in-memory checkpoints `(model_before -> model_after)`."""
     import time
 
@@ -1481,13 +2060,26 @@ def scan_delta_xray(
         wsi_commit=wsi_commit,
     )
 
-    weight_diff, spectral_diff = compute_weight_and_spectral_diff(model_before, model_after, struct_b, device=dev)
+    ws_res = compute_weight_and_spectral_diff(
+        model_before,
+        model_after,
+        struct_b,
+        device=dev,
+        tok=tk_b,
+        return_detail=return_detail,
+    )
+    if return_detail:
+        weight_diff, spectral_diff, ws_detail = ws_res  # type: ignore[misc]
+    else:
+        weight_diff, spectral_diff = ws_res  # type: ignore[misc]
+        ws_detail = {}
 
     dom_seqs = build_domain_calibration_seqs(tk_b, pack, max_length=256)
     st_b = capture_domain_probe_state(model_before, dom_seqs, device=dev)
     domain_shifts = compare_domain_probe_states(st_b, model_after, dom_seqs, device=dev)
 
     attr: dict[str, Any] | None = None
+    exact_attr: dict[str, Any] | None = None
     if with_attribution:
         dots_b, gnll_b, pf_cost, used_len = accumulate_domain_grad_dots(
             model_before, model_after, dom_seqs, sign=+1.0, device=dev, max_len=grad_seq_max_len, compute_prose_fisher=True
@@ -1496,12 +2088,14 @@ def scan_delta_xray(
             model_after, model_before, dom_seqs, sign=-1.0, device=dev, max_len=used_len, compute_prose_fisher=False
         )
         attr = assemble_delta_attribution(dots_b, dots_a, gnll_b, gnll_a, pf_cost, n_layers, used_len)
+        if return_detail:
+            exact_attr = compute_exact_layer_attribution(dots_b, dots_a, gnll_b, gnll_a, pf_cost, n_layers)
 
     b_repo = str(before_repo or cb.get("identity", {}).get("repo_id") or "before")
     a_repo = str(after_repo or ca.get("identity", {}).get("repo_id") or "after")
     pid = pair_id or f"{b_repo.split('/')[-1]}__to__{a_repo.split('/')[-1]}"
 
-    return build_delta_xray_card(
+    card = build_delta_xray_card(
         pair_id=pid,
         before_repo=b_repo,
         after_repo=a_repo,
@@ -1518,10 +2112,26 @@ def scan_delta_xray(
         wall_s=time.perf_counter() - t0,
         wsi_commit=wsi_commit,
     )
+    if not return_detail:
+        return card
+    detail_card = build_delta_xray_detail(
+        card=card,
+        card_before=cb,
+        card_after=ca,
+        weight_spectral_detail=ws_detail,
+        exact_attribution=exact_attr,
+    )
+    return card, detail_card
 
 
 # ----------------------------------------------------------------------------------------------- Atlas aggregator
-def _extract_flat_delta_row(card: Mapping[str, Any], byte_size: int | None = None) -> dict[str, Any]:
+def _extract_flat_delta_row(
+    card: Mapping[str, Any],
+    byte_size: int | None = None,
+    *,
+    detail_file: str | None = None,
+    detail_bytes: int | None = None,
+) -> dict[str, Any]:
     pair = card.get("pair", {})
     wd = card.get("weight_diff", {})
     sd = card.get("spectral_diff", {})
@@ -1536,7 +2146,7 @@ def _extract_flat_delta_row(card: Mapping[str, Any], byte_size: int | None = Non
     mlp_share = sum(float(roles.get(r, 0.0)) for r in MLP_ROLES) if roles else None
     mixer_share = sum(float(roles.get(r, 0.0)) for r in MIXER_ROLES) if roles else None
 
-    return {
+    row = {
         "pair_id": pair.get("pair_id"),
         "family": pair.get("family"),
         "transition_type": pair.get("transition_type"),
@@ -1546,6 +2156,8 @@ def _extract_flat_delta_row(card: Mapping[str, Any], byte_size: int | None = Non
         "params_b": pair.get("params_b"),
         "n_layers": pair.get("n_layers"),
         "json_bytes": byte_size,
+        "detail_file": detail_file,
+        "detail_bytes": detail_bytes,
         "total_rel_fro": wd.get("total_rel_fro"),
         "depth_centroid": wd.get("depth_centroid"),
         "mlp_share": mlp_share,
@@ -1569,6 +2181,7 @@ def _extract_flat_delta_row(card: Mapping[str, Any], byte_size: int | None = Non
         "after_cave_rate": (pd.get("cave_rate_false_pushback") or {}).get("after"),
         "delta_cave_rate": (pd.get("cave_rate_false_pushback") or {}).get("delta"),
     }
+    return row
 
 
 def _finite_median(vals: Iterable[Any]) -> float | None:
@@ -1583,7 +2196,18 @@ def summarize_delta_xray_atlas(atlas_dir: str | Path) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for f in files:
         card = load_delta_xray_json(f)
-        rows.append(_extract_flat_delta_row(card, byte_size=int(f.stat().st_size)))
+        pid = (card.get("pair") or {}).get("pair_id") or f.name[: -len(".delta.xray.json")]
+        det_p = root / f"{pid}.delta.detail.json"
+        det_file = det_p.name if det_p.exists() else None
+        det_bytes = int(det_p.stat().st_size) if det_p.exists() else None
+        rows.append(
+            _extract_flat_delta_row(
+                card,
+                byte_size=int(f.stat().st_size),
+                detail_file=det_file,
+                detail_bytes=det_bytes,
+            )
+        )
 
     by_type: dict[str, dict[str, Any]] = {}
     groups: dict[str, list[dict[str, Any]]] = {}
@@ -1642,19 +2266,26 @@ def summarize_delta_xray_atlas(atlas_dir: str | Path) -> dict[str, Any]:
 
 
 __all__ = [
+    "DELTA_XRAY_DETAIL_SCHEMA_VERSION",
     "DELTA_XRAY_SCHEMA_VERSION",
+    "SUBMATRIX_ORDER",
     "accumulate_domain_grad_dots",
     "assemble_delta_attribution",
     "build_delta_xray_card",
+    "build_delta_xray_detail",
     "build_domain_calibration_seqs",
     "capture_domain_probe_state",
     "classify_param_role",
+    "classify_submatrix_tag",
     "compare_domain_probe_states",
+    "compute_exact_layer_attribution",
     "compute_weight_and_spectral_diff",
     "compute_xray_card_delta",
     "extract_layer_idx",
     "format_compact_delta_xray_json",
+    "load_delta_xray_detail_json",
     "load_delta_xray_json",
+    "save_delta_xray_detail_json",
     "save_delta_xray_json",
     "scan_delta_xray",
     "summarize_delta_xray_atlas",

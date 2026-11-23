@@ -23,15 +23,19 @@ if str(ROOT / "scripts") not in sys.path:
 
 import scan_delta_xray_atlas as sdx  # noqa: E402
 from wsi.delta_xray import (  # noqa: E402
+    DELTA_XRAY_DETAIL_SCHEMA_VERSION,
     DELTA_XRAY_SCHEMA_VERSION,
     accumulate_domain_grad_dots,
     assemble_delta_attribution,
     build_domain_calibration_seqs,
     classify_param_role,
+    classify_submatrix_tag,
     compute_weight_and_spectral_diff,
     extract_layer_idx,
     format_compact_delta_xray_json,
+    load_delta_xray_detail_json,
     load_delta_xray_json,
+    save_delta_xray_detail_json,
     save_delta_xray_json,
     scan_delta_xray,
     summarize_delta_xray_atlas,
@@ -570,3 +574,104 @@ def test_zamba2_role_energy_captures_shared_mlp() -> None:
     assert wd["role_energy_share"].get("attn_qkv", 0.0) == 0.0
     assert any(v is not None and v > 0.0 for v in wd["mlp_rel_fro_8"])
     assert sp["mlp_out"]["n_mats"] == 2
+
+
+def test_level2_detail_per_layer_heads_experts_and_semantics(tmp_path: Path) -> None:
+    from transformers import OlmoeConfig, OlmoeForCausalLM
+
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+
+    assert classify_submatrix_tag("model.layers.0.self_attn.q_proj.weight") == "q_proj"
+    assert classify_submatrix_tag("model.layers.0.self_attn.k_proj.weight") == "k_proj"
+    assert classify_submatrix_tag("model.layers.0.self_attn.v_proj.weight") == "v_proj"
+    assert classify_submatrix_tag("model.layers.0.self_attn.o_proj.weight") == "o_proj"
+    assert classify_submatrix_tag("model.layers.0.mlp.gate_proj.weight") == "gate_proj"
+    assert classify_submatrix_tag("model.layers.0.mlp.up_proj.weight") == "up_proj"
+    assert classify_submatrix_tag("model.layers.0.mlp.down_proj.weight") == "down_proj"
+    assert classify_submatrix_tag("model.layers.0.mlp.experts.gate_up_proj") == "gate_up_proj"
+    assert classify_submatrix_tag("model.embed_tokens.weight") == "embed_tokens"
+    assert classify_submatrix_tag("lm_head.weight") == "lm_head"
+
+    # 1) Dense model: plant changes in layer 0 head 2 of o_proj, layer 2 down_proj, and embed_tokens row 5
+    m_b = _build_tiny_llama(len(tok), n_layers=3, hidden=24, inter=48)
+    m_a = _build_tiny_llama(len(tok), n_layers=3, hidden=24, inter=48)
+    m_a.load_state_dict(m_b.state_dict())
+    with torch.no_grad():
+        # 4 heads -> head_dim = 6 -> columns 12..18 belong to head 2
+        m_a.model.layers[0].self_attn.o_proj.weight[:, 12:18].add_(0.40)
+        m_a.model.layers[2].mlp.down_proj.weight.add_(0.25)
+        m_a.model.embed_tokens.weight[5].add_(0.80)
+
+    card, detail = scan_delta_xray(
+        m_b,
+        m_a,
+        tok,
+        pair_id="toy_dense_l2",
+        before_repo="toy/b",
+        after_repo="toy/a",
+        transition_type="instruct",
+        family="toy",
+        probe_pack=pack,
+        skip_generation=True,
+        grad_seq_max_len=32,
+        return_detail=True,
+    )
+    assert card["schema"] == DELTA_XRAY_SCHEMA_VERSION
+    assert detail["schema"] == DELTA_XRAY_DETAIL_SCHEMA_VERSION
+    assert len(detail["per_layer"]) == 3
+    assert detail["per_layer"][0]["submatrices"]["o_proj"]["rel_fro"] > 0.0
+    assert detail["per_layer"][2]["submatrices"]["down_proj"]["rel_fro"] > 0.0
+    assert "prose_credit" in detail["per_layer"][2]["attribution"]
+    assert "prose_fisher_share" in detail["per_layer"][2]["attribution"]
+
+    top_heads = detail["intra_layer_outliers"]["attention_heads"]["top12_changed_heads"]
+    assert top_heads[0]["layer"] == 0 and top_heads[0]["head"] == 2
+    assert top_heads[0]["layer_energy_share"] > 0.99
+
+    sem = detail["semantic_token_shifts"]
+    assert len(sem["top_mlp_writer_layers"]) >= 1
+    assert sem["top_mlp_writer_layers"][0]["layer"] == 2
+    assert len(sem["top_mlp_writer_layers"][0]["top_promoted_tokens"]) == 5
+    assert sem["top_embed_head_tokens"][0]["token_id"] == 5
+
+    p_card = save_delta_xray_json(card, tmp_path / "toy_dense_l2.delta.xray.json")
+    p_det = save_delta_xray_detail_json(detail, tmp_path / "toy_dense_l2.delta.detail.json")
+    assert p_card.exists() and p_det.exists()
+    loaded_det = load_delta_xray_detail_json(p_det)
+    assert loaded_det["pair"]["pair_id"] == "toy_dense_l2"
+
+    summary = summarize_delta_xray_atlas(tmp_path)
+    assert summary["pairs"][0]["detail_file"] == "toy_dense_l2.delta.detail.json"
+    assert summary["pairs"][0]["detail_bytes"] > 1000
+
+    # 2) Fused-3D MoE model: plant perturbation in layer 1 expert 3 only
+    cfg_moe = OlmoeConfig(
+        vocab_size=len(tok),
+        hidden_size=24,
+        intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        num_experts=4,
+        num_experts_per_tok=2,
+        pad_token_id=0,
+        eos_token_id=1,
+    )
+    moe_b = OlmoeForCausalLM(cfg_moe).eval()
+    moe_a = OlmoeForCausalLM(cfg_moe).eval()
+    moe_a.load_state_dict(moe_b.state_dict())
+    with torch.no_grad():
+        moe_a.model.layers[1].mlp.experts.down_proj[3].add_(0.50)
+
+    struct_moe = _discover_xray_structure(moe_b, tok, "toy/olmoe_l2")
+    _, _, ws_moe_det = compute_weight_and_spectral_diff(
+        moe_b, moe_a, struct_moe, device="cpu", tok=tok, return_detail=True
+    )
+    moe_out = ws_moe_det["intra_layer_outliers"]["moe_experts"]
+    assert moe_out is not None
+    assert moe_out["top12_changed_experts"][0]["layer"] == 1
+    assert moe_out["top12_changed_experts"][0]["expert"] == 3
+    assert moe_out["top12_changed_experts"][0]["layer_energy_share"] > 0.99
+    assert moe_out["n_near_frozen_experts"] == 7
+

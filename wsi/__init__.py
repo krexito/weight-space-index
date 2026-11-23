@@ -4,6 +4,16 @@ Built to work standalone or directly on top of `wsr` (Weight-Space Reading and P
 """
 from __future__ import annotations
 
+from .atlas import (
+    ATLAS_SCHEMA_VERSION,
+    DEFAULT_ATLAS_DIR,
+    RESERVED_HOLDOUT_MODELS,
+    consolidate_3tome_atlas,
+    format_atlas_diagnosis,
+    load_atlas,
+    match_xray_neighbors,
+    validate_no_holdout_leakage,
+)
 from .capture import ActivationIndex, SelectiveMoI, TaskRouter, apply_selection, capture_index, find_mlps, trace_all
 from .cdn import (
     CDNCatalog,
@@ -30,9 +40,15 @@ from .compare import (
     transplant_connected_chain,
 )
 from .delta_xray import (
+    DELTA_XRAY_DETAIL_SCHEMA_VERSION,
+    DELTA_XRAY_SCHEMA_VERSION,
+    build_delta_xray_detail,
+    classify_submatrix_tag,
     compute_xray_card_delta,
     format_compact_delta_xray_json,
+    load_delta_xray_detail_json,
     load_delta_xray_json,
+    save_delta_xray_detail_json,
     save_delta_xray_json,
     scan_delta_xray,
     summarize_delta_xray_atlas,
@@ -179,13 +195,19 @@ __all__ = [
     "load_index",
     "profile_column_fisher",
     "build_frozen_probe_pack",
+    "DELTA_XRAY_DETAIL_SCHEMA_VERSION",
+    "DELTA_XRAY_SCHEMA_VERSION",
+    "build_delta_xray_detail",
+    "classify_submatrix_tag",
     "compute_xray_card_delta",
     "format_compact_delta_xray_json",
     "format_compact_xray_json",
+    "load_delta_xray_detail_json",
     "load_delta_xray_json",
     "load_frozen_probe_pack",
     "load_xray_json",
     "register_moipatch_entry",
+    "save_delta_xray_detail_json",
     "save_delta_xray_json",
     "save_xray_json",
     "scan_delta_xray",
@@ -197,5 +219,13 @@ __all__ = [
     "transfer_transduction_edit",
     "transplant_compositional_and_chain",
     "transplant_connected_chain",
+    "ATLAS_SCHEMA_VERSION",
+    "DEFAULT_ATLAS_DIR",
+    "RESERVED_HOLDOUT_MODELS",
+    "consolidate_3tome_atlas",
+    "format_atlas_diagnosis",
+    "load_atlas",
+    "match_xray_neighbors",
+    "validate_no_holdout_leakage",
 ]
 __version__ = "0.1.0"
