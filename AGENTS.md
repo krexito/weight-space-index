@@ -70,9 +70,11 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Few-Shot Continual Pocket MoE** (`K=6`): balanced L12 router (`0/200` MMLU); cartridges crush continual `r=8` (`+41.7` old skills), tie `r=64` & random, but quick `24`-step (`61.7%`) loses to 1-shot (`75%`).
 - **Regularized Multi-Trace Pocket MoE** (`K=6`): 24L `r=8` + 3 4B traces/q hits `88.3%` (`+21.7` vs v1, CI `[+6.7,+35]`), beats 1-shot (`80%`) & joint (`70%`), `0/200` MMLU fires (4L reg underfit; pass-count caveat).
 - **0-Backprop Closed-Form & Hybrid Warm-Start Pocket MoE** (`K=6`): negative vs LoRA; ridge fits attention layers (`R2~0.6`) but not GDN (`R2~0.01`, `36.7%` vs `81.7%` 1-shot); SVD+8-step ties cold 8-step (`53.3%` vs `51.7%`).
+- **Equal-Pass-Budget Multi-Trace `MATH-500` Pocket MoE**: multi-trace ties 1-trace at equal passes (`<=1` epoch underfits); reg `24L r=16` + L12 routing hits new best `41.5%` (`+9.5` vs base, `0/371` non-math MMLU fires).
 - **WSI 2-Bit Quantization Recovery** and **Global Fisher Heterogeneous MLP Pruning**: negative (2-bit stays at chance; global Fisher starves late layers).
 - **Pairwise neuron selection**: tie with `energy+recon`.
 - **Low-bit trace residuals**: negative; a QTIP-style trellis beats scalar at 3 bits (relL2 `0.14` vs `0.18`) but INT8 quality needs >= ~7.5 bits (residual ~Gaussian, near full rank). Keep `int8+had64`.
+- **Past the trace bit limit**: recompute from tokens in fp32 is exact (6,300x smaller; bf16 recompute is worse than INT8). 3-4 bit residuals keep layer/direction conclusions, lose onset and logit lens.
 
 ## 3. Planned Next Experiment (Queued — Do Not Run Yet)
 
