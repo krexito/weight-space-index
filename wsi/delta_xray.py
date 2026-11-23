@@ -56,6 +56,10 @@ MIXER_ROLES = {"attn_qkv", "attn_out", "ssm_conv"}
 LAYER_RE = re.compile(r"(?:^|\.)(?:layers|blocks|h|decoder\.layers)\.(\d+)\.")
 
 _WRAPPER_PREFIXES = ("model.", "language_model.", "backbone.", "transformer.")
+_UNFUSED_EXPERT_RE = re.compile(
+    r"^(?P<prefix>.+?\.experts)\.(?P<idx>\d+)\.(?P<proj>gate_proj|up_proj|down_proj|w1|w2|w3)\.weight$"
+)
+_FUSED_EXPERT_RE = re.compile(r"^(?P<prefix>.+?\.experts)\.(?P<proj>gate_up_proj|down_proj)$")
 
 
 def extract_layer_idx(param_name: str) -> int | None:
@@ -99,7 +103,7 @@ def classify_param_role(param_name: str, shape: tuple[int, ...] | None = None) -
         return "moe_router"
     if any(tok in p for tok in (".conv.", ".mamba.", ".ssm.", ".mixer.", ".linear_attn.")):
         return "ssm_conv"
-    if any(tok in p for tok in (".self_attn.", ".attn.", ".attention.", ".self_attention.", ".shared_transformer.")):
+    if any(tok in p for tok in (".self_attn.", ".attn.", ".attention.", ".self_attention.")):
         if any(tok in p for tok in ("o_proj", "out_proj", ".dense.")):
             return "attn_out"
         if any(tok in p for tok in ("q_proj", "k_proj", "v_proj", "qkv", "c_attn", "in_proj")):
@@ -121,8 +125,54 @@ def classify_param_role(param_name: str, shape: tuple[int, ...] | None = None) -
     return "other"
 
 
+def _discover_pytorch_bin_files(root: Path) -> list[Path]:
+    """Locate PyTorch state-dict checkpoint files in priority order when safetensors are absent."""
+    idx_path = root / "pytorch_model.bin.index.json"
+    if idx_path.exists():
+        wmap = json.loads(idx_path.read_text(encoding="utf-8")).get("weight_map", {})
+        seen: set[Path] = set()
+        ordered: list[Path] = []
+        for fn in wmap.values():
+            cand = root / str(fn)
+            if cand.exists() and cand not in seen:
+                seen.add(cand)
+                ordered.append(cand)
+        if ordered:
+            return ordered
+
+    non_weight_prefixes = ("training_args", "optimizer", "scheduler", "rng_state")
+    for cands in (
+        sorted(root.glob("pytorch_model*.bin")),
+        [p for p in sorted(root.glob("*.bin")) if not p.name.startswith(non_weight_prefixes)],
+        [
+            p
+            for p in sorted(root.glob("*.pt")) + sorted(root.glob("*.pth"))
+            if not p.name.startswith(non_weight_prefixes)
+        ],
+    ):
+        if cands:
+            return cands
+    return []
+
+
+def _load_pytorch_bin_shard(bf: Path) -> tuple[dict[str, torch.Tensor], bool]:
+    """Load a PyTorch checkpoint shard on CPU, preferring `mmap=True` when supported."""
+    used_mmap = False
+    try:
+        loaded = torch.load(str(bf), map_location="cpu", weights_only=True, mmap=True)
+        used_mmap = True
+    except (TypeError, RuntimeError):
+        loaded = torch.load(str(bf), map_location="cpu", weights_only=True)
+    if isinstance(loaded, Mapping) and isinstance(loaded.get("state_dict"), Mapping):
+        loaded = loaded["state_dict"]
+    if not isinstance(loaded, Mapping):
+        raise ValueError(f"Unsupported checkpoint payload in {bf}: {type(loaded).__name__}")
+    tensors = {str(k): v for k, v in loaded.items() if isinstance(v, torch.Tensor)}
+    return tensors, used_mmap
+
+
 class _WeightSource:
-    """Unified read-only tensor lookup over `nn.Module`, tensor mapping, or `*.safetensors` checkpoint directory."""
+    """Unified read-only tensor lookup over `nn.Module`, tensor mapping, `*.safetensors`, or `*.bin` checkpoints."""
 
     def __init__(self, source: nn.Module | Mapping[str, torch.Tensor] | str | Path) -> None:
         self._kind: str
@@ -130,8 +180,13 @@ class _WeightSource:
         self._key_to_file: dict[str, Path] = {}
         self._shapes: dict[str, tuple[int, ...]] = {}
         self._open_handles: dict[Path, Any] = {}
+        self._open_bin_shards: dict[Path, dict[str, torch.Tensor]] = {}
+        self._last_bin_shard: tuple[Path, dict[str, torch.Tensor]] | None = None
         self._ordered_keys: list[str] = []
         self._norm_to_exact: dict[str, str] = {}
+        self._virtual_fused: dict[str, tuple[str, list[Any]]] = {}
+        self._virtual_shapes: dict[str, tuple[int, ...]] = {}
+        self._fused_3d: dict[str, str] = {}
 
         if isinstance(source, nn.Module):
             self._kind = "module"
@@ -153,27 +208,96 @@ class _WeightSource:
         else:
             root = Path(source)
             sf_files = sorted(root.glob("*.safetensors"))
-            if not sf_files:
-                raise FileNotFoundError(f"No *.safetensors files found in checkpoint directory: {root}")
-            self._kind = "safetensors"
-            from safetensors import safe_open
+            if sf_files:
+                self._kind = "safetensors"
+                from safetensors import safe_open
 
-            for sf in sf_files:
-                with safe_open(str(sf), "pt") as fh:
-                    for k in fh.keys():
+                for sf in sf_files:
+                    with safe_open(str(sf), "pt") as fh:
+                        for k in fh.keys():
+                            if _is_aux_multimodal_or_mtp(k):
+                                continue
+                            self._key_to_file[k] = sf
+                            if hasattr(fh, "get_slice"):
+                                self._shapes[k] = tuple(fh.get_slice(k).get_shape())
+                            else:
+                                self._shapes[k] = tuple(fh.get_tensor(k).shape)
+                            self._ordered_keys.append(k)
+            else:
+                bin_files = _discover_pytorch_bin_files(root)
+                if not bin_files:
+                    sample = sorted(p.name for p in root.iterdir())[:20] if root.is_dir() else []
+                    raise FileNotFoundError(
+                        f"No *.safetensors or PyTorch *.bin/*.pt files found in checkpoint directory: {root} "
+                        f"(present: {sample})"
+                    )
+                self._kind = "pytorch_bin"
+                for bf in bin_files:
+                    sd, used_mmap = _load_pytorch_bin_shard(bf)
+                    for k, t in sd.items():
                         if _is_aux_multimodal_or_mtp(k):
                             continue
-                        self._key_to_file[k] = sf
-                        if hasattr(fh, "get_slice"):
-                            self._shapes[k] = tuple(fh.get_slice(k).get_shape())
-                        else:
-                            self._shapes[k] = tuple(fh.get_tensor(k).shape)
+                        self._key_to_file[k] = bf
+                        self._shapes[k] = tuple(t.shape)
                         self._ordered_keys.append(k)
+                    if used_mmap or len(bin_files) == 1:
+                        self._open_bin_shards[bf] = sd
 
         for k in self._ordered_keys:
             nk = _strip_wrapper_prefixes(k)
             if nk not in self._norm_to_exact:
                 self._norm_to_exact[nk] = k
+        self._init_moe_expert_views()
+
+    def _init_moe_expert_views(self) -> None:
+        unfused: dict[tuple[str, str], dict[int, str]] = {}
+        for nk, exact in self._norm_to_exact.items():
+            m = _UNFUSED_EXPERT_RE.match(nk)
+            if m:
+                unfused.setdefault((m.group("prefix"), m.group("proj")), {})[int(m.group("idx"))] = exact
+            mf = _FUSED_EXPERT_RE.match(nk)
+            if mf and len(self._shapes.get(exact, ())) == 3:
+                vkey = f"{mf.group('prefix')}.{mf.group('proj')}"
+                self._fused_3d[vkey] = exact
+                if ".block_sparse_moe." in vkey:
+                    self._fused_3d.setdefault(vkey.replace(".block_sparse_moe.", ".mlp."), exact)
+
+        def _register_virtual(vkey: str, kind: str, payload: list[Any], shp: tuple[int, ...]) -> None:
+            if vkey in self._norm_to_exact:
+                return
+            self._virtual_fused[vkey] = (kind, payload)
+            self._virtual_shapes[vkey] = shp
+            if ".block_sparse_moe." in vkey:
+                alias = vkey.replace(".block_sparse_moe.", ".mlp.")
+                self._virtual_fused.setdefault(alias, (kind, payload))
+                self._virtual_shapes.setdefault(alias, shp)
+
+        prefixes = sorted({pref for pref, _ in unfused})
+        for pref in prefixes:
+            for down_proj in ("down_proj", "w2"):
+                dmap = unfused.get((pref, down_proj))
+                if dmap and len(dmap) >= 2:
+                    n_exp = len(dmap)
+                    if all(idx in dmap for idx in range(n_exp)):
+                        keys_list = [dmap[idx] for idx in range(n_exp)]
+                        shapes_set = {self._shapes[ek] for ek in keys_list}
+                        if len(shapes_set) == 1:
+                            r, c = next(iter(shapes_set))
+                            _register_virtual(f"{pref}.down_proj", "stack", keys_list, (n_exp, r, c))
+                            break
+            for gp, up in (("gate_proj", "up_proj"), ("w1", "w3")):
+                gmap = unfused.get((pref, gp))
+                umap = unfused.get((pref, up))
+                if gmap and umap and len(gmap) >= 2 and len(gmap) == len(umap):
+                    n_exp = len(gmap)
+                    if all(idx in gmap and idx in umap for idx in range(n_exp)):
+                        pairs_list = [(gmap[idx], umap[idx]) for idx in range(n_exp)]
+                        g_shapes = {self._shapes[gk] for gk, _ in pairs_list}
+                        u_shapes = {self._shapes[uk] for _, uk in pairs_list}
+                        if len(g_shapes) == 1 and g_shapes == u_shapes:
+                            inter, hid = next(iter(g_shapes))
+                            _register_virtual(f"{pref}.gate_up_proj", "cat_stack", pairs_list, (n_exp, 2 * inter, hid))
+                            break
 
     def keys(self) -> list[str]:
         return list(self._ordered_keys)
@@ -194,16 +318,42 @@ class _WeightSource:
                 return self._norm_to_exact["lm_head.weight"]
         return None
 
-    def shape(self, name: str) -> tuple[int, ...] | None:
-        rk = self._resolve_key(name)
-        return self._shapes.get(rk) if rk is not None else None
-
-    def get(self, name: str) -> torch.Tensor | None:
-        rk = self._resolve_key(name)
-        if rk is None:
+    def _resolve_unfused_from_3d(self, nk: str) -> tuple[str, int, str, tuple[int, ...]] | None:
+        m = _UNFUSED_EXPERT_RE.match(nk)
+        if not m:
             return None
+        pref, idx, proj = m.group("prefix"), int(m.group("idx")), m.group("proj")
+        target_proj = "down_proj" if proj in ("down_proj", "w2") else "gate_up_proj"
+        exact_3d = self._fused_3d.get(f"{pref}.{target_proj}")
+        if exact_3d is None:
+            return None
+        shp3 = self._shapes[exact_3d]
+        if len(shp3) != 3 or not (0 <= idx < shp3[0]):
+            return None
+        if target_proj == "down_proj":
+            return (exact_3d, idx, "down", (shp3[1], shp3[2]))
+        if shp3[1] % 2 != 0:
+            return None
+        half = shp3[1] // 2
+        mode = "gate" if proj in ("gate_proj", "w1") else "up"
+        return (exact_3d, idx, mode, (half, shp3[2]))
+
+    def _get_raw(self, rk: str) -> torch.Tensor:
         if self._kind in ("module", "mapping"):
             return self._tensors[rk]
+        if self._kind == "pytorch_bin":
+            bf = self._key_to_file[rk]
+            sd = self._open_bin_shards.get(bf)
+            if sd is None:
+                if self._last_bin_shard is not None and self._last_bin_shard[0] == bf:
+                    sd = self._last_bin_shard[1]
+                else:
+                    sd, used_mmap = _load_pytorch_bin_shard(bf)
+                    if used_mmap:
+                        self._open_bin_shards[bf] = sd
+                    else:
+                        self._last_bin_shard = (bf, sd)
+            return sd[rk]
         sf = self._key_to_file[rk]
         fh = self._open_handles.get(sf)
         if fh is None:
@@ -213,6 +363,89 @@ class _WeightSource:
             self._open_handles[sf] = fh
         return fh.get_tensor(rk)
 
+    def shape(self, name: str) -> tuple[int, ...] | None:
+        rk = self._resolve_key(name)
+        if rk is not None:
+            return self._shapes.get(rk)
+        nk = _strip_wrapper_prefixes(name)
+        if nk in self._virtual_shapes:
+            return self._virtual_shapes[nk]
+        rev = self._resolve_unfused_from_3d(nk)
+        return rev[3] if rev is not None else None
+
+    def get(self, name: str) -> torch.Tensor | None:
+        rk = self._resolve_key(name)
+        if rk is not None:
+            return self._get_raw(rk)
+        nk = _strip_wrapper_prefixes(name)
+        spec = self._virtual_fused.get(nk)
+        if spec is not None:
+            kind, payload = spec
+            if kind == "stack":
+                return torch.stack([self._get_raw(ek) for ek in payload], dim=0)
+            return torch.stack([torch.cat([self._get_raw(gk), self._get_raw(uk)], dim=0) for gk, uk in payload], dim=0)
+        rev = self._resolve_unfused_from_3d(nk)
+        if rev is not None:
+            exact_3d, idx, mode, _ = rev
+            t3 = self._get_raw(exact_3d)
+            if mode == "down":
+                return t3[idx]
+            half = t3.shape[1] // 2
+            return t3[idx, :half, :] if mode == "gate" else t3[idx, half:, :]
+        return None
+
+    def get_expert_slice(self, name: str, expert_idx: int) -> torch.Tensor | None:
+        """Fetch only a single expert matrix `[r, c]` from a 3D or unfused MoE weight source."""
+        rk = self._resolve_key(name)
+        if rk is not None:
+            t = self._get_raw(rk)
+            if t.dim() == 3 and 0 <= expert_idx < t.shape[0]:
+                return t[expert_idx]
+            return t
+        nk = _strip_wrapper_prefixes(name)
+        spec = self._virtual_fused.get(nk)
+        if spec is None:
+            return None
+        kind, payload = spec
+        if not (0 <= expert_idx < len(payload)):
+            return None
+        if kind == "stack":
+            return self._get_raw(payload[expert_idx])
+        gk, uk = payload[expert_idx]
+        return torch.cat([self._get_raw(gk), self._get_raw(uk)], dim=0)
+
+    def iter_dim0_chunks(self, name: str, chunk_size: int) -> Iterable[tuple[int, int, torch.Tensor]]:
+        """Yield `(start, end, chunk)` slices along dim 0, streaming unfused experts on demand."""
+        rk = self._resolve_key(name)
+        if rk is not None:
+            t = self._get_raw(rk)
+            if t.dim() == 0:
+                yield 0, 1, t
+                return
+            n0 = int(t.shape[0])
+            step = max(1, int(chunk_size))
+            for s in range(0, n0, step):
+                e = min(n0, s + step)
+                yield s, e, t[s:e]
+            return
+        nk = _strip_wrapper_prefixes(name)
+        spec = self._virtual_fused.get(nk)
+        if spec is None:
+            return
+        kind, payload = spec
+        n0 = len(payload)
+        step = max(1, int(chunk_size))
+        for s in range(0, n0, step):
+            e = min(n0, s + step)
+            if kind == "stack":
+                chunk = torch.stack([self._get_raw(ek) for ek in payload[s:e]], dim=0)
+            else:
+                chunk = torch.stack(
+                    [torch.cat([self._get_raw(gk), self._get_raw(uk)], dim=0) for gk, uk in payload[s:e]],
+                    dim=0,
+                )
+            yield s, e, chunk
+
     def close(self) -> None:
         for fh in self._open_handles.values():
             try:
@@ -221,6 +454,11 @@ class _WeightSource:
             except Exception:
                 pass
         self._open_handles.clear()
+        had_bin = bool(self._open_bin_shards or self._last_bin_shard)
+        self._open_bin_shards.clear()
+        self._last_bin_shard = None
+        if had_bin:
+            gc.collect()
 
     def __enter__(self) -> "_WeightSource":
         return self
@@ -260,21 +498,21 @@ def _resolve_module_weight_name(
 def _collect_block_target_names(
     struct: _ModelStructure,
     max_moe_experts_per_layer: int,
-) -> tuple[list[tuple[int, list[tuple[str, bool]]]], list[tuple[int, str, bool]]]:
-    """Return `(mlp_targets_by_layer, mixer_targets)` with parameter names and `is_conv1d` flags."""
+) -> tuple[list[tuple[int, list[tuple[str, bool, int | None]]]], list[tuple[int, str, bool]]]:
+    """Return `(mlp_targets_by_layer, mixer_targets)` with parameter names, `is_conv1d`, and optional 3D expert idx."""
     p_map = _param_name_map(struct.backbone)
-    mlp_by_layer: list[tuple[int, list[tuple[str, bool]]]] = []
+    mlp_by_layer: list[tuple[int, list[tuple[str, bool, int | None]]]] = []
     mixer_targets: list[tuple[int, str, bool]] = []
 
     for blk in struct.blocks:
-        mlp_list: list[tuple[str, bool]] = []
+        mlp_list: list[tuple[str, bool, int | None]] = []
         if blk.mlp_down is not None:
             rel_name, mod = blk.mlp_down
             pname = _resolve_module_weight_name(mod, rel_name, p_map)
             if pname:
-                mlp_list.append((pname, not isinstance(mod, nn.Linear)))
+                mlp_list.append((pname, not isinstance(mod, nn.Linear), None))
         elif blk.is_moe:
-            cands: list[tuple[str, bool]] = []
+            cands: list[tuple[str, bool, int | None]] = []
             for sub_n, sub_m in blk.module.named_modules():
                 low = sub_n.lower()
                 if not sub_n or "expert" not in low:
@@ -283,12 +521,24 @@ def _collect_block_target_names(
                     if low.endswith(("down_proj", "w2", "fc2", "c_proj")):
                         pname = _resolve_module_weight_name(sub_m, f"{blk.name}.{sub_n}", p_map)
                         if pname:
-                            cands.append((pname, not isinstance(sub_m, nn.Linear)))
-            if cands:
+                            cands.append((pname, not isinstance(sub_m, nn.Linear), None))
+            if not cands:
+                for sub_p, param in blk.module.named_parameters():
+                    low = sub_p.lower()
+                    if "expert" in low and param.dim() == 3 and param.shape[0] >= 1:
+                        if low.endswith(
+                            ("down_proj", "down_proj.weight", "w2", "w2.weight", "fc2", "fc2.weight", "c_proj", "c_proj.weight")
+                        ):
+                            pname = p_map.get(id(param)) or f"{blk.name}.{sub_p}"
+                            k_pick = max(1, min(int(param.shape[0]), int(max_moe_experts_per_layer)))
+                            picks = sorted(set(np.linspace(0, int(param.shape[0]) - 1, k_pick, dtype=int).tolist()))
+                            cands = [(pname, False, int(ei)) for ei in picks]
+                            break
+            else:
                 if len(cands) > max_moe_experts_per_layer:
-                    picks = np.linspace(0, len(cands) - 1, max_moe_experts_per_layer, dtype=int).tolist()
+                    picks = sorted(set(np.linspace(0, len(cands) - 1, max_moe_experts_per_layer, dtype=int).tolist()))
                     cands = [cands[i] for i in picks]
-                mlp_list.extend(cands)
+            mlp_list.extend(cands)
         if mlp_list:
             mlp_by_layer.append((blk.idx, mlp_list))
 
@@ -591,8 +841,13 @@ def compute_weight_and_spectral_diff(
 
         for li, plist in mlp_targets:
             grp_stats: list[dict[str, Any]] = []
-            for pname, is_conv in plist:
-                wb_t, wa_t = src_b.get(pname), src_a.get(pname)
+            for pname, is_conv, expert_idx in plist:
+                if expert_idx is not None:
+                    wb_t = src_b.get_expert_slice(pname, expert_idx)
+                    wa_t = src_a.get_expert_slice(pname, expert_idx)
+                else:
+                    wb_t = src_b.get(pname)
+                    wa_t = src_a.get(pname)
                 if wb_t is None or wa_t is None or wb_t.shape != wa_t.shape:
                     continue
                 st = _analyze_matrix_delta(
@@ -850,17 +1105,39 @@ def accumulate_domain_grad_dots(
                 g = param.grad
                 if g is None:
                     return None
-                other_t = src_other.get(pname)
-                if other_t is not None and tuple(other_t.shape) == tuple(param.shape):
-                    dW = (other_t.to(device=param.device, dtype=torch.float32) - param.detach().float()) * float(sign)
-                    gf = g.detach().float()
-                    dot_v = float((gf * dW).sum().item())
-                    state["dots"][pname] = state["dots"].get(pname, 0.0) + dot_v
-                    if compute_prose_fisher and state["domain"] == "prose":
-                        g_seq = gf / max(float(state["weight"]), 1e-12)
-                        f_v = float(((g_seq * dW) ** 2).sum().item())
-                        state["fisher"][pname] = state["fisher"].get(pname, 0.0) + f_v
-                    del other_t, dW, gf
+                need_fisher = bool(compute_prose_fisher and state["domain"] == "prose")
+                w_inv = 1.0 / max(float(state["weight"]), 1e-12) if need_fisher else 0.0
+                if param.dim() >= 2 and (param.numel() > 16_000_000 or param.dim() == 3):
+                    slice_numel = max(1, int(param[0].numel()))
+                    chunk_sz = max(1, min(int(param.shape[0]), 16_000_000 // slice_numel))
+                    dot_v = 0.0
+                    f_v = 0.0
+                    got_any = False
+                    for s, e, other_chunk in src_other.iter_dim0_chunks(pname, chunk_sz):
+                        got_any = True
+                        p_c = param.detach()[s:e].float()
+                        g_c = g.detach()[s:e].float()
+                        dW_c = (other_chunk.to(device=param.device, dtype=torch.float32) - p_c) * float(sign)
+                        dot_v += float((g_c * dW_c).sum().item())
+                        if need_fisher:
+                            f_v += float((((g_c * w_inv) * dW_c) ** 2).sum().item())
+                        del other_chunk, p_c, g_c, dW_c
+                    if got_any:
+                        state["dots"][pname] = state["dots"].get(pname, 0.0) + dot_v
+                        if need_fisher:
+                            state["fisher"][pname] = state["fisher"].get(pname, 0.0) + f_v
+                else:
+                    other_t = src_other.get(pname)
+                    if other_t is not None and tuple(other_t.shape) == tuple(param.shape):
+                        dW = (other_t.to(device=param.device, dtype=torch.float32) - param.detach().float()) * float(sign)
+                        gf = g.detach().float()
+                        dot_v = float((gf * dW).sum().item())
+                        state["dots"][pname] = state["dots"].get(pname, 0.0) + dot_v
+                        if need_fisher:
+                            g_seq = gf * w_inv
+                            f_v = float(((g_seq * dW) ** 2).sum().item())
+                            state["fisher"][pname] = state["fisher"].get(pname, 0.0) + f_v
+                        del other_t, dW, gf
                 param.grad = None
                 return None
 

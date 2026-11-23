@@ -93,6 +93,16 @@ def test_classify_param_role_and_layer_idx() -> None:
     assert classify_param_role("model.layers.3.input_layernorm.weight") == "norms"
     assert classify_param_role("model.embed_tokens.weight") == "embed_head"
     assert classify_param_role("lm_head.weight") == "embed_head"
+    # Zamba2 hybrid shared_transformer & mamba_decoder names
+    assert classify_param_role("model.layers.1.shared_transformer.feed_forward.down_proj.weight") == "mlp_out"
+    assert classify_param_role("model.layers.1.shared_transformer.feed_forward.gate_up_proj.weight") == "mlp_in"
+    assert classify_param_role("model.layers.1.shared_transformer.feed_forward.gate_up_proj_adapter_list.0.0.weight") == "mlp_in"
+    assert classify_param_role("model.layers.1.shared_transformer.self_attn.o_proj.weight") == "attn_out"
+    assert classify_param_role("model.layers.1.shared_transformer.self_attn.q_proj.weight") == "attn_qkv"
+    assert classify_param_role("model.layers.1.mamba_decoder.mamba.out_proj.weight") == "ssm_conv"
+    # Fused 3D OLMoE expert parameters
+    assert classify_param_role("model.layers.0.mlp.experts.down_proj", shape=(64, 2048, 1024)) == "mlp_out"
+    assert classify_param_role("model.layers.0.mlp.experts.gate_up_proj", shape=(64, 2048, 2048)) == "mlp_in"
 
 
 def test_planted_rank1_vs_nullspace_and_identical_diff() -> None:
@@ -360,3 +370,203 @@ def test_pilot_pairs_anti_leakage_and_cli() -> None:
     )
     assert proc.returncode == 0, proc.stderr
     assert "--transition-type" in proc.stdout and "--summarize-dir" in proc.stdout
+
+
+def test_streaming_pytorch_bin_and_mixed_safetensors(tmp_path: Path) -> None:
+    from safetensors.torch import save_file
+
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+    m_before = _build_tiny_llama(len(tok), n_layers=3, hidden=16, inter=32)
+    m_after = _build_tiny_llama(len(tok), n_layers=3, hidden=16, inter=32)
+    m_after.load_state_dict(m_before.state_dict())
+    with torch.no_grad():
+        m_after.model.layers[0].self_attn.o_proj.weight.add_(
+            0.08 * torch.randn_like(m_after.model.layers[0].self_attn.o_proj.weight)
+        )
+        m_after.model.layers[2].mlp.down_proj.weight.add_(
+            0.12 * torch.randn_like(m_after.model.layers[2].mlp.down_proj.weight)
+        )
+
+    b_sf = tmp_path / "before_sf"
+    b_sf.mkdir()
+    save_file({k: v.detach().cpu().clone() for k, v in m_before.state_dict().items()}, str(b_sf / "model.safetensors"))
+
+    a_sharded = tmp_path / "after_sharded_bin"
+    a_sharded.mkdir()
+    items = [(k, v.detach().cpu().clone()) for k, v in m_after.state_dict().items()]
+    mid = len(items) // 2
+    s1_name, s2_name = "pytorch_model-00001-of-00002.bin", "pytorch_model-00002-of-00002.bin"
+    torch.save(dict(items[:mid]), str(a_sharded / s1_name))
+    torch.save(dict(items[mid:]), str(a_sharded / s2_name))
+    wmap = {k: s1_name for k, _ in items[:mid]}
+    wmap.update({k: s2_name for k, _ in items[mid:]})
+    (a_sharded / "pytorch_model.bin.index.json").write_text(
+        json.dumps({"metadata": {}, "weight_map": wmap}), encoding="utf-8"
+    )
+    # Non-weight file must be ignored safely.
+    (a_sharded / "training_args.bin").write_bytes(b"not-a-checkpoint")
+
+    a_single = tmp_path / "after_single_bin"
+    a_single.mkdir()
+    torch.save(dict(items), str(a_single / "pytorch_model.bin"))
+
+    struct_b = _discover_xray_structure(m_before, tok, "toy/bin")
+    wd_mem, sd_mem = compute_weight_and_spectral_diff(m_before, m_after, struct_b, device="cpu")
+    wd_sh, sd_sh = compute_weight_and_spectral_diff(b_sf, a_sharded, struct_b, device="cpu")
+    wd_sg, sd_sg = compute_weight_and_spectral_diff(b_sf, a_single, struct_b, device="cpu")
+
+    for wd_disk, sd_disk in ((wd_sh, sd_sh), (wd_sg, sd_sg)):
+        assert wd_disk["total_rel_fro"] == pytest.approx(wd_mem["total_rel_fro"], abs=1e-6)
+        assert wd_disk["role_energy_share"] == pytest.approx(wd_mem["role_energy_share"], abs=1e-6)
+        assert sd_disk["mlp_out"]["rank80_median"] == sd_mem["mlp_out"]["rank80_median"]
+        assert sd_disk["mlp_out"]["erank_ratio_mean"] == pytest.approx(sd_mem["mlp_out"]["erank_ratio_mean"], abs=1e-5)
+
+    dom_seqs = build_domain_calibration_seqs(tok, pack, max_length=48)
+    dots_mem, gnll_mem, _, _ = accumulate_domain_grad_dots(
+        m_before, m_after, dom_seqs, sign=+1.0, device="cpu", max_len=48, compute_prose_fisher=False
+    )
+    for disk_dir in (a_sharded, a_single):
+        dots_disk, gnll_disk, _, _ = accumulate_domain_grad_dots(
+            m_before, disk_dir, dom_seqs, sign=+1.0, device="cpu", max_len=48, compute_prose_fisher=False
+        )
+        assert gnll_disk == pytest.approx(gnll_mem, abs=1e-6)
+        for dom in ("prose", "math", "code"):
+            assert set(dots_disk[dom].keys()) == set(dots_mem[dom].keys())
+            for k in dots_mem[dom]:
+                assert dots_disk[dom][k] == pytest.approx(dots_mem[dom][k], abs=1e-5)
+
+
+def test_fused_3d_olmoe_spectral_and_attribution_against_unfused_safetensors(tmp_path: Path) -> None:
+    from safetensors.torch import save_file
+    from transformers import OlmoeConfig, OlmoeForCausalLM
+
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+    torch.manual_seed(7)
+    cfg = OlmoeConfig(
+        vocab_size=len(tok),
+        hidden_size=32,
+        intermediate_size=16,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=4,
+        num_experts=4,
+        num_experts_per_tok=2,
+        pad_token_id=0,
+        eos_token_id=1,
+    )
+    m_before = OlmoeForCausalLM(cfg).eval()
+    m_after = OlmoeForCausalLM(cfg).eval()
+    m_after.load_state_dict(m_before.state_dict())
+
+    dom_seqs = build_domain_calibration_seqs(tok, pack, max_length=48)
+    assert len(dom_seqs["math"]) >= 2
+
+    # Perturb ONLY fused 3D expert weights on math passages.
+    for p in m_after.parameters():
+        p.requires_grad_(False)
+    expert_params = [
+        p for n, p in m_after.named_parameters() if "experts." in n and ("down_proj" in n or "gate_up_proj" in n)
+    ]
+    assert len(expert_params) == 4
+    for p in expert_params:
+        p.requires_grad_(True)
+    opt = torch.optim.SGD(expert_params, lr=0.5)
+    for _ in range(3):
+        opt.zero_grad()
+        loss = torch.tensor(0.0)
+        for s in dom_seqs["math"]:
+            inp = torch.tensor([s], dtype=torch.long)
+            logits = m_after(input_ids=inp).logits[0, :-1].float()
+            loss = loss + F.cross_entropy(logits, inp[0, 1:]) / len(dom_seqs["math"])
+        loss.backward()
+        opt.step()
+    for p in expert_params:
+        p.requires_grad_(False)
+        p.grad = None
+
+    def _save_unfused_safetensors(model: nn.Module, out_dir: Path) -> None:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        sd_out: dict[str, torch.Tensor] = {}
+        for k, v in model.state_dict().items():
+            t = v.detach().cpu().clone()
+            if k.endswith(".experts.down_proj") and t.dim() == 3:
+                pref = k[: -len(".experts.down_proj")] + ".experts"
+                for ei in range(t.shape[0]):
+                    sd_out[f"{pref}.{ei}.down_proj.weight"] = t[ei].contiguous()
+            elif k.endswith(".experts.gate_up_proj") and t.dim() == 3:
+                pref = k[: -len(".experts.gate_up_proj")] + ".experts"
+                half = t.shape[1] // 2
+                for ei in range(t.shape[0]):
+                    sd_out[f"{pref}.{ei}.gate_proj.weight"] = t[ei, :half, :].contiguous()
+                    sd_out[f"{pref}.{ei}.up_proj.weight"] = t[ei, half:, :].contiguous()
+            else:
+                sd_out[k] = t
+        save_file(sd_out, str(out_dir / "model.safetensors"))
+
+    b_dir, a_dir = tmp_path / "olmoe_b", tmp_path / "olmoe_a"
+    _save_unfused_safetensors(m_before, b_dir)
+    _save_unfused_safetensors(m_after, a_dir)
+
+    struct_b = _discover_xray_structure(m_before, tok, "toy/olmoe")
+    wd, sp = compute_weight_and_spectral_diff(b_dir, a_dir, struct_b, device="cpu", max_moe_experts_per_layer=2)
+    assert sp["mlp_out"]["n_mats"] == 4
+    assert sp["mlp_out"]["erank_ratio_mean"] is not None
+    assert sp["mlp_out"]["rank80_median"] is not None
+    assert wd["role_energy_share"]["mlp_out"] > 0.0
+    assert wd["role_energy_share"]["mlp_in"] > 0.0
+
+    dots_mem, gnll_mem, _, _ = accumulate_domain_grad_dots(
+        m_before, m_after, dom_seqs, sign=+1.0, device="cpu", max_len=48, compute_prose_fisher=False
+    )
+    dots_b, gnll_b, pf_cost, used_len = accumulate_domain_grad_dots(
+        m_before, a_dir, dom_seqs, sign=+1.0, device="cpu", max_len=48, compute_prose_fisher=True
+    )
+    assert gnll_b == pytest.approx(gnll_mem, abs=1e-5)
+    for dom in ("prose", "math", "code"):
+        assert set(dots_b[dom].keys()) == set(dots_mem[dom].keys())
+        for k in dots_mem[dom]:
+            assert dots_b[dom][k] == pytest.approx(dots_mem[dom][k], abs=1e-4)
+
+    dots_a, gnll_a, _, _ = accumulate_domain_grad_dots(
+        m_after, b_dir, dom_seqs, sign=-1.0, device="cpu", max_len=used_len, compute_prose_fisher=False
+    )
+    attr = assemble_delta_attribution(dots_b, dots_a, gnll_b, gnll_a, pf_cost, n_layers=2, grad_seq_max_len=used_len)
+    m_attr = attr["domains"]["math"]
+    assert m_attr["actual_dnll"] < -1e-3
+    assert 0.75 <= m_attr["faithfulness"] <= 1.25
+    assert abs(m_attr["role_credit"]["mlp_out"]) > 0.0
+    assert abs(m_attr["role_credit"]["mlp_in"]) > 0.0
+
+
+def test_zamba2_role_energy_captures_shared_mlp() -> None:
+    from transformers import Zamba2Config, Zamba2ForCausalLM
+
+    tok = _build_toy_tokenizer(with_chat_template=False)
+    torch.manual_seed(11)
+    cfg = Zamba2Config(
+        vocab_size=len(tok),
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=4,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        mamba_d_state=8,
+        mamba_ngroups=1,
+        layers_block_type=["mamba", "hybrid", "mamba", "hybrid"],
+        pad_token_id=0,
+        eos_token_id=1,
+    )
+    m_z = Zamba2ForCausalLM(cfg).eval()
+    struct = _discover_xray_structure(m_z, tok, "toy/zamba2")
+    sd_a = {k: v.clone() for k, v in m_z.state_dict().items()}
+    sd_a["model.layers.1.shared_transformer.feed_forward.down_proj.weight"].add_(0.15)
+    sd_a["model.layers.1.shared_transformer.feed_forward.gate_up_proj.weight"].add_(0.10)
+
+    wd, sp = compute_weight_and_spectral_diff(m_z, sd_a, struct, device="cpu")
+    assert wd["role_energy_share"]["mlp_out"] > 0.0
+    assert wd["role_energy_share"]["mlp_in"] > 0.0
+    assert wd["role_energy_share"].get("attn_qkv", 0.0) == 0.0
+    assert any(v is not None and v > 0.0 for v in wd["mlp_rel_fro_8"])
+    assert sp["mlp_out"]["n_mats"] == 2
