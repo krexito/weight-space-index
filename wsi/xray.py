@@ -25,7 +25,13 @@ import torch.nn.functional as F
 
 from .capture import _io_dims, _is_linear, _tensor_out
 from .fisher import _resolve_device
-from .xray_probes import FACT_READOUT_PROMPTS, build_frozen_probe_pack
+from .xray_probes import (
+    EVERYDAY_CONTROLS,
+    FACT_READOUT_PROMPTS,
+    OR_BENCH_HARD_SLICE,
+    OR_BENCH_TOXIC_SLICE,
+    build_frozen_probe_pack,
+)
 
 XRAY_SCHEMA_VERSION = "wsi_xray_v1"
 N_DEPTH_BINS = 8
@@ -211,21 +217,91 @@ def _rankdata(arr: np.ndarray) -> np.ndarray:
     return ranks
 
 
-def _spearman(a: Sequence[float | None] | torch.Tensor | np.ndarray,
-              b: Sequence[float | None] | torch.Tensor | np.ndarray) -> float | None:
+def _betacf(a: float, b: float, x: float) -> float:
+    """Evaluates continued fraction for incomplete beta function by modified Lentz's method."""
+    max_iter = 200
+    eps = 1e-12
+    fpmin = 1e-30
+    qab = a + b
+    qap = a + 1.0
+    qam = a - 1.0
+    c = 1.0
+    d = 1.0 - qab * x / qap
+    if abs(d) < fpmin:
+        d = fpmin
+    d = 1.0 / d
+    h = d
+    for m in range(1, max_iter + 1):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < fpmin:
+            d = fpmin
+        c = 1.0 + aa / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < fpmin:
+            d = fpmin
+        c = 1.0 + aa / c
+        if abs(c) < fpmin:
+            c = fpmin
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < eps:
+            break
+    return h
+
+
+def _betai(a: float, b: float, x: float) -> float:
+    """Regularized incomplete beta function I_x(a, b) without external SciPy dependency."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    bt = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b) + a * math.log(x) + b * math.log(1.0 - x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return bt * _betacf(a, b, x) / a
+    return 1.0 - bt * _betacf(b, a, 1.0 - x) / b
+
+
+def _spearman_with_p(
+    a: Sequence[float | None] | torch.Tensor | np.ndarray,
+    b: Sequence[float | None] | torch.Tensor | np.ndarray,
+) -> tuple[float | None, float | None, int]:
+    """Compute Spearman rank correlation and two-sided Student-t p-value (matching scipy.stats.spearmanr)."""
     aa = a.detach().cpu().numpy() if isinstance(a, torch.Tensor) else np.asarray(a, dtype=np.float64)
     bb = b.detach().cpu().numpy() if isinstance(b, torch.Tensor) else np.asarray(b, dtype=np.float64)
     mask = np.isfinite(aa) & np.isfinite(bb)
-    if int(mask.sum()) < 3:
-        return None
+    n = int(mask.sum())
+    if n < 3:
+        return (None, None, n)
     ra = _rankdata(aa[mask].astype(np.float64))
     rb = _rankdata(bb[mask].astype(np.float64))
     ra = ra - ra.mean()
     rb = rb - rb.mean()
     denom = float(np.sqrt((ra * ra).sum() * (rb * rb).sum()))
     if denom <= 1e-12:
-        return None
-    return float(np.clip((ra * rb).sum() / denom, -1.0, 1.0))
+        return (None, None, n)
+    rho = float(np.clip((ra * rb).sum() / denom, -1.0, 1.0))
+    if abs(rho) >= 1.0 - 1e-12:
+        p_val = 0.0
+    else:
+        df = n - 2
+        t2 = df * rho * rho / max(1e-15, 1.0 - rho * rho)
+        p_val = max(0.0, min(1.0, _betai(0.5 * df, 0.5, df / (df + t2))))
+    return (rho, p_val, n)
+
+
+def _spearman(
+    a: Sequence[float | None] | torch.Tensor | np.ndarray,
+    b: Sequence[float | None] | torch.Tensor | np.ndarray,
+) -> float | None:
+    return _spearman_with_p(a, b)[0]
 
 
 def _effective_rank_and_top1(W: torch.Tensor) -> tuple[float, float]:
@@ -1734,33 +1810,66 @@ def _scan_over_refusal(
     idx_ctrl = [k for k, (g, _) in enumerate(tags) if g == "ctrl"]
     idx_framed = [k for k, (g, _) in enumerate(tags) if g == "framed"]
 
-    def _compute_refusal_stats(
+    def _norm_opening_entropy(
+        indices: list[int],
         g_texts: list[str],
-    ) -> tuple[np.ndarray, float | None, float | None, float | None, float | None, float | None, float | None, float | None, float]:
+    ) -> tuple[float | None, float | None, float | None, float, int]:
+        if not indices:
+            return None, None, None, 0.0, 0
+        openings_all = [_opening(g_texts[k]) for k in indices]
+        empty_rate = float(sum(1 for op in openings_all if not op) / len(indices))
+        openings = [op for op in openings_all if op]
+        open_cnt = Counter(openings)
+        tot = sum(open_cnt.values())
+        if tot == 0:
+            return None, None, None, empty_rate, 0
+        probs_o = np.array([c / tot for c in open_cnt.values()], dtype=np.float64)
+        op_ent = float(-(probs_o * np.log(np.clip(probs_o, 1e-12, 1.0))).sum())
+        op_ent_norm = float(np.clip(op_ent / math.log(tot), 0.0, 1.0)) if tot >= 2 else None
+        top_op = float(max(open_cnt.values()) / tot)
+        return op_ent, op_ent_norm, top_op, empty_rate, int(tot)
+
+    def _compute_refusal_stats(g_texts: list[str]) -> dict[str, Any]:
         ref_arr = np.array([_is_refusal(t) for t in g_texts], dtype=bool)
         if skip_generation:
-            return ref_arr, None, None, None, None, None, None, None, 0.0
+            return {
+                "refused": ref_arr,
+                "over_rate": None,
+                "tox_rate": None,
+                "ctrl_rate": None,
+                "framed_rate": None,
+                "tok0_ref": None,
+                "n_answered_nonempty": None,
+                "opening_ent": None,
+                "opening_ent_norm": None,
+                "ctrl_opening_ent_norm": None,
+                "top_open_share": None,
+                "empty_ans_rate": 0.0,
+            }
         o_r = float(ref_arr[idx_over].mean()) if idx_over else None
         t_r = float(ref_arr[idx_tox].mean()) if idx_tox else None
         c_r = float(ref_arr[idx_ctrl].mean()) if idx_ctrl else None
         f_r = float(ref_arr[idx_framed].mean()) if idx_framed else None
         ref_i = [k for k in (idx_over + idx_tox + idx_ctrl) if ref_arr[k]]
         ans_i = [k for k in (idx_over + idx_tox + idx_ctrl) if not ref_arr[k]]
+        ctrl_ans_i = [k for k in idx_ctrl if not ref_arr[k]]
         t0_r = float(top1_mass[ref_i].mean()) if ref_i else None
-        op_ent: float | None = None
-        top_op: float | None = None
-        empty_ans_rate = 0.0
-        if ans_i:
-            openings_all = [_opening(g_texts[k]) for k in ans_i]
-            empty_ans_rate = float(sum(1 for op in openings_all if not op) / len(ans_i))
-            openings = [op for op in openings_all if op]
-            open_cnt = Counter(openings)
-            tot_ans = sum(open_cnt.values())
-            if tot_ans > 0:
-                probs_o = np.array([c / tot_ans for c in open_cnt.values()], dtype=np.float64)
-                op_ent = float(-(probs_o * np.log(np.clip(probs_o, 1e-12, 1.0))).sum())
-                top_op = float(max(open_cnt.values()) / tot_ans)
-        return ref_arr, o_r, t_r, c_r, f_r, t0_r, op_ent, top_op, empty_ans_rate
+        op_ent, op_ent_norm, top_op, empty_ans_rate, tot_ans = _norm_opening_entropy(ans_i, g_texts)
+        _, ctrl_op_ent_norm, _, _, _ = _norm_opening_entropy(ctrl_ans_i, g_texts)
+        return {
+            "refused": ref_arr,
+            "over_rate": o_r,
+            "tox_rate": t_r,
+            "ctrl_rate": c_r,
+            "framed_rate": f_r,
+            "tok0_ref": t0_r,
+            "n_answered_nonempty": int(tot_ans),
+            "opening_ent": op_ent,
+            "opening_ent_norm": op_ent_norm,
+            "ctrl_opening_ent_norm": ctrl_op_ent_norm,
+            "top_open_share": top_op,
+            "empty_ans_rate": empty_ans_rate,
+        }
 
     gen_fallback_bs1 = bool(force_bs1)
     gen_fallback_nocache = bool(force_no_cache)
@@ -1776,12 +1885,14 @@ def _scan_over_refusal(
         gen_texts = [shuf_texts[inv_perm[orig_i]] for orig_i in range(n_prompts)]
         gen_toks = [shuf_toks[inv_perm[orig_i]] for orig_i in range(n_prompts)]
 
-    refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
-        gen_texts
-    )
+    stats = _compute_refusal_stats(gen_texts)
     mean_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in gen_toks])) if (not skip_generation and gen_toks) else 0.0
     collapsed = not skip_generation and (
-        (over_rate == 0.0 and tox_rate == 0.0 and ((top_open_share or 0.0) > 0.35 or empty_ans_rate > 0.5))
+        (
+            stats["over_rate"] == 0.0
+            and stats["tox_rate"] == 0.0
+            and ((stats["top_open_share"] or 0.0) > 0.35 or stats["empty_ans_rate"] > 0.5)
+        )
         or (mean_rep4 > 0.65)
     )
     cache_probe: dict[str, Any] | None = None
@@ -1811,7 +1922,7 @@ def _scan_over_refusal(
                     model, tok, probe_ids, pad_id, dev, batch_size, max_new_tokens=ref_max_new, use_cache=False
                 )
                 nc_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in nc_toks]))
-                nc_ref_diff = any(_is_refusal(pt) != bool(refused[k]) for pt, k in zip(nc_texts, probe_idx))
+                nc_ref_diff = any(_is_refusal(pt) != bool(stats["refused"][k]) for pt, k in zip(nc_texts, probe_idx))
                 nc_rep_cured = (base_rep4 > 0.50 and nc_rep4 < base_rep4 - 0.25)
                 nc_open_diff = sum(1 for pt, k in zip(nc_texts, probe_idx) if _opening(pt) != _opening(gen_texts[k]))
                 cache_probe = {
@@ -1839,9 +1950,7 @@ def _scan_over_refusal(
                         )
                         gen_texts = [shuf_texts[inv_perm[orig_i]] for orig_i in range(n_prompts)]
                         gen_toks = [shuf_toks[inv_perm[orig_i]] for orig_i in range(n_prompts)]
-                    refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
-                        gen_texts
-                    )
+                    stats = _compute_refusal_stats(gen_texts)
 
             if not gen_fallback_nocache and not force_bs1 and batch_size > 1:
                 probe_texts, probe_toks = _batched_generate(
@@ -1850,7 +1959,7 @@ def _scan_over_refusal(
                 bs1_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in probe_toks]))
                 n_open_diff = sum(1 for pt, k in zip(probe_texts, probe_idx) if _opening(pt) != _opening(gen_texts[k]))
                 bs1_rep_cured = (base_rep4 > 0.50 and bs1_rep4 < base_rep4 - 0.25)
-                bs1_ref_diff = any(_is_refusal(pt) != bool(refused[k]) for pt, k in zip(probe_texts, probe_idx))
+                bs1_ref_diff = any(_is_refusal(pt) != bool(stats["refused"][k]) for pt, k in zip(probe_texts, probe_idx))
                 if cache_probe is None:
                     cache_probe = {"base_rep4": base_rep4}
                 cache_probe["bs1_rep4"] = bs1_rep4
@@ -1861,21 +1970,19 @@ def _scan_over_refusal(
                     nc1_rep4 = float(np.mean([_rep_ngram_rate(t, 4) for t in nc1_toks]))
                     cache_probe["nocache_bs1_rep4"] = nc1_rep4
                     nc1_ref_diff = any(
-                        _is_refusal(pt) != bool(refused[k]) for pt, k in zip(nc1_texts, probe_idx[: len(nc1_texts)])
+                        _is_refusal(pt) != bool(stats["refused"][k]) for pt, k in zip(nc1_texts, probe_idx[: len(nc1_texts)])
                     )
                     if (bs1_rep4 - nc1_rep4 > 0.25) or nc1_ref_diff:
                         gen_fallback_nocache = True
                         gen_fallback_bs1 = True
                         _rerun_unpadded_prefill_and_gen(use_cache_flag=False)
-                        refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
-                            gen_texts
-                        )
+                        stats = _compute_refusal_stats(gen_texts)
                 if not gen_fallback_nocache and (bs1_ref_diff or bs1_rep_cured or n_open_diff >= 2):
                     gen_fallback_bs1 = True
                     _rerun_unpadded_prefill_and_gen(use_cache_flag=not force_no_cache)
-                    refused, over_rate, tox_rate, ctrl_rate, framed_rate, tok0_ref, opening_ent, top_open_share, empty_ans_rate = _compute_refusal_stats(
-                        gen_texts
-                    )
+                    stats = _compute_refusal_stats(gen_texts)
+
+    refused = stats["refused"]
 
     if debug_out is not None:
         ref_samples: list[dict[str, Any]] = []
@@ -1971,13 +2078,16 @@ def _scan_over_refusal(
         "refusal_thinking_disabled": bool(disable_think),
         "gen_fallback_bs1": bool(gen_fallback_bs1),
         "gen_fallback_nocache": bool(gen_fallback_nocache),
-        "base_overref_rate": over_rate,
-        "base_toxic_ref_rate": tox_rate,
-        "base_ctrl_ref_rate": ctrl_rate,
-        "base_toxic_framed_ref_rate": framed_rate,
-        "token0_top1_mass_refused": tok0_ref,
-        "opening_entropy_answered": opening_ent,
-        "base_top_opening_share": top_open_share,
+        "base_overref_rate": stats["over_rate"],
+        "base_toxic_ref_rate": stats["tox_rate"],
+        "base_ctrl_ref_rate": stats["ctrl_rate"],
+        "base_toxic_framed_ref_rate": stats["framed_rate"],
+        "token0_top1_mass_refused": stats["tok0_ref"],
+        "n_answered_nonempty": stats["n_answered_nonempty"],
+        "opening_entropy_answered": stats["opening_ent"],
+        "opening_entropy_norm": stats["opening_ent_norm"],
+        "ctrl_opening_entropy_norm": stats["ctrl_opening_ent_norm"],
+        "base_top_opening_share": stats["top_open_share"],
         "refusal_probe_mode": ref_mode,
         "auc_refusal_8": _resample_curve(ref_aucs),
         "auc_refusal_peak": ref_peak,
@@ -2587,6 +2697,10 @@ def _finite_mean(vals: Sequence[float | None]) -> float | None:
     return float(np.mean(xs)) if xs else None
 
 
+def _is_finite_num(v: Any) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(float(v))
+
+
 def _extract_flat_biomarkers(card: dict[str, Any], byte_size: int | None = None) -> dict[str, Any]:
     ident = card.get("identity", {})
     anat = card.get("anatomy", {})
@@ -2599,6 +2713,28 @@ def _extract_flat_biomarkers(card: dict[str, Any], byte_size: int | None = None)
     syc = path.get("sycophancy", {})
     lp = path.get("loops", {})
     mg = lp.get("microgen_decoding", {})
+
+    op_ent = oref.get("opening_entropy_answered")
+    op_ent_norm_raw = oref.get("opening_entropy_norm")
+    op_ent_norm: float | None = None
+    if _is_finite_num(op_ent_norm_raw):
+        op_ent_norm = float(op_ent_norm_raw)
+    elif _is_finite_num(op_ent):
+        n_ans_raw = oref.get("n_answered_nonempty")
+        if isinstance(n_ans_raw, int) and not isinstance(n_ans_raw, bool) and n_ans_raw >= 2:
+            op_ent_norm = float(min(1.0, max(0.0, float(op_ent) / math.log(n_ans_raw))))
+        elif card.get("probe_pack_sha256"):
+            over_r = oref.get("base_overref_rate")
+            tox_r = oref.get("base_toxic_ref_rate")
+            ctrl_r = oref.get("base_ctrl_ref_rate")
+            if _is_finite_num(over_r) and _is_finite_num(tox_r) and _is_finite_num(ctrl_r):
+                n_est = (
+                    round((OR_BENCH_HARD_SLICE[1] - OR_BENCH_HARD_SLICE[0]) * (1.0 - float(over_r)))
+                    + round((OR_BENCH_TOXIC_SLICE[1] - OR_BENCH_TOXIC_SLICE[0]) * (1.0 - float(tox_r)))
+                    + round(len(EVERYDAY_CONTROLS) * (1.0 - float(ctrl_r)))
+                )
+                if n_est >= 2 and float(op_ent) <= math.log(n_est) + 0.05:
+                    op_ent_norm = float(min(1.0, max(0.0, float(op_ent) / math.log(n_est))))
 
     return {
         "repo_id": ident.get("repo_id"),
@@ -2621,7 +2757,13 @@ def _extract_flat_biomarkers(card: dict[str, Any], byte_size: int | None = None)
         "fact_dla_first_quarter": fr.get("share_first_quarter"),
         "base_overref_rate": oref.get("base_overref_rate"),
         "base_toxic_ref_rate": oref.get("base_toxic_ref_rate"),
-        "opening_entropy_answered": oref.get("opening_entropy_answered"),
+        "n_answered_nonempty": oref.get("n_answered_nonempty"),
+        "opening_entropy_answered": op_ent,
+        "opening_entropy_norm": op_ent_norm,
+        "ctrl_opening_entropy_norm": oref.get("ctrl_opening_entropy_norm"),
+        "base_top_opening_share": oref.get("base_top_opening_share"),
+        "refusal_probe_mode": oref.get("refusal_probe_mode"),
+        "veto_probe_mode": oref.get("veto_probe_mode"),
         "auc_refusal_peak": (oref.get("auc_refusal_peak") or {}).get("auc"),
         "auc_veto_peak": (oref.get("auc_veto_peak") or {}).get("auc"),
         "cos_refusal_veto": oref.get("cos_refusal_veto_at_peak"),
@@ -2644,19 +2786,25 @@ _CONTRAST_PAIRS: list[tuple[str, str, str]] = [
     ("posttrain_olmo2", "allenai/OLMo-2-0425-1B-Instruct", "allenai/OLMo-2-0425-1B"),
 ]
 
-_CORR_PAIRS: list[tuple[str, str]] = [
-    ("fisher_late_early_ratio", "base_overref_rate"),
-    ("opening_entropy_answered", "base_overref_rate"),
-    ("unembed_anisotropy_cos", "base_overref_rate"),
-    ("mlp_energy90_mean", "base_overref_rate"),
-    ("veto_framing_shift_to_std", "auc_veto_peak"),
-    ("cos_refusal_veto", "auc_veto_peak"),
-    ("conf_vs_held_spearman", "cave_rate_false_pushback"),
-    ("cos_syc_refusal", "cave_rate_false_pushback"),
-    ("massive_act_max", "forced_rep_nll_slope"),
-    ("cos_rep_vs_copy", "forced_rep_nll_slope"),
-    ("forced_rep_nll_slope", "greedy_rep16_rate"),
-    ("mlp_energy90_mean", "forced_rep_nll_slope"),
+_CORR_SPECS: list[tuple[str, str, dict[str, str] | None]] = [
+    ("fisher_late_early_ratio", "base_overref_rate", None),
+    ("opening_entropy_norm", "base_overref_rate", None),
+    ("ctrl_opening_entropy_norm", "base_overref_rate", None),
+    ("base_top_opening_share", "base_overref_rate", None),
+    ("unembed_anisotropy_cos", "base_overref_rate", None),
+    ("mlp_energy90_mean", "base_overref_rate", None),
+    ("veto_framing_shift_to_std", "auc_veto_peak", {"veto_probe_mode": "refused_toxic_vs_refused_overref"}),
+    (
+        "cos_refusal_veto",
+        "auc_veto_peak",
+        {"veto_probe_mode": "refused_toxic_vs_refused_overref", "refusal_probe_mode": "refused_vs_nonrefused"},
+    ),
+    ("conf_vs_held_spearman", "cave_rate_false_pushback", None),
+    ("cos_syc_refusal", "cave_rate_false_pushback", {"refusal_probe_mode": "refused_vs_nonrefused"}),
+    ("massive_act_max", "forced_rep_nll_slope", None),
+    ("cos_rep_vs_copy", "forced_rep_nll_slope", None),
+    ("forced_rep_nll_slope", "greedy_rep16_rate", None),
+    ("mlp_energy90_mean", "forced_rep_nll_slope", None),
 ]
 
 
@@ -2674,42 +2822,72 @@ def summarize_xray_atlas(atlas_dir: str | Path) -> dict[str, Any]:
             by_repo[str(row["repo_id"])] = row
 
     contrasts: dict[str, dict[str, Any]] = {}
-    numeric_keys = [
-        k for k in rows[0].keys()
-        if k not in ("repo_id", "arch_family", "norm_type", "has_chat_template", "json_bytes")
-    ] if rows else []
+    non_numeric_keys = {
+        "repo_id",
+        "arch_family",
+        "norm_type",
+        "has_chat_template",
+        "json_bytes",
+        "refusal_probe_mode",
+        "veto_probe_mode",
+    }
+    numeric_keys = [k for k in rows[0].keys() if k not in non_numeric_keys] if rows else []
     for cname, repo_a, repo_b in _CONTRAST_PAIRS:
         if repo_a in by_repo and repo_b in by_repo:
             ra, rb = by_repo[repo_a], by_repo[repo_b]
             deltas: dict[str, float] = {}
             for k in numeric_keys:
                 va, vb = ra.get(k), rb.get(k)
-                if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
+                if _is_finite_num(va) and _is_finite_num(vb):
                     d = float(va) - float(vb)
                     if math.isfinite(d):
                         deltas[k] = round(d, 4)
             contrasts[cname] = {"a": repo_a, "b": repo_b, "deltas_a_minus_b": deltas}
 
-    correlations: list[dict[str, Any]] = []
-    for x_key, y_key in _CORR_PAIRS:
-        xs: list[float] = []
-        ys: list[float] = []
-        for r in rows:
-            xv, yv = r.get(x_key), r.get(y_key)
-            if isinstance(xv, (int, float)) and isinstance(yv, (int, float)):
-                if math.isfinite(float(xv)) and math.isfinite(float(yv)):
-                    xs.append(float(xv))
-                    ys.append(float(yv))
-        if len(xs) >= 4:
-            rho = _spearman(xs, ys)
-            correlations.append(
+    raw_corrs: list[dict[str, Any]] = []
+    for x_key, y_key, mode_filter in _CORR_SPECS:
+        finite_rows = [r for r in rows if _is_finite_num(r.get(x_key)) and _is_finite_num(r.get(y_key))]
+        if mode_filter:
+            matched = [r for r in finite_rows if all(r.get(mk) == mv for mk, mv in mode_filter.items())]
+        else:
+            matched = finite_rows
+        n_excluded_mode = len(finite_rows) - len(matched)
+        if len(matched) >= 4:
+            rho, p_val, n_used = _spearman_with_p(
+                [float(r[x_key]) for r in matched],
+                [float(r[y_key]) for r in matched],
+            )
+            raw_corrs.append(
                 {
                     "x": x_key,
                     "y": y_key,
-                    "n": len(xs),
-                    "spearman": round(rho, 4) if rho is not None else None,
+                    "n": n_used,
+                    "n_excluded_by_mode": n_excluded_mode,
+                    "mode_filter": dict(mode_filter) if mode_filter else None,
+                    "spearman": rho,
+                    "_p_raw": p_val,
                 }
             )
+
+    n_tests = sum(1 for c in raw_corrs if c["_p_raw"] is not None)
+    correlations: list[dict[str, Any]] = []
+    for rec in raw_corrs:
+        p_raw = rec.pop("_p_raw")
+        if p_raw is None:
+            p_bonf = None
+            tier = "insufficient_variance"
+        else:
+            p_bonf = min(1.0, float(p_raw) * n_tests) if n_tests > 0 else None
+            if p_bonf is not None and p_bonf < 0.05:
+                tier = "exploratory_bonferroni_pass"
+            elif float(p_raw) < 0.05:
+                tier = "exploratory_nominal_only"
+            else:
+                tier = "null_or_underpowered"
+        rec["p_value"] = p_raw
+        rec["p_bonferroni"] = p_bonf
+        rec["evidence_tier"] = tier
+        correlations.append(rec)
 
     def _fmt(v: Any, pct: bool = False) -> str:
         if v is None:
@@ -2736,6 +2914,15 @@ def summarize_xray_atlas(atlas_dir: str | Path) -> dict[str, Any]:
             "n_models": len(rows),
             "models": rows,
             "contrasts": contrasts,
+            "correlation_meta": {
+                "method": "spearman_two_sided_t",
+                "n_tests": n_tests,
+                "bonferroni_alpha_005": (0.05 / n_tests) if n_tests > 0 else None,
+                "note": (
+                    "Observational cross-model correlations are exploratory hypothesis generators, not causal proofs. "
+                    "Verify candidate mechanisms interventionally via WSI causal tracing/patching."
+                ),
+            },
             "biomarker_correlations": correlations,
             "markdown_table": "\n".join(lines),
         }

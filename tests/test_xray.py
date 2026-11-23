@@ -33,6 +33,7 @@ from wsi.xray import (  # noqa: E402
     _gini,
     _oof_linear_probe,
     _scan_over_refusal,
+    _spearman_with_p,
     format_compact_xray_json,
     load_xray_json,
     save_xray_json,
@@ -509,7 +510,16 @@ def test_summarize_xray_atlas(tmp_path: Path) -> None:
     assert summary["n_models"] == 4
     assert "scale_qwen35" in summary["contrasts"]
     assert "mixer_deltanet_vs_gqa" in summary["contrasts"]
+    assert "correlation_meta" in summary
+    cmeta = summary["correlation_meta"]
+    assert cmeta["method"] == "spearman_two_sided_t"
+    assert cmeta["n_tests"] >= 1
+    assert cmeta["bonferroni_alpha_005"] == pytest.approx(0.05 / cmeta["n_tests"], abs=1e-4)
+    assert "exploratory" in cmeta["note"].lower()
     assert len(summary["biomarker_correlations"]) >= 1
+    for rec in summary["biomarker_correlations"]:
+        for key in ("p_value", "p_bonferroni", "evidence_tier", "mode_filter", "n_excluded_by_mode"):
+            assert key in rec
     assert "Qwen/Qwen3.5-4B" in summary["markdown_table"]
 
 
@@ -929,3 +939,190 @@ def test_self_healing_nocache_fallback_and_propagation() -> None:
     assert mg["gen_fallback_nocache"] is True
     assert dbg["gen_fallback_nocache"] is True
     assert "cache_probe" in dbg
+
+
+def test_spearman_with_p_matches_exact_analytics() -> None:
+    # Edge cases: too few points, constant array, exact +/-1 monotone ranks.
+    assert _spearman_with_p([1.0, 2.0], [3.0, 4.0]) == (None, None, 2)
+    assert _spearman_with_p([1.0, 1.0, 1.0, 1.0], [1.0, 2.0, 3.0, 4.0]) == (None, None, 4)
+    rho1, p1, n1 = _spearman_with_p([1.0, 2.0, 3.0, 4.0, 5.0], [10.0, 20.0, 30.0, 40.0, 50.0])
+    assert n1 == 5 and rho1 == pytest.approx(1.0) and p1 == pytest.approx(0.0)
+    rho_neg, p_neg, n_neg = _spearman_with_p([1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0])
+    assert n_neg == 4 and rho_neg == pytest.approx(-1.0) and p_neg == pytest.approx(0.0)
+
+    # Exact Student-t df=2 two-sided p-value: p = 1 - |rho| when n = 4.
+    rho_n4, p_n4, n_n4 = _spearman_with_p([1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 4.0, 3.0])
+    assert n_n4 == 4
+    assert rho_n4 == pytest.approx(0.8, abs=1e-12)
+    assert p_n4 == pytest.approx(1.0 - abs(0.8), abs=1e-12)
+
+    scipy_stats = pytest.importorskip("scipy.stats")
+    rng = np.random.default_rng(123)
+    for n in (4, 11, 13, 14):
+        x = rng.normal(size=n)
+        y = rng.normal(size=n)
+        rho_ours, p_ours, n_ours = _spearman_with_p(x, y)
+        res_sp = scipy_stats.spearmanr(x, y)
+        assert n_ours == n
+        assert rho_ours == pytest.approx(float(res_sp.statistic), abs=1e-10)
+        assert p_ours == pytest.approx(float(res_sp.pvalue), abs=1e-10)
+
+
+def test_opening_entropy_norm_removes_sample_size_artifact() -> None:
+    from tokenizers import Tokenizer, models, pre_tokenizers
+    from transformers import PreTrainedTokenizerFast
+
+    vocab_words = (
+        ["<pad>", "<eos>", "<unk>", "user:", "assistant:", "I", "cannot", "fulfill", "that", "request."]
+        + ["Reply", "same", "text.", "What", "is", "2", "+", "?"]
+        + [f"p{i}" for i in range(26)]
+        + [f"a{i}" for i in range(26)]
+        + [f"b{i}" for i in range(26)]
+    )
+    vocab = {w: i for i, w in enumerate(vocab_words)}
+    tk = Tokenizer(models.WordLevel(vocab, unk_token="<unk>"))
+    tk.pre_tokenizer = pre_tokenizers.Whitespace()
+    tok = PreTrainedTokenizerFast(tokenizer_object=tk, pad_token="<pad>", eos_token="<eos>", unk_token="<unk>")
+    tok.chat_template = "{% for m in messages %}{{ m['role'] }}: {{ m['content'] }} {% endfor %}assistant:"
+
+    lm = _build_tiny_llama(len(tok), n_layers=2, hidden=16, inter=32)
+    struct = scan_model_xray.__globals__["_discover_xray_structure"](lm, tok, "toy/ent-norm")
+    eos_id = int(tok.eos_token_id)
+    pad_id = int(tok.pad_token_id)
+
+    tag_ids = [int(tok.encode(f"p{i}", add_special_tokens=False)[0]) for i in range(24)]
+    refusal_seq = tok.encode("I cannot fulfill that request.", add_special_tokens=False) + [eos_id]
+    same_seq = tok.encode("Reply same text.", add_special_tokens=False) + [eos_id]
+    uniq_seqs = [tok.encode(f"Reply a{i} b{i}", add_special_tokens=False) + [eos_id] for i in range(24)]
+
+    custom_pack = {
+        "overrefusal": [{"prompt": f"p{i}"} for i in range(8)],
+        "toxic": [{"prompt": f"p{8 + i}", "category": "c"} for i in range(8)],
+        "everyday_controls": [f"p{16 + i}" for i in range(8)],
+        "toxic_framed": [{"raw_idx": 0, "framing": "edu", "category": "c", "prompt": "p24"}],
+    }
+    high_ref_indices = set(range(0, 6)) | set(range(8, 14))  # 12 refused, 12 answered (2 over + 2 tox + 8 ctrl)
+    mode_box = {"mode": "high_ref"}
+
+    def _fake_generate(input_ids: torch.Tensor, attention_mask: torch.Tensor | None = None, max_new_tokens: int = 48, **kw):
+        bs = input_ids.shape[0]
+        rows = []
+        max_w = max(len(refusal_seq), len(same_seq), *(len(s) for s in uniq_seqs))
+        for r in range(bs):
+            toks_r = set(int(x) for x in input_ids[r].tolist())
+            matched = next((idx for idx, tid in enumerate(tag_ids) if tid in toks_r), None)
+            if matched is None:
+                seq = list(same_seq)
+            elif mode_box["mode"] == "high_ref":
+                seq = list(refusal_seq if matched in high_ref_indices else uniq_seqs[matched])
+            elif mode_box["mode"] == "zero_ref":
+                seq = list(uniq_seqs[matched])
+            else:
+                seq = list(same_seq)
+            while len(seq) < max_w:
+                seq.append(eos_id)
+            rows.append(seq[:max_w])
+        tail = torch.tensor(rows, dtype=input_ids.dtype, device=input_ids.device)
+        return torch.cat([input_ids, tail], dim=1)
+
+    lm.generate = _fake_generate  # type: ignore[method-assign]
+
+    mode_box["mode"] = "high_ref"
+    res_high, _ = _scan_over_refusal(lm, struct, tok, custom_pack, torch.device("cpu"), pad_id, 8, skip_generation=False)
+    mode_box["mode"] = "zero_ref"
+    res_zero, _ = _scan_over_refusal(lm, struct, tok, custom_pack, torch.device("cpu"), pad_id, 8, skip_generation=False)
+    mode_box["mode"] = "collapsed"
+    res_coll, _ = _scan_over_refusal(lm, struct, tok, custom_pack, torch.device("cpu"), pad_id, 8, skip_generation=False)
+
+    assert res_high["n_answered_nonempty"] == 12
+    assert res_zero["n_answered_nonempty"] == 24
+    # Raw Shannon entropy drops purely because fewer answered prompts remain (ln 12 < ln 24).
+    assert res_high["opening_entropy_answered"] < res_zero["opening_entropy_answered"] - 0.5
+    # Normalized entropy eliminates the N-dependence and shows 100% opening diversity for both.
+    assert res_high["opening_entropy_norm"] == pytest.approx(1.0, abs=1e-6)
+    assert res_zero["opening_entropy_norm"] == pytest.approx(1.0, abs=1e-6)
+    assert res_high["ctrl_opening_entropy_norm"] == pytest.approx(1.0, abs=1e-6)
+    assert res_zero["ctrl_opening_entropy_norm"] == pytest.approx(1.0, abs=1e-6)
+    # Genuinely repetitive openings collapse to 0.0 on both normalized metrics.
+    assert res_coll["opening_entropy_norm"] == pytest.approx(0.0, abs=1e-6)
+    assert res_coll["ctrl_opening_entropy_norm"] == pytest.approx(0.0, abs=1e-6)
+
+
+def test_summarize_atlas_mode_filters_and_bonferroni(tmp_path: Path) -> None:
+    tok = _build_toy_tokenizer(with_chat_template=True)
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+
+    # First 4 cards use matched primary modes with exact 0.0 Spearman; last 2 are fallback outliers.
+    specs = [
+        ("toy/m0", 0.10, "refused_vs_nonrefused", "refused_toxic_vs_refused_overref", 0.4, 0.90, 0.1, 0.6),
+        ("toy/m1", 0.25, "refused_vs_nonrefused", "refused_toxic_vs_refused_overref", 0.5, 0.80, 0.2, 0.4),
+        ("toy/m2", 0.40, "refused_vs_nonrefused", "refused_toxic_vs_refused_overref", 0.6, 0.92, 0.3, 0.8),
+        ("toy/m3", 0.55, "refused_vs_nonrefused", "refused_toxic_vs_refused_overref", 0.7, 0.85, 0.4, 0.5),
+        ("toy/fallback0", 0.70, "toxic_vs_controls", "all_toxic_vs_all_overref", 0.95, 0.99, 0.95, 0.95),
+        ("toy/fallback1", 0.85, "toxic_vs_controls", "all_toxic_vs_all_overref", 0.99, 0.995, 0.99, 0.99),
+    ]
+    for repo, over_r, ref_mode, veto_mode, cos_rv, auc_v, cos_syc, cave in specs:
+        m = _ToyArchModel("dense_gqa", vocab_size=len(tok), n_layers=2, d=16, inter=32)
+        card = scan_model_xray(m, tok, repo_id=repo, probe_pack=pack, skip_generation=True)
+        oref = card["pathologies"]["over_refusal"]
+        tox_r = 0.5
+        ctrl_r = 0.0
+        n_est = round(32 * (1.0 - over_r)) + round(32 * (1.0 - tox_r)) + round(16 * (1.0 - ctrl_r))
+        oref["base_overref_rate"] = over_r
+        oref["base_toxic_ref_rate"] = tox_r
+        oref["base_ctrl_ref_rate"] = ctrl_r
+        # Simulate pre-v1.3 card without opening_entropy_norm and raw H = ln(n_est) (100% diverse openings).
+        oref.pop("opening_entropy_norm", None)
+        oref["opening_entropy_answered"] = math.log(n_est)
+        oref["refusal_probe_mode"] = ref_mode
+        oref["veto_probe_mode"] = veto_mode
+        oref["cos_refusal_veto_at_peak"] = cos_rv
+        oref["auc_veto_peak"] = {"layer": 1, "depth": 1.0, "auc": auc_v}
+        card["pathologies"]["sycophancy"]["cos_syc_refusal"] = cos_syc
+        card["pathologies"]["sycophancy"]["cave_rate_false_pushback"] = cave
+        save_xray_json(card, tmp_path / f"{sxa.repo_slug(repo)}.xray.json")
+
+    summary = summarize_xray_atlas(tmp_path)
+    cmeta = summary["correlation_meta"]
+    corrs = {(c["x"], c["y"]): c for c in summary["biomarker_correlations"]}
+
+    # Raw opening_entropy_answered must not be correlated directly.
+    assert ("opening_entropy_answered", "base_overref_rate") not in corrs
+
+    # Legacy fallback should recover 1.0 normalized entropy for all 6 synthetic cards.
+    assert len(summary["models"]) == 6
+    for row in summary["models"]:
+        assert row["opening_entropy_norm"] == pytest.approx(1.0, abs=1e-3)
+
+    # Fallback outliers must be excluded when matching veto/refusal modes.
+    rv = corrs[("cos_refusal_veto", "auc_veto_peak")]
+    assert rv["n"] == 4
+    assert rv["n_excluded_by_mode"] == 2
+    assert rv["mode_filter"] == {
+        "veto_probe_mode": "refused_toxic_vs_refused_overref",
+        "refusal_probe_mode": "refused_vs_nonrefused",
+    }
+    assert rv["spearman"] == pytest.approx(0.0, abs=1e-6)
+    assert rv["p_value"] == pytest.approx(1.0, abs=1e-6)
+
+    syc = corrs[("cos_syc_refusal", "cave_rate_false_pushback")]
+    assert syc["n"] == 4
+    assert syc["n_excluded_by_mode"] == 2
+    assert syc["spearman"] == pytest.approx(0.0, abs=1e-6)
+
+    # Every evaluated correlation carries Bonferroni correction and disciplined evidence tier.
+    n_tests = cmeta["n_tests"]
+    assert cmeta["method"] == "spearman_two_sided_t"
+    assert n_tests >= 2
+    valid_tiers = {
+        "exploratory_bonferroni_pass",
+        "exploratory_nominal_only",
+        "null_or_underpowered",
+        "insufficient_variance",
+    }
+    for c in summary["biomarker_correlations"]:
+        assert c["evidence_tier"] in valid_tiers
+        if c["p_value"] is not None:
+            expected_bonf = min(1.0, float(c["p_value"]) * n_tests)
+            assert c["p_bonferroni"] == pytest.approx(expected_bonf, abs=max(2e-3, 1e-3 * n_tests))
+
