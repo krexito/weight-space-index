@@ -72,6 +72,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **0-Backprop Closed-Form & Hybrid Warm-Start Pocket MoE** (`K=6`): negative vs LoRA; ridge fits attention layers (`R2~0.6`) but not GDN (`R2~0.01`, `36.7%` vs `81.7%` 1-shot); SVD+8-step ties cold 8-step (`53.3%` vs `51.7%`).
 - **Equal-Pass-Budget Multi-Trace `MATH-500` Pocket MoE**: multi-trace ties 1-trace at equal passes (`<=1` epoch underfits); reg `24L r=16` + L12 routing hits new best `41.5%` (`+9.5` vs base, `0/371` non-math MMLU fires).
 - **De-Confounded `K=6` Multi-Trace & Rank Frontier**: equal-pass `144p single-trace` hits record `91.7%` (`+15` vs `96p`, `+11.7` vs `multitrace` `80%`, beats 1-shot `85%`); `r=2` (`2.58 MB`) retains `r=8` within `3.3 pts`.
+- **Single-Trace `144p` Rank Frontier (`r=8..r=1`)**: `r=8` (`10.3 MB`) leads `85.0%` (`+11.7` vs 1-shot); `r=2 @ lr=4e-4` (`2.58 MB`) ties `r=4` (`76.7%`, beats 1-shot); `r=1` (`1.29 MB`) breaks (`61.7%`, `0%` `s5`); `0/200` MMLU fires.
 - **WSI 2-Bit Quantization Recovery** and **Global Fisher Heterogeneous MLP Pruning**: negative (2-bit stays at chance; global Fisher starves late layers).
 - **Pairwise neuron selection**: tie with `energy+recon`.
 - **Low-bit trace residuals**: negative; a QTIP-style trellis beats scalar at 3 bits (relL2 `0.14` vs `0.18`) but INT8 quality needs >= ~7.5 bits (residual ~Gaussian, near full rank). Keep `int8+had64`.
