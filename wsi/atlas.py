@@ -130,7 +130,7 @@ def _build_atlas_handbook_md(
             "",
             str(tome1_summary.get("markdown_table") or "").strip(),
             "",
-            f"## Tome 2 — Delta X-Ray Transition Atlas ({n_p} pairs, `tome2_delta/*.delta.xray.json`)",
+            f"## Tome 2 — Delta X-Ray Transition Atlas ({n_p} pairs, `tome2_delta/*.delta.xray.json` + Level-2 `*.delta.detail.json`)",
             "",
             str(tome2_summary.get("markdown_table") or "").strip(),
             "",
@@ -270,6 +270,7 @@ def load_atlas(atlas_dir: str | Path = DEFAULT_ATLAS_DIR) -> dict[str, Any]:
 
     t1_files = sorted(t1_dir.glob("*.xray.json")) if t1_dir.is_dir() else []
     t2_files = sorted(t2_dir.glob("*.delta.xray.json")) if t2_dir.is_dir() else []
+    t2_detail_files = sorted(t2_dir.glob("*.delta.detail.json")) if t2_dir.is_dir() else []
     if not t1_files:
         raise FileNotFoundError(f"No Tome-1 *.xray.json files found in {t1_dir}")
     if not t2_files:
@@ -277,6 +278,11 @@ def load_atlas(atlas_dir: str | Path = DEFAULT_ATLAS_DIR) -> dict[str, Any]:
 
     t1_cards = [load_xray_json(f) for f in t1_files]
     t2_cards = [load_delta_xray_json(f) for f in t2_files]
+    t2_detail_paths = {
+        f.name[: -len(".delta.detail.json")]: str(f)
+        for f in t2_detail_files
+        if f.name.endswith(".delta.detail.json")
+    }
     t3_bundle = (
         json.loads(t3_path.read_text(encoding="utf-8"))
         if t3_path.exists()
@@ -306,6 +312,7 @@ def load_atlas(atlas_dir: str | Path = DEFAULT_ATLAS_DIR) -> dict[str, Any]:
         "tome1_summary": t1_summary,
         "tome2_cards": t2_cards,
         "tome2_summary": t2_summary,
+        "tome2_detail_paths": t2_detail_paths,
         "tome3": t3_bundle,
     }
 
@@ -557,6 +564,40 @@ def match_xray_neighbors(
     delta_entries.sort(key=lambda item: item[0], reverse=True)
     top_deltas = [rec for _, rec in delta_entries[:6]]
 
+    # Enrich top Tome-2 deltas with compact Level-2 highlights when `.delta.detail.json` is present.
+    t2_detail_paths = atlas.get("tome2_detail_paths") or {}
+    for rec in top_deltas:
+        pid = str(rec.get("pair_id") or "")
+        dp = t2_detail_paths.get(pid)
+        if not dp or not Path(dp).exists():
+            continue
+        try:
+            det = json.loads(Path(dp).read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        gsb = det.get("global_submatrix_breakdown") or {}
+        top_subs = sorted(
+            ((k, float(v.get("energy_share") or 0.0)) for k, v in gsb.items() if isinstance(v, Mapping)),
+            key=lambda kv: kv[1],
+            reverse=True,
+        )[:3]
+        ah = ((det.get("intra_layer_outliers") or {}).get("attention_heads") or {})
+        prose_params = ((det.get("attribution_detail") or {}).get("top_credited_params") or {}).get("prose") or []
+        top_p = prose_params[0] if prose_params else None
+        osig = ((det.get("tome1_curve_deltas") or {}).get("opening_signatures") or {})
+        rec["level2"] = {
+            "detail_file": f"tome2_delta/{pid}.delta.detail.json",
+            "top_submatrices": [{"name": k, "energy_share": round(s, 3)} for k, s in top_subs],
+            "mean_head_gini": ah.get("mean_head_gini"),
+            "top_prose_param": (
+                {"param": top_p.get("param"), "credit": top_p.get("credit")}
+                if isinstance(top_p, Mapping)
+                else None
+            ),
+            "opening_entropy_before": osig.get("before_opening_entropy_norm"),
+            "opening_entropy_after": osig.get("after_opening_entropy_norm"),
+        }
+
     # Collect Tome-3 clinical history records (matching pathology first, then others).
     t3_models = t3_bundle.get("models", {}) if isinstance(t3_bundle, Mapping) else {}
     matched_history: list[dict[str, Any]] = []
@@ -666,6 +707,27 @@ def format_atlas_diagnosis(diagnosis: Mapping[str, Any]) -> str:
             f"{_f(d['erank_ratio_mlp'], 2)} / {_f(d['erank_ratio_mix'], 2)} | "
             f"{_p(d['delta_overref_rate'])} | {_f(d['kl_prose'])} | {pf_s} |"
         )
+
+    l2_rows = [d for d in (diagnosis.get("relevant_tome2_deltas") or []) if isinstance(d.get("level2"), Mapping)]
+    if l2_rows:
+        lines.extend(
+            [
+                "",
+                "### Level-2 Submatrix & Parameter Highlights (`tome2_delta/*.delta.detail.json`)",
+                "| Pair | Top Submatrices (Energy) | Head Gini | Top Prose-Credit Param | Opening Entropy (Before→After) |",
+                "| :--- | :--- | :---: | :--- | :---: |",
+            ]
+        )
+        for d in l2_rows:
+            l2 = d["level2"]
+            subs = ", ".join(f"`{s['name']}` {float(s['energy_share'])*100:.0f}%" for s in (l2.get("top_submatrices") or [])[:3]) or "—"
+            tp_p = l2.get("top_prose_param")
+            tp_s = f"`{tp_p['param']}` ({_f(tp_p.get('credit'), 3)})" if isinstance(tp_p, Mapping) and tp_p.get("param") else "—"
+            eb, ea = l2.get("opening_entropy_before"), l2.get("opening_entropy_after")
+            ent_s = f"{_f(eb, 2)} → {_f(ea, 2)}" if (_is_finite_num(eb) or _is_finite_num(ea)) else "—"
+            lines.append(
+                f"| `{d['pair_id']}` | {subs} | {_f(l2.get('mean_head_gini'), 3)} | {tp_s} | {ent_s} |"
+            )
 
     lines.extend(
         [

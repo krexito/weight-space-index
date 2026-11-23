@@ -213,6 +213,16 @@
       "id": "mixer_vs_mlp_spectral_rank",
       "source": "Tome 1 & Tome 2 (all 8 dense/hybrid/MoE transitions)",
       "finding": "Attention/mixer output projections (o_proj / out_proj) systematically exhibit lower effective rank in post-training deltas (erank_ratio 0.56-0.75, rank80 195-599, energy_r8 up to 28%) than MLP down-projections (erank_ratio 0.87-0.96, rank80 624-1529)."
+    },
+    {
+      "id": "intra_layer_uniformity_heads_and_experts",
+      "source": "Tome 2 Level-2 detail cards (11/11 transitions, including 1024/1024 OLMoE experts)",
+      "finding": "Standard post-training (SFT, Instruct, DPO, RLVR, R1-Distill) spreads weight updates nearly uniformly across heads and experts within each layer (mean_head_gini 0.006-0.077; OLMoE expert_gini 0.019-0.038 with 0/1024 frozen experts). Do not waste search budget hunting 1-2 isolated heads/experts; target low-rank subspaces in down_proj / o_proj instead."
+    },
+    {
+      "id": "submatrix_credit_and_opening_collapse",
+      "source": "Tome 2 Level-2 submatrix attribution & tome1_curve_deltas (11/11 pairs)",
+      "finding": "At submatrix resolution, DPO (olmo2_sft_to_dpo, -43.7 pts over-refusal) concentrates credit in down_proj/up_proj/v_proj and cuts late-layer MLP Fisher sensitivity (fisher_mlp_8[bin7] = -0.175) while preserving opening diversity (entropy 1.0 -> 0.925). By contrast, R1-Distill spikes o_proj energy to 21.6% and collapses opening_entropy_norm (0.776 -> 0.172, top_opening_share 0.228 -> 0.650)."
     }
   ]
 }

@@ -19,6 +19,8 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 - **`late_layer_prose_fisher_hazard`** (*Tome 2 (trapezoidal attribution + prose_fisher_cost) & Tome 3 (Aion style_check failure)*): In dense GQA/MHA Instruct transitions, 39-84% of total collateral prose Fisher damage (prose_fisher_cost) concentrates in the final 1-2 decoder layers (depth 0.93-1.0) and embed_head. Uniform all-layer weight projection with strong alpha across late layers induces artificial opening templates (e.g. 41% exam-solver openings on Aion-2.3B). Restricting or tapering edits away from the final layers / high-Fisher prose blocks and screening recovered openings on dev prompts prevents style collapse.
 - **`dpo_and_veto_router_calibration`** (*Tome 1 (veto_framing_shift_to_std) + Tome 2 (olmo2_sft_to_dpo) + Tome 3 (LFM3/Aion routers)*): DPO cuts over-refusal by -43.7 pts (65.6% -> 21.9%) while keeping 81.2% toxic refusals using only 0.085% total weight change (energy_r8 4x more concentrated than SFT). For inference-time routed patches (.moipatch), models with veto_framing_shift_to_std > 0.30 shift along the toxic-vs-benign axis under educational framing; fitting a 2-gate framing-invariant router (wsi.router_cal.fit_framing_invariant_safety_router) with OOF thresholds and zero control fires retains >=90-96% toxic refusals and >=90% identical controls.
 - **`mixer_vs_mlp_spectral_rank`** (*Tome 1 & Tome 2 (all 8 dense/hybrid/MoE transitions)*): Attention/mixer output projections (o_proj / out_proj) systematically exhibit lower effective rank in post-training deltas (erank_ratio 0.56-0.75, rank80 195-599, energy_r8 up to 28%) than MLP down-projections (erank_ratio 0.87-0.96, rank80 624-1529).
+- **`intra_layer_uniformity_heads_and_experts`** (*Tome 2 Level-2 detail cards (11/11 transitions, including 1024/1024 OLMoE experts)*): Standard post-training (SFT, Instruct, DPO, RLVR, R1-Distill) spreads weight updates nearly uniformly across heads and experts within each layer (mean_head_gini 0.006-0.077; OLMoE expert_gini 0.019-0.038 with 0/1024 frozen experts). Do not waste search budget hunting 1-2 isolated heads/experts; target low-rank subspaces in down_proj / o_proj instead.
+- **`submatrix_credit_and_opening_collapse`** (*Tome 2 Level-2 submatrix attribution & tome1_curve_deltas (11/11 pairs)*): At submatrix resolution, DPO (olmo2_sft_to_dpo, -43.7 pts over-refusal) concentrates credit in down_proj/up_proj/v_proj and cuts late-layer MLP Fisher sensitivity (fisher_mlp_8[bin7] = -0.175) while preserving opening diversity (entropy 1.0 -> 0.925). By contrast, R1-Distill spikes o_proj energy to 21.6% and collapses opening_entropy_norm (0.776 -> 0.172, top_opening_share 0.228 -> 0.650).
 
 ## Tome 1 — Static Model X-Ray Atlas (15 models, `tome1_xray/*.xray.json`)
 
@@ -40,20 +42,20 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `tiiuae/falcon-mamba-7b-instruct` | `pure_mamba_ssm` | 7.273B | 4965 | 1.696 | 3.891 | 34.4% | 81.2% | 1.000 | 90.0% | 0.880 | 0.654 |
 | `Zyphra/Zamba2-2.7B-instruct` | `hybrid_mamba_gqa` | 2.662B | 5208 | 1.968 | 4.077 | 34.4% | 78.1% | 0.731 | 66.7% | 0.854 | 0.667 |
 
-## Tome 2 — Delta X-Ray Transition Atlas (11 pairs, `tome2_delta/*.delta.xray.json`)
+## Tome 2 — Delta X-Ray Transition Atlas (11 pairs, `tome2_delta/*.delta.xray.json` + Level-2 `*.delta.detail.json`)
 
 | Pair | Type | Size | Bytes | RelFro | Depth | MLP Share | MLP Rank80 | ΔMath | ΔCode | ΔProse | KL Prose | OverRef | Syc Cave |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| `olmo2_base_to_sft` | `sft` | 1.49B | 5915 | 1.325 | 0.48 | 6.4% | 1176 | -0.018 | 0.056 | 0.417 | 0.427 | 65.6% | 100.0% |
+| `olmo2_base_to_sft` | `sft` | 1.49B | 5913 | 1.325 | 0.48 | 6.4% | 1176 | -0.018 | 0.056 | 0.417 | 0.427 | 65.6% | 100.0% |
 | `olmo2_dpo_to_rlvr` | `rlvr` | 1.49B | 6031 | 0.001 | 0.49 | 67.8% | 990 | 0.120 | 0.026 | 0.018 | 0.004 | 21.9% | 100.0% |
-| `olmo2_sft_to_dpo` | `dpo` | 1.49B | 6000 | 0.001 | 0.51 | 62.9% | 896 | 0.137 | 0.196 | 0.133 | 0.095 | 21.9% | 100.0% |
+| `olmo2_sft_to_dpo` | `dpo` | 1.49B | 6001 | 0.001 | 0.51 | 62.9% | 896 | 0.137 | 0.196 | 0.133 | 0.095 | 21.9% | 100.0% |
 | `olmoe_base_to_instruct` | `instruct` | 6.92B | 5996 | 0.074 | 0.52 | 94.3% | 432 | 0.622 | 0.294 | 0.500 | 0.407 | 34.4% | 66.7% |
-| `qwen25_base_to_coder` | `code_midtrain` | 1.54B | 5933 | 0.630 | 0.46 | 74.7% | 902 | 0.043 | -0.054 | 0.243 | 0.291 | 0.0% | 50.0% |
+| `qwen25_base_to_coder` | `code_midtrain` | 1.54B | 5932 | 0.630 | 0.46 | 74.7% | 902 | 0.043 | -0.054 | 0.243 | 0.291 | 0.0% | 50.0% |
 | `qwen25_base_to_instruct` | `instruct` | 1.54B | 6018 | 0.010 | 0.53 | 50.7% | 774 | 0.019 | 0.031 | 0.041 | 0.029 | 75.0% | 97.4% |
-| `qwen25_base_to_math` | `math_midtrain` | 1.54B | 5937 | 1.080 | 0.45 | 72.4% | 926 | -0.084 | 0.337 | 0.967 | 0.760 | 0.0% | 11.1% |
+| `qwen25_base_to_math` | `math_midtrain` | 1.54B | 5936 | 1.080 | 0.45 | 72.4% | 926 | -0.084 | 0.337 | 0.967 | 0.760 | 0.0% | 11.1% |
 | `qwen25_coder_to_coder_instruct` | `code_instruct` | 1.54B | 6032 | 0.008 | 0.54 | 59.4% | 624 | 0.140 | 0.155 | 0.311 | 0.177 | 43.8% | 100.0% |
-| `qwen25_math_to_math_instruct` | `math_instruct` | 1.54B | 5992 | 0.157 | 0.54 | 30.1% | 920 | 0.226 | 1.599 | 2.502 | 1.966 | 46.9% | 85.7% |
-| `qwen25_math_to_r1_distill` | `r1_distill` | 1.54B | 5949 | 0.119 | 0.55 | 68.0% | 844 | 0.213 | 0.576 | 1.250 | 0.975 | 0.0% | 72.7% |
+| `qwen25_math_to_math_instruct` | `math_instruct` | 1.54B | 5994 | 0.157 | 0.54 | 30.1% | 920 | 0.226 | 1.599 | 2.502 | 1.966 | 46.9% | 85.7% |
+| `qwen25_math_to_r1_distill` | `r1_distill` | 1.54B | 5951 | 0.119 | 0.55 | 68.0% | 844 | 0.213 | 0.576 | 1.250 | 0.975 | 0.0% | 72.7% |
 | `zamba2_base_to_instruct` | `instruct` | 2.66B | 6154 | 0.015 | 0.47 | 7.5% | 1529 | 0.027 | 0.105 | 0.073 | 0.113 | 34.4% | 66.7% |
 
 ## Tome 3 — Clinical History (12 GPU interventions, `tome3_clinical_history.json`)
