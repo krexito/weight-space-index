@@ -8,11 +8,11 @@ long `Qwen3.5-4B` `<think>` reasoning into direct **`enable_thinking=False`** in
   2. `base_08b_think`                       : Unmodified Qwen3.5-0.8B (`enable_thinking=True`,  max 4096 tok)
   3. `teacher_4b_nothink`                   : Unmodified Qwen3.5-4B   (`enable_thinking=False`, max 2048 tok)
   4. `teacher_4b_think`                     : Unmodified Qwen3.5-4B   (`enable_thinking=True`,  max 4096 tok)
-  5. `nothink_distill_r16_24L_routed`       : Baseline `4B nothink` traces + `4B nothink` Top-32 KL (160x4=640 passes)
-  6. `think_post_nothink_kl_r16_24L_routed` : `4B think` post-`</think>` solutions + `4B nothink` Top-32 KL (same 640 passes)
+  5. `nothink_distill_r16_24L_routed`       : Baseline `4B nothink` traces + `4B nothink` Top-32 KL (200x4=800 passes)
+  6. `think_post_nothink_kl_r16_24L_routed` : `4B think` post-`</think>` solutions + `4B nothink` Top-32 KL (same 800 passes)
   7. `think_privileged_kl_r16_24L_routed`   : Exact same `4B think` post-`</think>` solutions + **privileged `4B think`
                                               Top-32 KL conditioned on full `<think>...</think>`** while student sees
-                                              **zero `<think>` tokens** (same 640 passes, matched seed init)
+                                              **zero `<think>` tokens** (same 800 passes, matched seed init)
 
 CPU smoke test::
     python scripts/experiment_pocket_moe_think_compress.py --smoke
@@ -688,8 +688,8 @@ def run_real(args: argparse.Namespace) -> dict[str, Any]:
     anchor_full_ids, base_anchor_logp, _ = _compute_base_logp(PROSE_ROUTER_TRAIN)
     phase2_s = round(time.perf_counter() - t_p2, 2)
 
-    # ---- Phase 3: Train 3 Matched 24L r=16 Cartridges (160 steps x 4 = 640 passes, identical init) ----
-    print("[think-cmp] Phase 3: Training 3 matched r=16 24L cartridges (640 passes each)...", flush=True)
+    # ---- Phase 3: Train 3 Matched 24L r=16 Cartridges (200 steps x 4 = 800 passes, identical init) ----
+    print(f"[think-cmp] Phase 3: Training 3 matched r={args.rank} 24L cartridges ({args.total_steps * args.grad_accum} passes each)...", flush=True)
     t_p3 = time.perf_counter()
 
     cartridge_specs = [
@@ -943,7 +943,7 @@ def main() -> None:
     ap.add_argument("--n-mmlu-test", type=int, default=400)
     ap.add_argument("--n-mmlu-router-train", type=int, default=200)
     ap.add_argument("--rank", type=int, default=16)
-    ap.add_argument("--total-steps", type=int, default=160)
+    ap.add_argument("--total-steps", type=int, default=200)
     ap.add_argument("--grad-accum", type=int, default=4)
     ap.add_argument("--max-new-tokens-nothink", type=int, default=2048)
     ap.add_argument("--max-new-tokens-think", type=int, default=4096)
