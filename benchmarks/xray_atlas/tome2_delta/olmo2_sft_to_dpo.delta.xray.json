@@ -114,7 +114,7 @@
    "unembed_anisotropy_cos":{"before":0.462,"after":0.462,"delta":0.0},
    "massive_act_max":{"before":63.536,"after":61.421,"delta":-2.115},
    "mlp_energy90_mean":{"before":0.708,"after":0.722,"delta":0.013},
-   "fisher_late_early_ratio":{"before":2.25,"after":1.094,"delta":-1.156},
+   "fisher_late_early_ratio":{"before":2.249,"after":1.094,"delta":-1.155},
    "block_fisher_late_early_ratio":{"before":0.256,"after":0.167,"delta":-0.089},
    "fisher_col_gini_mean":{"before":0.592,"after":0.579,"delta":-0.013},
    "fact_dla_first_quarter":{"before":0.012,"after":0.013,"delta":0.001}
@@ -136,5 +136,5 @@
    "sampled_rep16_rate":{"before":0.0,"after":0.0,"delta":0.0}
   }
  },
- "scan_meta":{"wall_s":63.8,"wsi_commit":"6127728"}
+ "scan_meta":{"wall_s":63.8,"wsi_commit":"cb4cb43"}
 }

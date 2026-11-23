@@ -1887,15 +1887,45 @@ def load_delta_xray_json(path: str | Path) -> dict[str, Any]:
 
 
 def _extract_tome1_curve_deltas(card_before: Mapping[str, Any], card_after: Mapping[str, Any]) -> dict[str, Any]:
-    """Extract before/after 8-bin curves and qualitative opening phrases from Tome-1 cards for Level-2 zoom."""
-    sb = card_before.get("static_anatomy", {}) if isinstance(card_before, Mapping) else {}
-    sa = card_after.get("static_anatomy", {}) if isinstance(card_after, Mapping) else {}
-    fb = card_before.get("fisher_anatomy", {}) if isinstance(card_before, Mapping) else {}
-    fa = card_after.get("fisher_anatomy", {}) if isinstance(card_after, Mapping) else {}
-    rb = card_before.get("refusal_geometry", {}) if isinstance(card_before, Mapping) else {}
-    ra = card_after.get("refusal_geometry", {}) if isinstance(card_after, Mapping) else {}
-    syb = card_before.get("sycophancy_geometry", {}) if isinstance(card_before, Mapping) else {}
-    sya = card_after.get("sycophancy_geometry", {}) if isinstance(card_after, Mapping) else {}
+    """Extract before/after 8-bin curves and qualitative opening stats from Tome-1 cards for Level-2 zoom."""
+    ab = card_before.get("anatomy", {}) if isinstance(card_before, Mapping) else {}
+    aa = card_after.get("anatomy", {}) if isinstance(card_after, Mapping) else {}
+    pb = card_before.get("pathologies", {}) if isinstance(card_before, Mapping) else {}
+    pa = card_after.get("pathologies", {}) if isinstance(card_after, Mapping) else {}
+
+    sb = ab.get("static_weights", {}) if isinstance(ab, Mapping) else {}
+    sa = aa.get("static_weights", {}) if isinstance(aa, Mapping) else {}
+    if not sb and isinstance(card_before, Mapping):
+        sb = card_before.get("static_anatomy", {}) or {}
+    if not sa and isinstance(card_after, Mapping):
+        sa = card_after.get("static_anatomy", {}) or {}
+
+    fb = ab.get("fisher_profile", {}) if isinstance(ab, Mapping) else {}
+    fa = aa.get("fisher_profile", {}) if isinstance(aa, Mapping) else {}
+    if not fb and isinstance(card_before, Mapping):
+        fb = card_before.get("fisher_anatomy", {}) or {}
+    if not fa and isinstance(card_after, Mapping):
+        fa = card_after.get("fisher_anatomy", {}) or {}
+
+    fwb = ab.get("forward_profile", {}) if isinstance(ab, Mapping) else {}
+    fwa = aa.get("forward_profile", {}) if isinstance(aa, Mapping) else {}
+
+    rb = pb.get("over_refusal", {}) if isinstance(pb, Mapping) else {}
+    ra = pa.get("over_refusal", {}) if isinstance(pa, Mapping) else {}
+    if not rb and isinstance(card_before, Mapping):
+        rb = card_before.get("refusal_geometry", {}) or {}
+    if not ra and isinstance(card_after, Mapping):
+        ra = card_after.get("refusal_geometry", {}) or {}
+
+    syb = pb.get("sycophancy", {}) if isinstance(pb, Mapping) else {}
+    sya = pa.get("sycophancy", {}) if isinstance(pa, Mapping) else {}
+    if not syb and isinstance(card_before, Mapping):
+        syb = card_before.get("sycophancy_geometry", {}) or {}
+    if not sya and isinstance(card_after, Mapping):
+        sya = card_after.get("sycophancy_geometry", {}) or {}
+
+    lb_loops = pb.get("loops", {}) if isinstance(pb, Mapping) else {}
+    la_loops = pa.get("loops", {}) if isinstance(pa, Mapping) else {}
 
     def _curve_diff(seq_b: Any, seq_a: Any) -> dict[str, Any] | None:
         if not isinstance(seq_b, list) and not isinstance(seq_a, list):
@@ -1912,13 +1942,15 @@ def _extract_tome1_curve_deltas(card_before: Mapping[str, Any], card_after: Mapp
 
     curves: dict[str, Any] = {}
     for name, vb, va in (
-        ("mlp_erank_ratio_8", sb.get("mlp_erank_ratio_8"), sa.get("mlp_erank_ratio_8")),
-        ("mixer_erank_ratio_8", sb.get("mixer_erank_ratio_8"), sa.get("mixer_erank_ratio_8")),
-        ("fisher_mlp_8", fb.get("fisher_mlp_8"), fa.get("fisher_mlp_8")),
-        ("fisher_mixer_8", fb.get("fisher_mixer_8"), fa.get("fisher_mixer_8")),
-        ("auc_refusal_by_layer_8", rb.get("auc_refusal_by_layer_8"), ra.get("auc_refusal_by_layer_8")),
-        ("auc_veto_by_layer_8", rb.get("auc_veto_by_layer_8"), ra.get("auc_veto_by_layer_8")),
-        ("auc_syc_by_layer_8", syb.get("auc_syc_by_layer_8"), sya.get("auc_syc_by_layer_8")),
+        ("mlp_erank_ratio_8", sb.get("mlp_down_erank_ratio_8") or sb.get("mlp_erank_ratio_8"), sa.get("mlp_down_erank_ratio_8") or sa.get("mlp_erank_ratio_8")),
+        ("mixer_erank_ratio_8", sb.get("mixer_out_erank_ratio_8") or sb.get("mixer_erank_ratio_8"), sa.get("mixer_out_erank_ratio_8") or sa.get("mixer_erank_ratio_8")),
+        ("fisher_mlp_8", fb.get("mlp_fisher_share_8") or fb.get("fisher_mlp_8"), fa.get("mlp_fisher_share_8") or fa.get("fisher_mlp_8")),
+        ("fisher_block_8", fb.get("block_fisher_share_8") or fb.get("fisher_mixer_8"), fa.get("block_fisher_share_8") or fa.get("fisher_mixer_8")),
+        ("mlp_energy90_frac_8", fwb.get("mlp_energy90_frac_8"), fwa.get("mlp_energy90_frac_8")),
+        ("auc_refusal_by_layer_8", rb.get("auc_refusal_8") or rb.get("auc_refusal_by_layer_8"), ra.get("auc_refusal_8") or ra.get("auc_refusal_by_layer_8")),
+        ("auc_veto_by_layer_8", rb.get("auc_harm_vs_overref_8") or rb.get("auc_veto_by_layer_8"), ra.get("auc_harm_vs_overref_8") or ra.get("auc_veto_by_layer_8")),
+        ("auc_syc_by_layer_8", syb.get("auc_pushback_8") or syb.get("auc_syc_by_layer_8"), sya.get("auc_pushback_8") or sya.get("auc_syc_by_layer_8")),
+        ("auc_rep_vs_other_8", lb_loops.get("auc_rep_vs_other_8"), la_loops.get("auc_rep_vs_other_8")),
     ):
         cd = _curve_diff(vb, va)
         if cd is not None:
@@ -1931,6 +1963,10 @@ def _extract_tome1_curve_deltas(card_before: Mapping[str, Any], card_after: Mapp
             "after_top_openings": ra.get("top_openings") or ra.get("base_top_openings"),
             "before_ctrl_top_openings": rb.get("ctrl_top_openings"),
             "after_ctrl_top_openings": ra.get("ctrl_top_openings"),
+            "before_opening_entropy_norm": rb.get("opening_entropy_norm"),
+            "after_opening_entropy_norm": ra.get("opening_entropy_norm"),
+            "before_top_opening_share": rb.get("base_top_opening_share"),
+            "after_top_opening_share": ra.get("base_top_opening_share"),
         },
     }
 

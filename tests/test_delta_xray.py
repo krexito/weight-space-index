@@ -675,3 +675,71 @@ def test_level2_detail_per_layer_heads_experts_and_semantics(tmp_path: Path) -> 
     assert moe_out["top12_changed_experts"][0]["layer_energy_share"] > 0.99
     assert moe_out["n_near_frozen_experts"] == 7
 
+
+def test_extract_tome1_curve_deltas_real_schema() -> None:
+    from wsi.delta_xray import _extract_tome1_curve_deltas
+
+    card_b = {
+        "anatomy": {
+            "static_weights": {
+                "mlp_down_erank_ratio_8": [0.5] * 8,
+                "mixer_out_erank_ratio_8": [0.4] * 8,
+            },
+            "fisher_profile": {
+                "mlp_fisher_share_8": [0.125] * 8,
+                "block_fisher_share_8": [0.125] * 8,
+            },
+            "forward_profile": {"mlp_energy90_frac_8": [0.6] * 8},
+        },
+        "pathologies": {
+            "over_refusal": {
+                "auc_refusal_8": [0.6] * 8,
+                "auc_harm_vs_overref_8": [0.5] * 8,
+                "opening_entropy_norm": 0.95,
+                "base_top_opening_share": 0.1,
+            },
+            "sycophancy": {"auc_pushback_8": [0.55] * 8},
+            "loops": {"auc_rep_vs_other_8": [0.8] * 8},
+        },
+    }
+    card_a = {
+        "anatomy": {
+            "static_weights": {
+                "mlp_down_erank_ratio_8": [0.6] * 8,
+                "mixer_out_erank_ratio_8": [0.5] * 8,
+            },
+            "fisher_profile": {
+                "mlp_fisher_share_8": [0.2] * 8,
+                "block_fisher_share_8": [0.1] * 8,
+            },
+            "forward_profile": {"mlp_energy90_frac_8": [0.65] * 8},
+        },
+        "pathologies": {
+            "over_refusal": {
+                "auc_refusal_8": [0.9] * 8,
+                "auc_harm_vs_overref_8": [0.8] * 8,
+                "opening_entropy_norm": 0.70,
+                "base_top_opening_share": 0.4,
+            },
+            "sycophancy": {"auc_pushback_8": [0.75] * 8},
+            "loops": {"auc_rep_vs_other_8": [0.85] * 8},
+        },
+    }
+    out = _extract_tome1_curve_deltas(card_b, card_a)
+    c8 = out["curves_8"]
+    assert set(c8.keys()) == {
+        "mlp_erank_ratio_8",
+        "mixer_erank_ratio_8",
+        "fisher_mlp_8",
+        "fisher_block_8",
+        "mlp_energy90_frac_8",
+        "auc_refusal_by_layer_8",
+        "auc_veto_by_layer_8",
+        "auc_syc_by_layer_8",
+        "auc_rep_vs_other_8",
+    }
+    assert c8["auc_refusal_by_layer_8"]["delta"][0] == pytest.approx(0.3, abs=1e-6)
+    assert out["opening_signatures"]["before_opening_entropy_norm"] == pytest.approx(0.95)
+    assert out["opening_signatures"]["after_opening_entropy_norm"] == pytest.approx(0.70)
+
+
