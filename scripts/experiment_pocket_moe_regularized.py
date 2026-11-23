@@ -129,6 +129,82 @@ class _RegLoRALinear(nn.Module):
         return int((self.lora_A.numel() + self.lora_B.numel()) * 2)
 
 
+def _chunked_distill_backward(
+    model: nn.Module,
+    ids_dev: torch.Tensor,
+    lo: int,
+    hi: int,
+    t_ids: torch.Tensor,
+    tk_ids: torch.Tensor | None,
+    tk_log: torch.Tensor | None,
+    *,
+    distill_T: float,
+    kl_weight: float,
+    grad_accum: int,
+    chunk_size: int = 256,
+) -> float:
+    """Exact token-chunked lm_head + Top-K KL/CE backward to cap peak logit VRAM on large vocabs (e.g. 248k)."""
+    total_len = int(hi - lo)
+    assert total_len >= 1
+    lm_head = model.get_output_embeddings() if hasattr(model, "get_output_embeddings") else None
+    trunk = getattr(model, "model", None)
+    use_chunked = (
+        isinstance(lm_head, nn.Module)
+        and isinstance(trunk, nn.Module)
+        and total_len > int(chunk_size)
+        and not any(p.requires_grad for p in lm_head.parameters())
+    )
+    if use_chunked:
+        try:
+            out = trunk(input_ids=ids_dev, use_cache=False)
+            h_all = out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]
+            if not (isinstance(h_all, torch.Tensor) and h_all.ndim == 3 and int(h_all.shape[1]) == int(ids_dev.shape[1])):
+                use_chunked = False
+        except Exception:
+            use_chunked = False
+
+    if use_chunked:
+        h_span = h_all[0, lo:hi]
+        h_grad = torch.zeros_like(h_span)
+        loss_val = 0.0
+        for c0 in range(0, total_len, int(chunk_size)):
+            c1 = min(total_len, c0 + int(chunk_size))
+            h_c = h_span[c0:c1].detach().requires_grad_(True)
+            logits_c = lm_head(h_c)
+            tk_i_c = tk_ids[c0:c1] if tk_ids is not None else None
+            tk_l_c = tk_log[c0:c1] if tk_log is not None else None
+            loss_c = distill_step_loss(
+                logits_c,
+                t_ids[c0:c1],
+                tk_i_c,
+                tk_l_c,
+                T=float(distill_T),
+                kl_weight=float(kl_weight),
+            )
+            w_c = float(c1 - c0) / float(total_len)
+            loss_val += float(loss_c.detach().item()) * w_c
+            g_c = torch.autograd.grad(loss_c * (w_c / float(grad_accum)), h_c)[0]
+            h_grad[c0:c1] = g_c
+            del h_c, logits_c, loss_c, g_c
+        h_span.backward(h_grad)
+        del out, h_all, h_span, h_grad
+        return loss_val
+
+    s_logits = _tail_logits(model, ids_dev, lo)[:total_len]
+    loss = distill_step_loss(
+        s_logits,
+        t_ids,
+        tk_ids,
+        tk_log,
+        T=float(distill_T),
+        kl_weight=float(kl_weight),
+    )
+    (loss / float(grad_accum)).backward()
+    loss_val = float(loss.detach().item())
+    del s_logits, loss
+    return loss_val
+
+
 def _train_regularized_lora_expert(
     model: nn.Module,
     layer_idxs: list[int],
@@ -221,14 +297,23 @@ def _train_regularized_lora_expert(
                 ids_dev = torch.tensor(sp["ids"], dtype=torch.long, device=dev).unsqueeze(0)
                 lo, hi = int(sp["lo"]), int(sp["hi"])
                 with torch.enable_grad():
-                    s_logits = _tail_logits(model, ids_dev, lo)[: hi - lo]
                     t_ids = ids_dev[0, lo + 1 : hi + 1]
                     tk_ids = sp["topk_ids"].to(dev) if sp.get("topk_ids") is not None else None
                     tk_log = sp["topk_logits"].to(dev) if sp.get("topk_logits") is not None else None
-                    loss = distill_step_loss(s_logits, t_ids, tk_ids, tk_log, T=float(distill_T), kl_weight=float(kl_weight))
-                    (loss / float(grad_accum)).backward()
-                    step_loss += float(loss.detach().item()) / float(grad_accum)
-                del ids_dev, s_logits, t_ids, loss
+                    loss_val = _chunked_distill_backward(
+                        model,
+                        ids_dev,
+                        lo,
+                        hi,
+                        t_ids,
+                        tk_ids,
+                        tk_log,
+                        distill_T=float(distill_T),
+                        kl_weight=float(kl_weight),
+                        grad_accum=int(grad_accum),
+                    )
+                    step_loss += float(loss_val) / float(grad_accum)
+                del ids_dev, t_ids, tk_ids, tk_log
 
             if float(anchor_kl_weight) > 0.0 and anchor_ids and base_anchor_logp:
                 anc_i = step_idx % len(anchor_ids)
