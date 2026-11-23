@@ -746,6 +746,29 @@ def format_atlas_diagnosis(diagnosis: Mapping[str, Any]) -> str:
     lines.extend(["", "## 5. Cross-Tome Anatomical Rules"])
     for item in diagnosis.get("cross_tome_findings") or []:
         lines.append(f"- **`{item['id']}`**: {item['finding']}")
+
+    # Compact progressive-disclosure pointers so an agent can zoom into exact JSON keys via Python without dumping 50KB files.
+    nbs = diagnosis.get("nearest_tome1_models") or []
+    l2_ptrs = [d["level2"]["detail_file"] for d in l2_rows[:2] if d.get("level2", {}).get("detail_file")]
+    lines.extend(
+        [
+            "",
+            "## 6. Deep-Dive Pointers (Inspect Specific Keys via Python if Needed)",
+            "- **Target full curves**: `atlas/target_base.xray.json` → keys `anatomy.fisher_profile`, `anatomy.forward_profile`, `pathologies.over_refusal`.",
+        ]
+    )
+    if nbs:
+        nb0_slug = str(nbs[0].get("repo_id") or "").replace("/", "__")
+        if nb0_slug:
+            lines.append(
+                f"- **Nearest Tome-1 neighbor**: `atlas/tome1_xray/{nb0_slug}.xray.json` → compare `anatomy.fisher_profile` & `pathologies.over_refusal`."
+            )
+    if l2_ptrs:
+        ptr_s = ", ".join(f"`atlas/{p}`" for p in l2_ptrs)
+        lines.append(
+            f"- **Top Tome-2 Level-2 zoom**: {ptr_s} → keys `per_layer` (exact layer/submatrix `rel_fro` & credit), "
+            "`attribution_detail.top_credited_params`, `tome1_curve_deltas.curves_8`."
+        )
     lines.append("")
     return "\n".join(lines)
 
