@@ -133,8 +133,8 @@
    "forced_rep_nll_slope":{"before":0.836,"after":0.844,"delta":0.008},
    "cos_rep_vs_copy":{"before":1.0,"after":0.995,"delta":-0.005},
    "greedy_rep16_rate":{"before":1.0,"after":0.5,"delta":-0.5},
-   "sampled_rep16_rate":{"before":1.0,"after":0.0,"delta":-1.0}
+   "sampled_rep16_rate":{"before":0.875,"after":0.375,"delta":-0.5}
   }
  },
- "scan_meta":{"wall_s":72.1,"wsi_commit":"cb4cb43"}
+ "scan_meta":{"wall_s":70.1,"wsi_commit":"17c8b9e"}
 }

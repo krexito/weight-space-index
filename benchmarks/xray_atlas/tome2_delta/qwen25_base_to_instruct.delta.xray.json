@@ -114,9 +114,9 @@
    "unembed_anisotropy_cos":{"before":0.117,"after":0.119,"delta":0.002},
    "massive_act_max":{"before":367.847,"after":367.441,"delta":-0.406},
    "mlp_energy90_mean":{"before":0.67,"after":0.676,"delta":0.006},
-   "fisher_late_early_ratio":{"before":1.813,"after":1.446,"delta":-0.367},
+   "fisher_late_early_ratio":{"before":1.813,"after":1.445,"delta":-0.368},
    "block_fisher_late_early_ratio":{"before":0.113,"after":0.111,"delta":-0.002},
-   "fisher_col_gini_mean":{"before":0.638,"after":0.632,"delta":-0.00575},
+   "fisher_col_gini_mean":{"before":0.638,"after":0.632,"delta":-0.00588},
    "fact_dla_first_quarter":{"before":0.053,"after":0.055,"delta":0.002}
   },
   "pathology_deltas":{
@@ -133,8 +133,8 @@
    "forced_rep_nll_slope":{"before":0.836,"after":0.84,"delta":0.004},
    "cos_rep_vs_copy":{"before":1.0,"after":0.999,"delta":-0.001},
    "greedy_rep16_rate":{"before":1.0,"after":0.0,"delta":-1.0},
-   "sampled_rep16_rate":{"before":1.0,"after":0.0,"delta":-1.0}
+   "sampled_rep16_rate":{"before":0.875,"after":0.0,"delta":-0.875}
   }
  },
- "scan_meta":{"wall_s":71.9,"wsi_commit":"cb4cb43"}
+ "scan_meta":{"wall_s":70.4,"wsi_commit":"17c8b9e"}
 }

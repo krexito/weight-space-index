@@ -136,5 +136,5 @@
    "sampled_rep16_rate":{"before":0.375,"after":0.0,"delta":-0.375}
   }
  },
- "scan_meta":{"wall_s":73.3,"wsi_commit":"cb4cb43"}
+ "scan_meta":{"wall_s":72.6,"wsi_commit":"17c8b9e"}
 }

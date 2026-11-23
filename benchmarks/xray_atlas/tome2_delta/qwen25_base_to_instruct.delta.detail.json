@@ -115,9 +115,9 @@
     "unembed_anisotropy_cos":{"before":0.117,"after":0.119,"delta":0.002},
     "massive_act_max":{"before":367.847,"after":367.441,"delta":-0.406},
     "mlp_energy90_mean":{"before":0.67,"after":0.676,"delta":0.006},
-    "fisher_late_early_ratio":{"before":1.813,"after":1.446,"delta":-0.367},
+    "fisher_late_early_ratio":{"before":1.813,"after":1.445,"delta":-0.368},
     "block_fisher_late_early_ratio":{"before":0.113,"after":0.111,"delta":-0.002},
-    "fisher_col_gini_mean":{"before":0.638,"after":0.632,"delta":-0.00575},
+    "fisher_col_gini_mean":{"before":0.638,"after":0.632,"delta":-0.00588},
     "fact_dla_first_quarter":{"before":0.053,"after":0.055,"delta":0.002}
    },
    "pathology_deltas":{
@@ -134,7 +134,7 @@
     "forced_rep_nll_slope":{"before":0.836,"after":0.84,"delta":0.004},
     "cos_rep_vs_copy":{"before":1.0,"after":0.999,"delta":-0.001},
     "greedy_rep16_rate":{"before":1.0,"after":0.0,"delta":-1.0},
-    "sampled_rep16_rate":{"before":1.0,"after":0.0,"delta":-1.0}
+    "sampled_rep16_rate":{"before":0.875,"after":0.0,"delta":-0.875}
    }
   }
  },
@@ -2137,8 +2137,63 @@
   }
  },
  "tome1_curve_deltas":{
-  "curves_8":{},
-  "opening_signatures":{"before_top_openings":null,"after_top_openings":null,"before_ctrl_top_openings":null,"after_ctrl_top_openings":null}
+  "curves_8":{
+   "mlp_erank_ratio_8":{
+    "before":[0.965,0.955,0.958,0.947,0.944,0.956,0.951,0.955],
+    "after":[0.965,0.955,0.958,0.947,0.944,0.956,0.951,0.955],
+    "delta":[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+   },
+   "mixer_erank_ratio_8":{
+    "before":[0.859,0.735,0.702,0.7,0.671,0.669,0.707,0.691],
+    "after":[0.859,0.735,0.702,0.7,0.671,0.67,0.707,0.691],
+    "delta":[0.0,0.0,0.0,0.0,0.0,0.001,0.0,0.0]
+   },
+   "fisher_mlp_8":{
+    "before":[0.018,0.026,0.018,0.00957,0.00771,0.015,0.03,0.121],
+    "after":[0.019,0.027,0.02,0.011,0.00869,0.016,0.032,0.128],
+    "delta":[0.001,0.001,0.002,0.00143,0.00098,0.001,0.002,0.007]
+   },
+   "fisher_block_8":{
+    "before":[0.138,0.047,0.041,0.036,0.034,0.019,0.00842,0.00622],
+    "after":[0.137,0.047,0.042,0.036,0.034,0.019,0.00821,0.00588],
+    "delta":[-0.001,0.0,0.001,0.0,0.0,0.0,-0.00021,-0.00034]
+   },
+   "mlp_energy90_frac_8":{
+    "before":[0.727,0.633,0.783,0.763,0.746,0.7,0.614,0.394],
+    "after":[0.729,0.634,0.784,0.764,0.747,0.699,0.619,0.432],
+    "delta":[0.002,0.001,0.001,0.001,0.001,-0.001,0.005,0.038]
+   },
+   "auc_refusal_by_layer_8":{
+    "before":[0.625,0.547,0.52,0.521,0.4,0.271,0.229,0.231],
+    "after":[0.713,0.659,0.665,0.703,0.915,0.954,0.959,0.955],
+    "delta":[0.088,0.112,0.145,0.182,0.515,0.683,0.73,0.724]
+   },
+   "auc_veto_by_layer_8":{
+    "before":[0.715,0.678,0.714,0.768,0.743,0.709,0.722,0.712],
+    "after":[0.722,0.802,0.766,0.784,0.802,0.831,0.81,0.788],
+    "delta":[0.007,0.124,0.052,0.016,0.059,0.122,0.088,0.076]
+   },
+   "auc_syc_by_layer_8":{
+    "before":[0.808,1.0,1.0,1.0,1.0,1.0,1.0,1.0],
+    "after":[0.849,1.0,1.0,1.0,1.0,1.0,1.0,1.0],
+    "delta":[0.041,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
+   },
+   "auc_rep_vs_other_8":{
+    "before":[0.953,0.949,0.88,0.924,0.933,0.926,0.775,0.789],
+    "after":[0.953,0.955,0.893,0.939,0.952,0.952,0.943,0.872],
+    "delta":[0.0,0.006,0.013,0.015,0.019,0.026,0.168,0.083]
+   }
+  },
+  "opening_signatures":{
+   "before_top_openings":null,
+   "after_top_openings":null,
+   "before_ctrl_top_openings":null,
+   "after_ctrl_top_openings":null,
+   "before_opening_entropy_norm":0.803,
+   "after_opening_entropy_norm":0.931,
+   "before_top_opening_share":0.176,
+   "after_top_opening_share":0.16
+  }
  },
- "scan_meta":{"wall_s":71.9,"wsi_commit":"cb4cb43"}
+ "scan_meta":{"wall_s":70.4,"wsi_commit":"17c8b9e"}
 }
