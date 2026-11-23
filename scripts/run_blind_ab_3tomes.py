@@ -157,6 +157,8 @@ def cmd_select_holdout(args: argparse.Namespace) -> int:
                 local_dir=str(base_dir),
                 ignore_patterns=["*.msgpack", "*.h5", "flax_model*", "tf_model*", "rust_model*", "*.ot"],
             )
+            if erb.sanitize_checkpoint_remote_code(base_dir):
+                print(f"[select-holdout] Sanitized legacy auto_map in {base_dir}/config.json for native transformers>=5 loading", flush=True)
             cens_ns = argparse.Namespace(
                 work=str(work_dir),
                 model=str(base_dir),

@@ -273,3 +273,46 @@ def test_wsi_atlas_cli() -> None:
     assert payload["n_tome1_models"] == 15
     assert payload["n_tome2_pairs"] == 11
     assert payload["n_tome3_records"] >= 12
+
+
+def test_sanitize_checkpoint_remote_code_strips_broken_phi3_automap(tmp_path: Path) -> None:
+    from transformers import AutoModelForCausalLM, Phi3Config, Phi3ForCausalLM
+
+    ckpt_dir = tmp_path / "phi3_legacy"
+    cfg = Phi3Config(
+        vocab_size=64,
+        hidden_size=32,
+        intermediate_size=64,
+        num_hidden_layers=2,
+        num_attention_heads=4,
+        num_key_value_heads=2,
+        pad_token_id=0,
+        eos_token_id=1,
+    )
+    m = Phi3ForCausalLM(cfg).eval()
+    m.save_pretrained(ckpt_dir)
+
+    # Inject legacy auto_map pointing to a broken remote-code module importing transformers.modeling_attn_mask_utils.
+    cfg_path = ckpt_dir / "config.json"
+    raw_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    raw_cfg["auto_map"] = {
+        "AutoConfig": "configuration_phi3.Phi3Config",
+        "AutoModelForCausalLM": "modeling_phi3.Phi3ForCausalLM",
+    }
+    cfg_path.write_text(json.dumps(raw_cfg, indent=2), encoding="utf-8")
+    (ckpt_dir / "configuration_phi3.py").write_text(
+        "from transformers import Phi3Config\n", encoding="utf-8"
+    )
+    (ckpt_dir / "modeling_phi3.py").write_text(
+        "from transformers.modeling_attn_mask_utils import _prepare_4d_causal_attention_mask\n",
+        encoding="utf-8",
+    )
+
+    assert erb.sanitize_checkpoint_remote_code(ckpt_dir) is True
+    cleaned_cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert "auto_map" not in cleaned_cfg
+
+    # Now even trust_remote_code=True loads native Phi3ForCausalLM cleanly without importing modeling_phi3.py.
+    loaded = AutoModelForCausalLM.from_pretrained(str(ckpt_dir), trust_remote_code=True)
+    assert isinstance(loaded, Phi3ForCausalLM)
+

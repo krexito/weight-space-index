@@ -137,15 +137,62 @@ def cmd_prepare(a) -> None:
 
 
 # ------------------------------------------------------------------ generation
+def sanitize_checkpoint_remote_code(model_dir: str | Path) -> bool:
+    """Strip stale HF `auto_map` remote-code hooks when `model_type` is natively supported in transformers>=5."""
+    root = Path(model_dir)
+    cfg_path = root / "config.json"
+    if not (root.is_dir() and cfg_path.is_file()):
+        return False
+    try:
+        from transformers.models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES
+
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        mtype = str(cfg.get("model_type") or "")
+        changed = False
+        if mtype in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES and "auto_map" in cfg:
+            cfg.pop("auto_map", None)
+            # Legacy Phi-3/Phi-4 rope_scaling dicts sometimes omit `rope_type` while setting `type`.
+            rs = cfg.get("rope_scaling")
+            if isinstance(rs, dict) and "type" in rs and "rope_type" not in rs:
+                rs["rope_type"] = rs["type"]
+            atomic_json(cfg_path, cfg)
+            changed = True
+
+        tok_cfg_path = root / "tokenizer_config.json"
+        if mtype in MODEL_FOR_CAUSAL_LM_MAPPING_NAMES and tok_cfg_path.is_file():
+            tcfg = json.loads(tok_cfg_path.read_text(encoding="utf-8"))
+            if "auto_map" in tcfg:
+                tcfg.pop("auto_map", None)
+                atomic_json(tok_cfg_path, tcfg)
+                changed = True
+        return changed
+    except Exception:
+        return False
+
+
 def load(model_dir: str, dtype: str, device: str):
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    tok = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
+    sanitize_checkpoint_remote_code(model_dir)
+    try:
+        tok = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=True)
+    except Exception:
+        tok = AutoTokenizer.from_pretrained(model_dir, trust_remote_code=False)
     tok.padding_side = "left"
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
-    model = AutoModelForCausalLM.from_pretrained(model_dir, dtype=getattr(torch, dtype), trust_remote_code=True).to(device).eval()
+    dt = getattr(torch, dtype)
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model_dir, dtype=dt, trust_remote_code=True)
+    except (ImportError, ModuleNotFoundError):
+        model = AutoModelForCausalLM.from_pretrained(model_dir, dtype=dt, trust_remote_code=False)
+    except TypeError:
+        try:
+            model = AutoModelForCausalLM.from_pretrained(model_dir, torch_dtype=dt, trust_remote_code=True)
+        except (ImportError, ModuleNotFoundError):
+            model = AutoModelForCausalLM.from_pretrained(model_dir, torch_dtype=dt, trust_remote_code=False)
+    model = model.to(device).eval()
     return model, tok
 
 
