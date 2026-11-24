@@ -58,6 +58,8 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Tracer Upgrades**: linearized final norm, block gaps, `protect_dir`, multi-hop graph, peeling; speed fix.
 - **Blind agent + WSI vs over-refusal** (Aion): passes the old gates (`64.9%` / `93.3%`) but **fails with style** (41% exam-solver openings).
 - **Over-refusal without the voice change** (Aion): no arm passes; null-space edits lose the effect, the cleaned direction fixes the voice but recovers only `27.7%` (alpha not re-tuned).
+- **3-Tome WSI Atlas (`wsi_atlas_v1`)**: 15 Tome-1 + 11 Tome-2 (L1+L2 `tome1_curve_deltas`) + 12 Tome-3; post-training is intra-layer uniform (`head_gini <= 0.077`, `OLMoE` `0/1024` frozen); `R1-Distill` spikes `o_proj 21.6%`.
+- **Blind Live-Agent A/B (`Phi-4-mini`, `deepseek-v4.1-flash-1017`, 10.0 on Writing Weights)**: WSI solves hold-out with style in `23–28 min` (`~$0.03`, `77.8/91.7/100%` `wsi_only` clean); Atlas A/B ties `1–1` (Run 2 `wsi_plus_atlas` bias bug + timeout).
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
