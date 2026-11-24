@@ -150,6 +150,24 @@ PILOT_DELTA_PAIRS: list[dict[str, str]] = [
     },
 ]
 
+# Optional 14B scaling-law validation pairs (96 GB GPU / RTX PRO 6000 / H100; excluded from default 11-pair pilot).
+SCALE_14B_DELTA_PAIRS: list[dict[str, str]] = [
+    {
+        "pair_id": "qwen25_14b_base_to_instruct",
+        "family": "qwen25_14b",
+        "transition_type": "instruct",
+        "before": "Qwen/Qwen2.5-14B",
+        "after": "Qwen/Qwen2.5-14B-Instruct",
+    },
+    {
+        "pair_id": "qwen25_14b_base_to_r1_distill",
+        "family": "qwen25_14b",
+        "transition_type": "r1_distill",
+        "before": "Qwen/Qwen2.5-14B",
+        "after": "deepseek-ai/DeepSeek-R1-Distill-Qwen-14B",
+    },
+]
+
 
 def _is_valid_delta_xray_file(path: Path) -> bool:
     if not path.exists() or path.stat().st_size == 0:
@@ -195,7 +213,8 @@ def _resolve_target_pairs(
     if not raw or raw.strip().lower() == "all":
         chosen = catalog
     else:
-        by_id = {p["pair_id"]: p for p in catalog}
+        ext_catalog = catalog if pair_catalog is not None else (catalog + list(SCALE_14B_DELTA_PAIRS))
+        by_id = {p["pair_id"]: p for p in ext_catalog}
         tokens = [t.strip() for t in raw.split(",") if t.strip()]
         chosen = []
         seen: set[str] = set()
@@ -206,7 +225,7 @@ def _resolve_target_pairs(
                     chosen.append(p)
                     seen.add(p["pair_id"])
             else:
-                fam_hits = [p for p in catalog if p["family"] == tok or p["transition_type"] == tok]
+                fam_hits = [p for p in ext_catalog if p["family"] == tok or p["transition_type"] == tok]
                 if not fam_hits:
                     raise ValueError(f"Unknown delta pair_id / family / transition_type: {tok!r}")
                 for p in fam_hits:
@@ -265,6 +284,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-attribution", action="store_true", help="Skip trapezoidal gradient attribution")
     ap.add_argument("--grad-max-len", type=int, default=128)
     ap.add_argument("--force", action="store_true", help="Re-scan pairs even if valid .delta.xray.json already exists")
+    ap.add_argument("--bundle-out", default=None, help="Optional single-file JSON bundle output path (cards + details + summary)")
     ap.add_argument("--allow-holdout", action="store_true", help="Allow scanning RESERVED_HOLDOUT_MODELS")
     ap.add_argument("--list-pairs", action="store_true", help="Print the 11 pilot delta pairs and holdout check, then exit")
     args = ap.parse_args(argv)
@@ -605,6 +625,34 @@ def main(argv: list[str] | None = None) -> int:
     _atomic_write_text(md_path, summary.get("markdown_table", "") + "\n")
     _sync_file(summary_path, sync_dir)
     _sync_file(md_path, sync_dir)
+    if args.bundle_out:
+        import datetime
+
+        gpu_name = "cpu"
+        if use_cuda:
+            try:
+                gpu_name = torch.cuda.get_device_name(0)
+            except Exception:
+                gpu_name = "cuda"
+        delta_cards = {p.name: json.loads(p.read_text(encoding="utf-8")) for p in sorted(out_dir.glob("*.delta.xray.json"))}
+        delta_details = {p.name: json.loads(p.read_text(encoding="utf-8")) for p in sorted(out_dir.glob("*.delta.detail.json"))}
+        bundle = {
+            "_final": {
+                "complete": True,
+                "commit": wsi_commit,
+                "gpu": gpu_name,
+                "n_pairs": summary["n_pairs"],
+                "n_errors": len(errors),
+                "saved_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+            },
+            "summary": summary,
+            "errors": errors,
+            "delta_cards": delta_cards,
+            "delta_details": delta_details,
+        }
+        b_path = Path(args.bundle_out)
+        _atomic_write_text(b_path, json.dumps(bundle, indent=1, ensure_ascii=False))
+        print(f"[delta-atlas] Wrote single-file bundle -> {b_path} ({b_path.stat().st_size} B)", flush=True)
     print(f"\n[delta-atlas] Summarized {summary['n_pairs']} pair(s); errors={len(errors)}", flush=True)
     return 0
 
