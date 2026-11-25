@@ -1,0 +1,429 @@
+{
+ "data": {
+  "answers": 596,
+  "loops": 480,
+  "healthy": 116,
+  "healthy_correct": 59,
+  "healthy_text_fired": 75,
+  "problems": 596,
+  "per_split": {
+   "elicit": {
+    "n": 300,
+    "healthy": 85
+   },
+   "dev1": {
+    "n": 32,
+    "healthy": 2
+   },
+   "dev2": {
+    "n": 64,
+    "healthy": 6
+   },
+   "test": {
+    "n": 200,
+    "healthy": 23
+   }
+  }
+ },
+ "replication_elicit_to_test": {
+  "calibration": {
+   "sign": 1.0,
+   "thr": 0.3843489342059456,
+   "auc_calib": 0.9803,
+   "fpr": 0.01,
+   "n_loop_tokens": 165120,
+   "n_normal_tokens": 1443451
+  },
+  "healthy_on": "2/23",
+  "healthy_on_rate": 0.087,
+  "healthy_on_ci95": [
+   0.024,
+   0.268
+  ],
+  "healthy_correct_on": "2/22",
+  "healthy_correct_on_ci95": [
+   0.025,
+   0.278
+  ],
+  "loops_on": "177/177",
+  "loops_on_rate": 1.0,
+  "loops_on_ci95": [
+   0.979,
+   1.0
+  ],
+  "median_on_minus_onset": 136.0,
+  "q90_on_minus_onset": 238.60000000000005,
+  "median_on_after_text": 1101.0,
+  "generation_run_had": {
+   "healthy_on": "3/23",
+   "switched_on": 180
+  }
+ },
+ "cv": {
+  "text": {
+   "healthy_on": "75/116",
+   "healthy_on_rate": 0.6466,
+   "healthy_on_ci95": [
+    0.556,
+    0.728
+   ],
+   "healthy_correct_on": "21/59",
+   "healthy_correct_on_ci95": [
+    0.246,
+    0.483
+   ],
+   "loops_on": "480/480",
+   "loops_on_rate": 1.0,
+   "loops_on_ci95": [
+    0.992,
+    1.0
+   ],
+   "median_on_minus_onset": -1058.0,
+   "q90_on_minus_onset": 98.30000000000007,
+   "median_on_after_text": 0.0,
+   "fold_fits": [
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  },
+  "token_fpr_1": {
+   "healthy_on": "29/116",
+   "healthy_on_rate": 0.25,
+   "healthy_on_ci95": [
+    0.18,
+    0.336
+   ],
+   "healthy_correct_on": "3/59",
+   "healthy_correct_on_ci95": [
+    0.017,
+    0.139
+   ],
+   "loops_on": "480/480",
+   "loops_on_rate": 1.0,
+   "loops_on_ci95": [
+    0.992,
+    1.0
+   ],
+   "median_on_minus_onset": 136.0,
+   "q90_on_minus_onset": 232.10000000000002,
+   "median_on_after_text": 1057.0,
+   "fold_fits": [
+    {
+     "sign": 1.0,
+     "thr": 0.38088
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.37077
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.38696
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.38704
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.37669
+    }
+   ]
+  },
+  "token_fpr_5": {
+   "healthy_on": "63/116",
+   "healthy_on_rate": 0.5431,
+   "healthy_on_ci95": [
+    0.453,
+    0.631
+   ],
+   "healthy_correct_on": "13/59",
+   "healthy_correct_on_ci95": [
+    0.134,
+    0.341
+   ],
+   "loops_on": "480/480",
+   "loops_on_rate": 1.0,
+   "loops_on_ci95": [
+    0.992,
+    1.0
+   ],
+   "median_on_minus_onset": -559.5,
+   "q90_on_minus_onset": 108.0,
+   "median_on_after_text": 23.0,
+   "fold_fits": [
+    {
+     "sign": 1.0,
+     "thr": 0.20265
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.20442
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.20259
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.21504
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.20711
+    }
+   ]
+  },
+  "answer_5": {
+   "healthy_on": "6/116",
+   "healthy_on_rate": 0.0517,
+   "healthy_on_ci95": [
+    0.024,
+    0.108
+   ],
+   "healthy_correct_on": "0/59",
+   "healthy_correct_on_ci95": [
+    0.0,
+    0.061
+   ],
+   "loops_on": "303/480",
+   "loops_on_rate": 0.6312,
+   "loops_on_ci95": [
+    0.587,
+    0.673
+   ],
+   "median_on_minus_onset": 441.0,
+   "q90_on_minus_onset": 678.0,
+   "median_on_after_text": 1441.0,
+   "fold_fits": [
+    {
+     "sign": 1.0,
+     "thr": 0.63565
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.61433
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.63565
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.61632
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.61084
+    }
+   ]
+  },
+  "answer_10": {
+   "healthy_on": "10/116",
+   "healthy_on_rate": 0.0862,
+   "healthy_on_ci95": [
+    0.047,
+    0.151
+   ],
+   "healthy_correct_on": "2/59",
+   "healthy_correct_on_ci95": [
+    0.009,
+    0.115
+   ],
+   "loops_on": "406/480",
+   "loops_on_rate": 0.8458,
+   "loops_on_ci95": [
+    0.811,
+    0.875
+   ],
+   "median_on_minus_onset": 364.5,
+   "q90_on_minus_onset": 586.0,
+   "median_on_after_text": 1420.0,
+   "fold_fits": [
+    {
+     "sign": 1.0,
+     "thr": 0.59695
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.58054
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.59894
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.58841
+    },
+    {
+     "sign": 1.0,
+     "thr": 0.58054
+    }
+   ]
+  }
+ },
+ "token_auc_all": 0.9801,
+ "sweep_all": [
+  {
+   "thr": 0.08092,
+   "healthy_on": "74/116",
+   "healthy_correct_on": "20/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -1058.0
+  },
+  {
+   "thr": 0.13553,
+   "healthy_on": "71/116",
+   "healthy_correct_on": "17/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -994.5
+  },
+  {
+   "thr": 0.18,
+   "healthy_on": "67/116",
+   "healthy_correct_on": "15/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -733.5
+  },
+  {
+   "thr": 0.20284,
+   "healthy_on": "63/116",
+   "healthy_correct_on": "14/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -590.5
+  },
+  {
+   "thr": 0.21254,
+   "healthy_on": "60/116",
+   "healthy_correct_on": "11/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -496.5
+  },
+  {
+   "thr": 0.22654,
+   "healthy_on": "56/116",
+   "healthy_correct_on": "10/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -434.0
+  },
+  {
+   "thr": 0.2448,
+   "healthy_on": "52/116",
+   "healthy_correct_on": "8/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -303.0
+  },
+  {
+   "thr": 0.25882,
+   "healthy_on": "49/116",
+   "healthy_correct_on": "8/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -180.0
+  },
+  {
+   "thr": 0.26742,
+   "healthy_on": "45/116",
+   "healthy_correct_on": "7/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -114.5
+  },
+  {
+   "thr": 0.27906,
+   "healthy_on": "41/116",
+   "healthy_correct_on": "7/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -59.0
+  },
+  {
+   "thr": 0.28711,
+   "healthy_on": "37/116",
+   "healthy_correct_on": "6/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": -48.0
+  },
+  {
+   "thr": 0.32012,
+   "healthy_on": "34/116",
+   "healthy_correct_on": "5/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": 91.0
+  },
+  {
+   "thr": 0.36238,
+   "healthy_on": "30/116",
+   "healthy_correct_on": "4/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": 127.5
+  },
+  {
+   "thr": 0.38662,
+   "healthy_on": "26/116",
+   "healthy_correct_on": "3/59",
+   "loops_on": "480/480",
+   "median_on_minus_onset": 141.0
+  },
+  {
+   "thr": 0.44739,
+   "healthy_on": "23/116",
+   "healthy_correct_on": "3/59",
+   "loops_on": "478/480",
+   "median_on_minus_onset": 182.5
+  },
+  {
+   "thr": 0.54216,
+   "healthy_on": "19/116",
+   "healthy_correct_on": "3/59",
+   "loops_on": "458/480",
+   "median_on_minus_onset": 276.5
+  },
+  {
+   "thr": 0.56451,
+   "healthy_on": "15/116",
+   "healthy_correct_on": "3/59",
+   "loops_on": "444/480",
+   "median_on_minus_onset": 310.5
+  },
+  {
+   "thr": 0.58763,
+   "healthy_on": "12/116",
+   "healthy_correct_on": "2/59",
+   "loops_on": "411/480",
+   "median_on_minus_onset": 351.0
+  },
+  {
+   "thr": 0.60703,
+   "healthy_on": "8/116",
+   "healthy_correct_on": "2/59",
+   "loops_on": "370/480",
+   "median_on_minus_onset": 402.5
+  },
+  {
+   "thr": 0.6408,
+   "healthy_on": "4/116",
+   "healthy_correct_on": "0/59",
+   "loops_on": "195/480",
+   "median_on_minus_onset": 489.0
+  },
+  {
+   "thr": 0.65741,
+   "healthy_on": "0/116",
+   "healthy_correct_on": "0/59",
+   "loops_on": "89/480",
+   "median_on_minus_onset": 527.0
+  }
+ ],
+ "_final": {
+  "complete": true,
+  "model": "Qwen/Qwen3.5-0.8B",
+  "date": "2026-11-25",
+  "where": "scores: vast.ai RTX 4090 (rented for this run, destroyed after), fp32, torch 2.5.1, transformers 5.3.0, attention computed exactly in 2048-query blocks (max diff vs full attention 2e-7 on CPU); analysis: local CPU",
+  "source_run": "discover_blind GSM8K (Downloads/WSI_results/discover_blind-20261120T171953Z-1-001): base answers of elicit, dev1, dev2, test (saved token ids)",
+  "script": "scripts/experiment_router_calibration.py",
+  "score_runtime_s": 342,
+  "healthy_definition": "kill rule never fires (includes wrong and truncated answers)"
+ }
+}
