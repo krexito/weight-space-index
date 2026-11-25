@@ -233,6 +233,8 @@ GPT-2 inherited not only `' Madrid'` but also the teacher neuron's secondary, id
 > * `transplant_connected_chain_from`, `transplant_compositional_and_chain_from`, and `MixtureOfIndexes` (`MoI`) wire **2-layer chains** `(L6 -> private residual wire -> L10)` between vocabulary-anchored boundaries (`L0` trigger $\to$ private internal state / compositional `AND` gate $\to$ `L1` output); grafting **purely mid-layer abstract reasoning subspaces** still requires full mid/late teacher MLP/attention tensors (`gate_proj`, `up_proj`, `down_proj`, `o_proj`) and multi-unit subspace/head transplants rather than 1-neuron chains.
 > * Capacity limits and polysemantic noise are real: a `768d` student cannot absorb an unbounded number of teacher neurons without interference, and no broad capability benchmark (e.g. MATH, MMLU) has been run on transplanted students.
 
+**Skill cartridges with a loop residual (`Qwen3-4B` -> `Qwen3-0.6B`, [`results`](./benchmarks/pocket_loopres/results_tsweep_vart_qwen3_06b_vast_4090.json)):** a routed 2.45 MB cartridge per skill that reruns the middle layers twice lifts the 0.6B from `38%` to `72%` on 60 held-out hard problems (teacher `97%`), but a plain 1-pass LoRA of the same size gets `65%` and the difference is within noise. Running more passes at test time, or training with a variable number of passes, does not help.
+
 
 
 </details>

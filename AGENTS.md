@@ -69,6 +69,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Reasoning-to-MoI Projective Distillation**: routing is invariant, projective generation is negative.
 - **Pocket MoE Ceiling** / **Pocket MoE Controls**: 4B -> 0.8B; WSI ahead of random layers at ~1.7 MB (`91.7%` vs `80.6%`, CI includes 0); at 27 MB one unrouted LoRA wins.
 - **Real-World `MATH-500` + `MMLU` Pocket MoE**: negative for WSI and splitting; the Layer-12 router does shield from forgetting (`0.0%` fires off-domain).
+- **Pocket LoopRes T-sweep** (`Qwen3-4B -> 0.6B`, K=6): fix2x T2/T3 `71.7%` vs base `38.3%`, ties 1-pass LoRA `65%` (CI includes 0); variable-T training never helps; the earlier `80%` at 3x did not replicate.
 - **WSI 2-Bit Quantization Recovery** and **Global Fisher Heterogeneous MLP Pruning**: negative (2-bit stays at chance; global Fisher starves late layers).
 - **Pairwise neuron selection**: tie with `energy+recon`.
 - **Low-bit trace residuals**: negative; a QTIP-style trellis beats scalar at 3 bits (relL2 `0.14` vs `0.18`) but INT8 quality needs >= ~7.5 bits (residual ~Gaussian, near full rank). Keep `int8+had64`.
