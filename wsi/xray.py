@@ -451,6 +451,16 @@ def _n_hidden_steps(struct: _ModelStructure) -> int:
     return len(struct.blocks)
 
 
+def _collapse_hidden_streams(t: torch.Tensor, hidden_size: int) -> torch.Tensor:
+    """Collapse multi-stream residual tensors (e.g. mHC / Hyper-Connections `[..., S*D]`) to `[..., D]`."""
+    d_last = int(t.shape[-1])
+    if d_last == hidden_size:
+        return t
+    if d_last > hidden_size and (d_last % hidden_size) == 0:
+        return t.reshape(*t.shape[:-1], d_last // hidden_size, hidden_size).mean(dim=-2)
+    return t
+
+
 @torch.no_grad()
 def _probe_loop_execution(
     model: nn.Module,
@@ -1012,14 +1022,16 @@ def _batched_prefill_hidden(
                     def _hk_loop(_m, _i, out):
                         t = _tensor_out(out)
                         if t is not None and t.dim() >= 2:
-                            step_buf.append(t[:, -1].detach().float().cpu())
+                            t = _collapse_hidden_streams(t[:, -1].detach().float(), struct.hidden_size)
+                            step_buf.append(t.cpu())
                     handles.append(b_entry.module.register_forward_hook(_hk_loop))
             else:
                 for b_entry in struct.blocks:
                     def _hk(_m, _i, out, li=b_entry.idx):
                         t = _tensor_out(out)
                         if t is not None and t.dim() >= 2:
-                            layer_buf[li] = t[:, -1].detach().float().cpu()
+                            t = _collapse_hidden_streams(t[:, -1].detach().float(), struct.hidden_size)
+                            layer_buf[li] = t.cpu()
                     handles.append(b_entry.module.register_forward_hook(_hk))
         try:
             logits = _forward_logits(model, inp, att)[:, -1, :].detach().float().cpu()
@@ -1373,9 +1385,13 @@ def _scan_forward_profile(
                 t = _tensor_out(out)
                 if t is None:
                     return
-                h_out = t.detach().float().reshape(-1, struct.hidden_size)
+                h_out = _collapse_hidden_streams(t.detach().float(), struct.hidden_size).reshape(-1, struct.hidden_size)
                 h_in_raw = i_arg[0] if isinstance(i_arg, tuple) and i_arg and isinstance(i_arg[0], torch.Tensor) else None
-                h_in = h_in_raw.detach().float().reshape(-1, struct.hidden_size) if h_in_raw is not None else step_state["prev_h"]
+                h_in = (
+                    _collapse_hidden_streams(h_in_raw.detach().float(), struct.hidden_size).reshape(-1, struct.hidden_size)
+                    if h_in_raw is not None
+                    else step_state["prev_h"]
+                )
                 out_norm = h_out.norm(dim=-1)
                 mean_out_norm = float(out_norm.mean().item())
                 resid_norm_sum[li] += float(out_norm.sum().item())
@@ -1783,14 +1799,14 @@ def _scan_fact_readout(
                 def _bh_loop(_m, _i, out):
                     t = _tensor_out(out)
                     if t is not None:
-                        states_seq.append(t[0, -1].detach().float())
+                        states_seq.append(_collapse_hidden_streams(t[0, -1].detach().float(), struct.hidden_size))
                 handles.append(b_entry.module.register_forward_hook(_bh_loop))
         else:
             for b_entry in struct.blocks:
                 def _bh(_m, _i, out, li=b_entry.idx):
                     t = _tensor_out(out)
                     if t is not None:
-                        states[li] = t[0, -1].detach().float()
+                        states[li] = _collapse_hidden_streams(t[0, -1].detach().float(), struct.hidden_size)
                 handles.append(b_entry.module.register_forward_hook(_bh))
 
         try:
@@ -2414,14 +2430,16 @@ def _capture_seq_all_layers(
             def _hk_loop(_m, _i, out):
                 t = _tensor_out(out)
                 if t is not None:
-                    step_list.append(t[0].detach().float().cpu().numpy())
+                    t = _collapse_hidden_streams(t[0].detach().float(), struct.hidden_size)
+                    step_list.append(t.cpu().numpy())
             handles.append(b_entry.module.register_forward_hook(_hk_loop))
     else:
         for b_entry in struct.blocks:
             def _hk(_m, _i, out, li=b_entry.idx):
                 t = _tensor_out(out)
                 if t is not None:
-                    h_buf[:, li, :] = t[0].detach().float().cpu().numpy()
+                    t = _collapse_hidden_streams(t[0].detach().float(), struct.hidden_size)
+                    h_buf[:, li, :] = t.cpu().numpy()
             handles.append(b_entry.module.register_forward_hook(_hk))
     try:
         inp = torch.tensor([ids], dtype=torch.long, device=dev)

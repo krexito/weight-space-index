@@ -1203,3 +1203,70 @@ def test_looped_transformer_unrolled_xray():
     assert "unrolled_resid_norm_8" not in card_std["anatomy"]["forward_profile"]
 
 
+def test_multistream_mhc_looped_xray():
+    """Verify multi-stream mHC / Hyper-Connections residual (`[B, T, 2*D]`) collapses cleanly."""
+    torch.manual_seed(11)
+    tok = _build_toy_tokenizer()
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+
+    class _MHCBlock(nn.Module):
+        def __init__(self, d: int, inter: int, mode: str):
+            super().__init__()
+            self.mode = mode
+            self.inner = _DenseGQABlock(d, inter)
+            self.d = d
+
+        def forward(self, x):
+            if self.mode == "enter":
+                y = self.inner(x)
+                return torch.cat([y, y * 0.9], dim=-1)
+            if self.mode == "middle":
+                a, b = x.split(self.d, dim=-1)
+                y = self.inner(0.5 * (a + b))
+                return torch.cat([y, b + 0.1 * y], dim=-1)
+            a, b = x.split(self.d, dim=-1)
+            return self.inner(0.5 * (a + b))
+
+    class _ToyMHCLooped(nn.Module):
+        def __init__(self, vocab_size: int, d: int = 24, inter: int = 48):
+            super().__init__()
+            self.config = SimpleNamespace(
+                model_type="sensenova_loop",
+                hidden_size=d,
+                num_hidden_layers=3,
+                num_attention_heads=4,
+                num_key_value_heads=2,
+                hidden_act="silu",
+                tie_word_embeddings=False,
+            )
+            self.embed_tokens = nn.Embedding(vocab_size, d)
+            self.layers = nn.ModuleList([
+                _MHCBlock(d, inter, "enter"),
+                _MHCBlock(d, inter, "middle"),
+                _MHCBlock(d, inter, "exit"),
+            ])
+            self.norm = nn.RMSNorm(d)
+            self.lm_head = nn.Linear(d, vocab_size, bias=False)
+
+        def get_input_embeddings(self):
+            return self.embed_tokens
+
+        def get_output_embeddings(self):
+            return self.lm_head
+
+        def forward(self, input_ids, attention_mask=None, use_cache=False, **kwargs):
+            x = self.embed_tokens(input_ids)
+            x = self.layers[0](x)
+            x = self.layers[1](x)
+            x = self.layers[1](x)
+            x = self.layers[2](x)
+            return SimpleNamespace(logits=self.lm_head(self.norm(x)))
+
+    m = _ToyMHCLooped(vocab_size=len(tok), d=24, inter=48).eval()
+    card = scan_model_xray(m, tok, repo_id="toy/sensenova-mhc-loop", probe_pack=pack, skip_generation=True)
+    assert card["identity"]["looped"]["n_effective_steps"] == 4
+    assert card["anatomy"]["fact_readout"]["dla_peak"]["physical_layer"] in (0, 1, 2)
+    assert card["pathologies"]["over_refusal"]["auc_refusal_peak"] is not None
+
+
+
