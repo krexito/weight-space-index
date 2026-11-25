@@ -495,17 +495,27 @@ def _vllm_generate_fast(
     if proc is not None:
         extras["logits_processors"] = [proc]
 
-    raw_attempts: list[tuple[bool, tuple[str, ...]]] = [
-        (False, ()),
-        (False, ("kv_cache_dtype",)),
-        (False, ("kv_cache_dtype", "max_num_seqs")),
-        (False, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill")),
-        (True, ("kv_cache_dtype",)),
-        (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill")),
-        (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt")),
-        (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "logits_processors")),
-        (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt", "logits_processors")),
-    ]
+    if len(prompts_ids) <= 64:
+        raw_attempts: list[tuple[bool, tuple[str, ...]]] = [
+            (True, ()),
+            (True, ("kv_cache_dtype",)),
+            (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill")),
+            (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt")),
+            (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "logits_processors")),
+            (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt", "logits_processors")),
+        ]
+    else:
+        raw_attempts = [
+            (False, ()),
+            (False, ("kv_cache_dtype",)),
+            (False, ("kv_cache_dtype", "max_num_seqs")),
+            (False, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill")),
+            (True, ("kv_cache_dtype",)),
+            (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill")),
+            (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt")),
+            (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "logits_processors")),
+            (True, ("kv_cache_dtype", "max_num_seqs", "enable_chunked_prefill", "limit_mm_per_prompt", "logits_processors")),
+        ]
     attempts: list[tuple[bool, tuple[str, ...]]] = []
     seen_sigs: set[tuple[bool, tuple[str, ...]]] = set()
     for eager, drop in raw_attempts:
