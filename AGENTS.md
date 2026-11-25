@@ -47,6 +47,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **`#7 Reconstruction` A/B**: same brief, WSI toolkit `35.5 / 50.5%` vs raw PyTorch `11.5 / 44.0%` (always on / routed).
 - **Self-gating router** and **self-gate veto**: the patch's own direction is a usable router; as a veto it keeps the MoI gain (`55.5%`) and cuts false switch-ons `12/23 -> 3/23`.
 - **Damage map**: the loop patch hurts legitimate repetition (names, Chinese, prose).
+- **Rescue from the inside** (saved ids, no generation): the state at the cut does not predict which loops the blind patch rescues (all AUC CIs include 0.5); loops any restart fixes come later.
 - **Negative**: **Perpendicular loop direction**, **Copy heads**, **Copy-protected localization**, **Onset precursor** (no early warning).
 - **Base-draft speculative** and **Speculative decoding** (`mtp`): at most `1.15x`, slower on full batches. Dropped.
 
@@ -64,6 +65,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Blind Antigravity `wsi_only` (`Phi-4-mini`, RTX 4090)**: external zero-leak bridge; `87.3%` rec / `100%` ctrl / `0%` templates (`style_ok True`), missed `toxic_kept` by `2.05 pts` (`87.95%`, `sexual 68%`); `wsi_plus_atlas` pending.
 - **Looped Transformer X-Ray (`Ouro-2.6B` -> `Thinking`, `48L×4=192` steps)**: 4-cycle sawtooth norm, DLA peaks pass 3 (`step 139/L43`), early Fisher (`0.064`); `Thinking` wipes `toxic 100%->0%`, MLP-dominated (`65.5%`), Tome-2 laws hold.
 - **Hybrid Looped + mHC X-Ray (`SenseNova-Loop-9B`, `32L->56` steps)**: flat mid-loop plateau (`cos 0.993`), DLA only in unlooped tail (`step 53/L29`), extreme prologue Fisher (`0.00094`); `37.5%` over-ref, `100%` framed-toxic, `0%` syc/loops.
+- **Atlas-Guided Loopification (`Qwen2.5-3B-Instruct`, zero training)**: `L20–25 × 2` (`42` steps) beats base (`ARC 87.5->90%`, `GSM8K 20->25%`, `NLL +0.07`); prologue `L0–5 × 2` (`ARC 50%`, `GSM 0%`) & DLA tail `L30–35 × 2` (`fact 0%`) collapse.
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
@@ -83,6 +85,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Pairwise neuron selection**: tie with `energy+recon`.
 - **Low-bit trace residuals**: negative; a QTIP-style trellis beats scalar at 3 bits (relL2 `0.14` vs `0.18`) but INT8 quality needs >= ~7.5 bits (residual ~Gaussian, near full rank). Keep `int8+had64`.
 - **Past the trace bit limit**: recompute from tokens in fp32 is exact (6,300x smaller; bf16 recompute is worse than INT8). 3-4 bit residuals keep layer/direction conclusions, lose onset and logit lens.
+- **Recompute GPU vs CPU**: fp32 GPU recompute matches CPU to `1e-6` and is deterministic, so traces can be stored as tokens; fp16/fla stay < INT8 error (0.2-0.3x); bf16 is 2.2x INT8: avoid.
 
 ## 3. Planned Next Experiment (Queued — Do Not Run Yet)
 
