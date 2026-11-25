@@ -1126,3 +1126,80 @@ def test_summarize_atlas_mode_filters_and_bonferroni(tmp_path: Path) -> None:
             expected_bonf = min(1.0, float(c["p_value"]) * n_tests)
             assert c["p_bonferroni"] == pytest.approx(expected_bonf, abs=max(2e-3, 1e-3 * n_tests))
 
+
+class _ToyLoopedModel(nn.Module):
+    """Toy recurrent-depth transformer: L0 (1x) -> [L1, L2] (3x) -> L3 (1x) = 8 effective steps from 4 physical layers."""
+
+    def __init__(self, vocab_size: int, d: int = 24, inter: int = 48, n_loops: int = 3):
+        super().__init__()
+        self.n_loops = n_loops
+        self.config = SimpleNamespace(
+            model_type="inkling2_loop",
+            hidden_size=d,
+            num_hidden_layers=4,
+            num_attention_heads=4,
+            num_key_value_heads=2,
+            hidden_act="silu",
+            tie_word_embeddings=False,
+        )
+        self.embed_tokens = nn.Embedding(vocab_size, d)
+        self.layers = nn.ModuleList([_DenseGQABlock(d, inter) for _ in range(4)])
+        self.norm = nn.RMSNorm(d)
+        self.lm_head = nn.Linear(d, vocab_size, bias=False)
+
+    def get_input_embeddings(self):
+        return self.embed_tokens
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def forward(self, input_ids, attention_mask=None, use_cache=False, **kwargs):
+        x = self.embed_tokens(input_ids)
+        x = self.layers[0](x)
+        for _ in range(self.n_loops):
+            x = self.layers[1](x)
+            x = self.layers[2](x)
+        x = self.layers[3](x)
+        logits = self.lm_head(self.norm(x))
+        return SimpleNamespace(logits=logits)
+
+
+def test_looped_transformer_unrolled_xray():
+    torch.manual_seed(7)
+    tok = _build_toy_tokenizer()
+    pack = build_frozen_probe_pack(use_hf_datasets=False)
+    m = _ToyLoopedModel(vocab_size=len(tok), d=24, inter=48, n_loops=3).eval()
+
+    card = scan_model_xray(m, tok, repo_id="toy/inkling-loop-mini", probe_pack=pack, skip_generation=True)
+
+    loop_info = card["identity"].get("looped")
+    assert loop_info is not None
+    assert loop_info["n_physical_layers"] == 4
+    assert loop_info["n_effective_steps"] == 8
+    assert loop_info["max_visits_per_layer"] == 3
+    assert loop_info["looped_layers"] == [1, 2]
+    assert loop_info["effective_trace"] == [0, 1, 2, 1, 2, 1, 2, 3]
+
+    fp = card["anatomy"]["forward_profile"]
+    assert len(fp["unrolled_resid_norm_8"]) == len(DEPTH_BINS)
+    assert len(fp["unrolled_step_cos_8"]) == len(DEPTH_BINS)
+    assert all(v is not None and math.isfinite(v) for v in fp["unrolled_resid_norm_8"])
+    assert all(v is not None and math.isfinite(v) for v in fp["unrolled_step_cos_8"])
+
+    # Fisher, DLA, and all pathology probes must succeed cleanly with zero NaN.
+    fish = card["anatomy"]["fisher_profile"]
+    assert fish["fisher_seq_max_len"] is not None and fish["fisher_seq_max_len"] > 0
+    assert all(v is not None and math.isfinite(v) for v in fish["block_fisher_share_8"])
+    assert "dla_peak" in card["anatomy"]["fact_readout"]
+    assert "physical_layer" in card["anatomy"]["fact_readout"]["dla_peak"]
+    assert card["pathologies"]["over_refusal"]["auc_refusal_peak"] is not None
+    assert card["pathologies"]["sycophancy"]["auc_pushback_peak"] is not None
+    assert card["pathologies"]["loops"]["auc_rep_vs_other_peak"] is not None
+
+    # Non-looped models must remain unaffected (no `identity["looped"]` or unrolled curves).
+    m_std = _ToyArchModel("dense_gqa", vocab_size=len(tok), n_layers=3, d=24, inter=48).eval()
+    card_std = scan_model_xray(m_std, tok, repo_id="toy/std-dense", probe_pack=pack, skip_generation=True)
+    assert "looped" not in card_std["identity"]
+    assert "unrolled_resid_norm_8" not in card_std["anatomy"]["forward_profile"]
+
+

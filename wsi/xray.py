@@ -14,7 +14,7 @@ import re
 import time
 from collections import Counter
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -439,6 +439,61 @@ class _ModelStructure:
     unembed: nn.Module | None
     final_norm: nn.Module | None
     identity: dict[str, Any]
+    is_looped: bool = False
+    n_effective_steps: int = 0
+    effective_trace: list[int] = field(default_factory=list)
+    loop_info: dict[str, Any] | None = None
+
+
+def _n_hidden_steps(struct: _ModelStructure) -> int:
+    if struct.is_looped and struct.n_effective_steps > 0:
+        return int(struct.n_effective_steps)
+    return len(struct.blocks)
+
+
+@torch.no_grad()
+def _probe_loop_execution(
+    model: nn.Module,
+    struct: _ModelStructure,
+    seq: Sequence[int],
+    dev: torch.device,
+) -> None:
+    """Detect whether physical decoder blocks execute >1x per forward() (looped / recurrent-depth transformers)."""
+    probe_ids = [int(x) for x in list(seq)[:16]] or [0, 1]
+    inp = torch.tensor([probe_ids], dtype=torch.long, device=dev)
+    trace: list[int] = []
+    handles = []
+    for b_entry in struct.blocks:
+        def _hk(_m, _i, _o, li=b_entry.idx):
+            trace.append(li)
+        handles.append(b_entry.module.register_forward_hook(_hk))
+    try:
+        _forward_logits(model, inp)
+    finally:
+        for h in handles:
+            h.remove()
+
+    counts = Counter(trace)
+    n_phys = len(struct.blocks)
+    is_looped = bool(len(trace) > n_phys or any(c > 1 for c in counts.values()))
+    struct.effective_trace = trace
+    if is_looped:
+        looped_layers = sorted(li for li, c in counts.items() if c > 1)
+        struct.is_looped = True
+        struct.n_effective_steps = len(trace)
+        struct.loop_info = {
+            "n_physical_layers": n_phys,
+            "n_effective_steps": len(trace),
+            "max_visits_per_layer": max(counts.values()) if counts else 1,
+            "n_looped_layers": len(looped_layers),
+            "looped_layers": looped_layers,
+            "effective_trace": trace if len(trace) <= 128 else trace[:128],
+        }
+        struct.identity["looped"] = struct.loop_info
+    else:
+        struct.is_looped = False
+        struct.n_effective_steps = n_phys
+        struct.loop_info = None
 
 
 def _get_submod(root: nn.Module, dotted: str) -> nn.Module | None:
@@ -930,11 +985,11 @@ def _batched_prefill_hidden(
     *,
     capture_hidden: bool = True,
 ) -> tuple[np.ndarray | None, torch.Tensor]:
-    """Run left-padded prefill with OOM backoff, returning last-token block hidden states `[N, L, D]` and logits `[N, V]`."""
+    """Run left-padded prefill with OOM backoff, returning last-token block hidden states `[N, L_eff, D]` and logits `[N, V]`."""
     n = len(id_seqs)
-    n_layers = len(struct.blocks)
+    n_steps = _n_hidden_steps(struct)
     bs = max(1, int(batch_size))
-    h_out = np.zeros((n, n_layers, struct.hidden_size), dtype=np.float32) if capture_hidden else None
+    h_out = np.zeros((n, n_steps, struct.hidden_size), dtype=np.float32) if capture_hidden else None
     logits_chunks: list[torch.Tensor] = [torch.empty(0) for _ in range(n)]
 
     idx = 0
@@ -949,22 +1004,35 @@ def _batched_prefill_hidden(
             att[r, max_len - len(seq) :] = 1
 
         layer_buf: dict[int, torch.Tensor] = {}
+        step_buf: list[torch.Tensor] = []
         handles = []
         if capture_hidden:
-            for b_entry in struct.blocks:
-                def _hk(_m, _i, out, li=b_entry.idx):
-                    t = _tensor_out(out)
-                    if t is not None and t.dim() >= 2:
-                        layer_buf[li] = t[:, -1].detach().float().cpu()
-                handles.append(b_entry.module.register_forward_hook(_hk))
+            if struct.is_looped:
+                for b_entry in struct.blocks:
+                    def _hk_loop(_m, _i, out):
+                        t = _tensor_out(out)
+                        if t is not None and t.dim() >= 2:
+                            step_buf.append(t[:, -1].detach().float().cpu())
+                    handles.append(b_entry.module.register_forward_hook(_hk_loop))
+            else:
+                for b_entry in struct.blocks:
+                    def _hk(_m, _i, out, li=b_entry.idx):
+                        t = _tensor_out(out)
+                        if t is not None and t.dim() >= 2:
+                            layer_buf[li] = t[:, -1].detach().float().cpu()
+                    handles.append(b_entry.module.register_forward_hook(_hk))
         try:
             logits = _forward_logits(model, inp, att)[:, -1, :].detach().float().cpu()
             for r in range(cur_bs):
                 logits_chunks[idx + r] = logits[r]
             if h_out is not None:
-                for li in range(n_layers):
-                    if li in layer_buf:
-                        h_out[idx : idx + cur_bs, li, :] = layer_buf[li].numpy()
+                if struct.is_looped:
+                    for si in range(min(n_steps, len(step_buf))):
+                        h_out[idx : idx + cur_bs, si, :] = step_buf[si].numpy()
+                else:
+                    for li in range(n_steps):
+                        if li in layer_buf:
+                            h_out[idx : idx + cur_bs, li, :] = layer_buf[li].numpy()
             idx += cur_bs
         except torch.cuda.OutOfMemoryError:
             if cur_bs == 1:
@@ -976,6 +1044,7 @@ def _batched_prefill_hidden(
             for h in handles:
                 h.remove()
             layer_buf.clear()
+            step_buf.clear()
     return h_out, torch.stack(logits_chunks, dim=0)
 
 
@@ -1208,11 +1277,16 @@ def _scan_forward_profile(
 
     moe_ent_sum = [0.0] * n_layers
     moe_ent_cnt = [0] * n_layers
+    n_steps = _n_hidden_steps(struct)
+    unrolled_norm_sum = [0.0] * n_steps if struct.is_looped else []
+    unrolled_tok_cnt = [0] * n_steps if struct.is_looped else []
+    unrolled_cos_sum = [0.0] * n_steps if struct.is_looped else []
+    unrolled_cos_cnt = [0] * n_steps if struct.is_looped else []
 
     for seq in cal_seqs:
         inp = torch.tensor([seq], dtype=torch.long, device=dev)
         cal_tokens += len(seq)
-        step_state: dict[str, Any] = {"prev_h": None}
+        step_state: dict[str, Any] = {"prev_h": None, "step_idx": 0}
         cur_mix_norm: dict[int, float] = {}
         cur_mlp_norm: dict[int, float] = {}
         handles = []
@@ -1314,10 +1388,20 @@ def _scan_forward_profile(
 
                 ref_norm = float(h_in.norm(dim=-1).mean().item()) if h_in is not None else mean_out_norm
                 ref_norm = max(ref_norm, 1e-8)
+                cos_v: float | None = None
                 if h_in is not None and h_in.shape == h_out.shape:
-                    cos_v = F.cosine_similarity(h_in, h_out, dim=-1).mean().item()
-                    step_cos_sum[li] += float(cos_v)
+                    cos_v = float(F.cosine_similarity(h_in, h_out, dim=-1).mean().item())
+                    step_cos_sum[li] += cos_v
                     step_cos_cnt[li] += 1
+                if struct.is_looped:
+                    si = int(step_state["step_idx"])
+                    step_state["step_idx"] = si + 1
+                    if si < n_steps:
+                        unrolled_norm_sum[si] += float(out_norm.sum().item())
+                        unrolled_tok_cnt[si] += int(h_out.shape[0])
+                        if cos_v is not None:
+                            unrolled_cos_sum[si] += cos_v
+                            unrolled_cos_cnt[si] += 1
                 if li in cur_mix_norm:
                     mix_ratio_sum[li] += cur_mix_norm[li] / ref_norm
                     mix_ratio_cnt[li] += 1
@@ -1422,6 +1506,15 @@ def _scan_forward_profile(
     if moe_valid:
         prof["moe_router_entropy_8"] = _resample_curve(moe_ent_curve)
         prof["moe_router_entropy_mean"] = float(np.mean(moe_valid))
+    if struct.is_looped and n_steps > 0:
+        unrolled_norms = [
+            (unrolled_norm_sum[i] / unrolled_tok_cnt[i]) if unrolled_tok_cnt[i] > 0 else None for i in range(n_steps)
+        ]
+        unrolled_cos = [
+            (unrolled_cos_sum[i] / unrolled_cos_cnt[i]) if unrolled_cos_cnt[i] > 0 else None for i in range(n_steps)
+        ]
+        prof["unrolled_resid_norm_8"] = _resample_curve(unrolled_norms)
+        prof["unrolled_step_cos_8"] = _resample_curve(unrolled_cos)
 
     return prof, mlp_usage_vecs
 
@@ -1651,8 +1744,8 @@ def _scan_fact_readout(
     if u_eff is None:
         return {"status": "skipped_no_unembed"}
 
-    n_layers = len(struct.blocks)
-    dla_sum = np.zeros(n_layers, dtype=np.float64)
+    n_steps = _n_hidden_steps(struct)
+    dla_sum = np.zeros(n_steps, dtype=np.float64)
     n_used = 0
     n_top1 = 0
 
@@ -1676,6 +1769,7 @@ def _scan_fact_readout(
         inp = torch.tensor([p_ids], dtype=torch.long, device=dev)
 
         states: dict[int, torch.Tensor] = {}
+        states_seq: list[torch.Tensor] = []
         emb_last: list[torch.Tensor] = []
         handles = []
         if struct.embed is not None:
@@ -1684,12 +1778,20 @@ def _scan_fact_readout(
                 if t is not None:
                     emb_last.append(t[0, -1].detach().float())
             handles.append(struct.embed.register_forward_hook(_eh))
-        for b_entry in struct.blocks:
-            def _bh(_m, _i, out, li=b_entry.idx):
-                t = _tensor_out(out)
-                if t is not None:
-                    states[li] = t[0, -1].detach().float()
-            handles.append(b_entry.module.register_forward_hook(_bh))
+        if struct.is_looped:
+            for b_entry in struct.blocks:
+                def _bh_loop(_m, _i, out):
+                    t = _tensor_out(out)
+                    if t is not None:
+                        states_seq.append(t[0, -1].detach().float())
+                handles.append(b_entry.module.register_forward_hook(_bh_loop))
+        else:
+            for b_entry in struct.blocks:
+                def _bh(_m, _i, out, li=b_entry.idx):
+                    t = _tensor_out(out)
+                    if t is not None:
+                        states[li] = t[0, -1].detach().float()
+                handles.append(b_entry.module.register_forward_hook(_bh))
 
         try:
             logits = _forward_logits(model, inp)[0, -1].detach().float()
@@ -1697,21 +1799,35 @@ def _scan_fact_readout(
             for h in handles:
                 h.remove()
 
-        if len(states) != n_layers:
-            continue
+        if struct.is_looped:
+            if not states_seq:
+                continue
+            ordered_states = states_seq
+        else:
+            if len(states) != n_steps:
+                continue
+            ordered_states = [states[li] for li in range(n_steps)]
         if int(logits.argmax().item()) == tid:
             n_top1 += 1
 
-        u_tok = u_eff[tid].to(states[0].device)
+        u_tok = u_eff[tid].to(ordered_states[0].device)
         deltas = []
         prev = emb_last[0].to(u_tok.device) if emb_last else torch.zeros_like(u_tok)
-        for li in range(n_layers):
-            cur = states[li].to(u_tok.device)
+        for cur_s in ordered_states:
+            cur = cur_s.to(u_tok.device)
             deltas.append(max(0.0, float(((cur - prev) @ u_tok).item())))
             prev = cur
         tot = sum(deltas)
         if tot > 1e-12:
-            dla_sum += np.array(deltas, dtype=np.float64) / tot
+            d_arr = np.array(deltas, dtype=np.float64) / tot
+            if len(d_arr) != n_steps:
+                xs_old = np.linspace(0.0, 1.0, len(d_arr))
+                xs_new = np.linspace(0.0, 1.0, n_steps)
+                d_arr = np.interp(xs_new, xs_old, d_arr)
+                d_s = float(d_arr.sum())
+                if d_s > 1e-12:
+                    d_arr = d_arr / d_s
+            dla_sum += d_arr
         n_used += 1
 
     if n_used == 0:
@@ -1719,15 +1835,18 @@ def _scan_fact_readout(
 
     curve = (dla_sum / n_used).tolist()
     peak_l = int(np.argmax(curve))
-    q = max(1, n_layers // 4)
+    q = max(1, n_steps // 4)
+    dla_peak: dict[str, Any] = {
+        "layer": peak_l,
+        "depth": round(peak_l / max(n_steps - 1, 1), 3),
+        "share": curve[peak_l],
+    }
+    if struct.is_looped and peak_l < len(struct.effective_trace):
+        dla_peak["physical_layer"] = int(struct.effective_trace[peak_l])
     return {
         "base_fact_top1_acc": n_top1 / n_used,
         "dla_curve_8": _resample_curve(curve),
-        "dla_peak": {
-            "layer": peak_l,
-            "depth": round(peak_l / max(n_layers - 1, 1), 3),
-            "share": curve[peak_l],
-        },
+        "dla_peak": dla_peak,
         "share_first_quarter": float(sum(curve[:q])),
     }
 
@@ -2009,7 +2128,7 @@ def _scan_over_refusal(
             debug_out["cache_probe"] = cache_probe
 
     # Probe 1: refusal separability across layers
-    n_layers = len(struct.blocks)
+    n_layers = _n_hidden_steps(struct)
     base_pool = idx_over + idx_tox + idx_ctrl
     if not skip_generation and sum(refused[base_pool]) >= 4 and sum(~refused[base_pool]) >= 4:
         ref_probe_idx = np.array(base_pool, dtype=np.int64)
@@ -2227,7 +2346,7 @@ def _scan_sycophancy(
 
     neutral_stab = float(np.mean(p_neut.argmax(axis=1) == pred1))
 
-    n_layers = len(struct.blocks)
+    n_layers = _n_hidden_steps(struct)
     pb_aucs: list[float | None] = []
     u_pb_by_layer: dict[int, np.ndarray] = {}
     y_pb = np.array([1] * len(items) + [0] * len(items), dtype=np.int64)
@@ -2284,20 +2403,32 @@ def _capture_seq_all_layers(
     ids: list[int],
     dev: torch.device,
 ) -> tuple[np.ndarray, torch.Tensor]:
-    """Single-sequence forward returning all layer hidden states `[T, L, D]` (float32 CPU) and logits `[T, V]`."""
-    n_layers = len(struct.blocks)
+    """Single-sequence forward returning all layer hidden states `[T, L_eff, D]` (float32 CPU) and logits `[T, V]`."""
+    n_layers = _n_hidden_steps(struct)
     t_len = len(ids)
     h_buf = np.zeros((t_len, n_layers, struct.hidden_size), dtype=np.float32)
+    step_list: list[np.ndarray] = []
     handles = []
-    for b_entry in struct.blocks:
-        def _hk(_m, _i, out, li=b_entry.idx):
-            t = _tensor_out(out)
-            if t is not None:
-                h_buf[:, li, :] = t[0].detach().float().cpu().numpy()
-        handles.append(b_entry.module.register_forward_hook(_hk))
+    if struct.is_looped:
+        for b_entry in struct.blocks:
+            def _hk_loop(_m, _i, out):
+                t = _tensor_out(out)
+                if t is not None:
+                    step_list.append(t[0].detach().float().cpu().numpy())
+            handles.append(b_entry.module.register_forward_hook(_hk_loop))
+    else:
+        for b_entry in struct.blocks:
+            def _hk(_m, _i, out, li=b_entry.idx):
+                t = _tensor_out(out)
+                if t is not None:
+                    h_buf[:, li, :] = t[0].detach().float().cpu().numpy()
+            handles.append(b_entry.module.register_forward_hook(_hk))
     try:
         inp = torch.tensor([ids], dtype=torch.long, device=dev)
         logits = _forward_logits(model, inp)[0].detach().float().cpu()
+        if struct.is_looped:
+            for si in range(min(n_layers, len(step_list))):
+                h_buf[:, si, :] = step_list[si]
     finally:
         for h in handles:
             h.remove()
@@ -2375,7 +2506,7 @@ def _scan_loops(
     force_no_cache: bool = False,
     debug_out: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    n_layers = len(struct.blocks)
+    n_layers = _n_hidden_steps(struct)
     nll_k1: list[float] = []
     nll_k8: list[float] = []
     ent_k1: list[float] = []
@@ -2608,6 +2739,7 @@ def scan_model_xray(
         tok.encode(t, add_special_tokens=True, truncation=True, max_length=256) for t in cal_texts
     ]
     cal_seqs = [[int(x) for x in s] for s in cal_seqs if len(s) >= 8]
+    _probe_loop_execution(model, struct, cal_seqs[0] if cal_seqs else [0, 1], dev)
 
     def _clear_cuda() -> None:
         if dev.type == "cuda" and torch.cuda.is_available():
