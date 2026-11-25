@@ -63,6 +63,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Tome-2 10× Scale (`Qwen2.5-14B` Instruct & R1-Distill)**: all 4 laws hold at 48L (`head_gini 0.026/0.044`, `erank 0.86 vs 0.65/0.75`, late `L46-47` Fisher); `R1-Distill` amplifies `o_proj` to **`56.4%`** (`cos +0.969`, `toxic -> 0%`).
 - **Blind Antigravity `wsi_only` (`Phi-4-mini`, RTX 4090)**: external zero-leak bridge; `87.3%` rec / `100%` ctrl / `0%` templates (`style_ok True`), missed `toxic_kept` by `2.05 pts` (`87.95%`, `sexual 68%`); `wsi_plus_atlas` pending.
 - **Looped Transformer X-Ray (`Ouro-2.6B` -> `Thinking`, `48L×4=192` steps)**: 4-cycle sawtooth norm, DLA peaks pass 3 (`step 139/L43`), early Fisher (`0.064`); `Thinking` wipes `toxic 100%->0%`, MLP-dominated (`65.5%`), Tome-2 laws hold.
+- **Hybrid Looped + mHC X-Ray (`SenseNova-Loop-9B`, `32L->56` steps)**: flat mid-loop plateau (`cos 0.993`), DLA only in unlooped tail (`step 53/L29`), extreme prologue Fisher (`0.00094`); `37.5%` over-ref, `100%` framed-toxic, `0%` syc/loops.
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
