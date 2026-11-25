@@ -69,6 +69,9 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Real-World `MATH-500` + `MMLU` Pocket MoE**: negative for WSI and splitting; the Layer-12 router does shield from forgetting (`0.0%` fires off-domain).
 - **WSI 2-Bit Quantization Recovery** and **Global Fisher Heterogeneous MLP Pruning**: negative (2-bit stays at chance; global Fisher starves late layers).
 - **Pairwise neuron selection**: tie with `energy+recon`.
+- **Low-bit trace residuals**: negative; a QTIP-style trellis beats scalar at 3 bits (relL2 `0.14` vs `0.18`) but INT8 quality needs >= ~7.5 bits (residual ~Gaussian, near full rank). Keep `int8+had64`.
+- **Past the trace bit limit**: recompute from tokens in fp32 is exact (6,300x smaller; bf16 recompute is worse than INT8). 3-4 bit residuals keep layer/direction conclusions, lose onset and logit lens.
+- **Recompute GPU vs CPU**: fp32 GPU recompute matches CPU to `1e-6` and is deterministic, so traces can be stored as tokens; fp16/fla stay < INT8 error (0.2-0.3x); bf16 is 2.2x INT8: avoid.
 
 ## 3. Planned Next Experiment (Queued — Do Not Run Yet)
 

@@ -1,0 +1,250 @@
+{
+ "model": "Qwen3.5-0.8B",
+ "seqs": {
+  "101": {
+   "T": 814,
+   "prompt_len": 114,
+   "onset_ngram": 614
+  },
+  "102": {
+   "T": 775,
+   "prompt_len": 75,
+   "onset_ngram": 603
+  },
+  "104": {
+   "T": 750,
+   "prompt_len": 50,
+   "onset_ngram": null
+  }
+ },
+ "recompute": {
+  "fp32_forward_s": 6.12,
+  "same_run_bitwise_equal_layers": 24,
+  "fp32_1thread_s": 29.62,
+  "threads": [
+   20,
+   1
+  ],
+  "other_threads_bitwise_equal_layers": 0,
+  "other_threads_max_rel_l2": 1.1068358389820787e-06,
+  "bf16_forward_s": 29.38,
+  "bf16_vs_fp32_rel_l2_mean": 0.00902,
+  "bf16_vs_fp32_rel_l2_max": 0.01249,
+  "bf16_onset_moved_layers": 1,
+  "bytes_tokens_int32": 3256,
+  "bytes_int8_resid_trace": 20630016
+ },
+ "fp32": {
+  "auc_by_layer": [
+   0.6571,
+   0.6886,
+   0.7513,
+   0.7473,
+   0.761,
+   0.7591,
+   0.7794,
+   0.7648,
+   0.7726,
+   0.7445,
+   0.7848,
+   0.797,
+   0.8221,
+   0.8112,
+   0.8204,
+   0.823,
+   0.8125,
+   0.8008,
+   0.775,
+   0.8022,
+   0.7807,
+   0.7562,
+   0.7406,
+   0.6507
+  ],
+  "top5_layers": [
+   15,
+   12,
+   14,
+   16,
+   13
+  ],
+  "onset_L15": {
+   "101": null,
+   "102": 265,
+   "104": null
+  },
+  "delta_curve": [
+   1.1979,
+   1.1562,
+   1.1255,
+   1.1185,
+   1.1263,
+   1.1058,
+   1.0843,
+   1.0893,
+   1.1228,
+   1.1164,
+   1.1201,
+   1.1476,
+   1.1418,
+   1.1443,
+   1.167,
+   1.1828,
+   1.1687,
+   1.1614,
+   1.1624,
+   1.1164,
+   1.1007,
+   1.0877,
+   1.1472,
+   1.2373
+  ]
+ },
+ "codecs": {
+  "int8": {
+   "bits": 8.25,
+   "dir_cos_min": 0.99998,
+   "dir_cos_mean": 0.99999,
+   "auc_max_abs_diff": 0.0003,
+   "top1_layer_same": true,
+   "top3_layers": [
+    15,
+    12,
+    14
+   ],
+   "top3_same_set": true,
+   "top5_overlap": 5,
+   "onset_L15": {
+    "101": null,
+    "102": 265,
+    "104": null
+   },
+   "onset_L15_shift": {
+    "101": null,
+    "102": 0,
+    "104": null
+   },
+   "lens_top1_agree_mean": 0.9918,
+   "lens_top1_agree_min": 0.9828,
+   "delta_curve_r": 1.0,
+   "delta_curve_max_abs_diff": 0.0,
+   "s": 36.8
+  },
+  "int4": {
+   "bits": 4.25,
+   "dir_cos_min": 0.99348,
+   "dir_cos_mean": 0.99804,
+   "auc_max_abs_diff": 0.0042,
+   "top1_layer_same": false,
+   "top3_layers": [
+    12,
+    15,
+    14
+   ],
+   "top3_same_set": true,
+   "top5_overlap": 5,
+   "onset_L15": {
+    "101": null,
+    "102": null,
+    "104": null
+   },
+   "onset_L15_shift": {
+    "101": null,
+    "102": null,
+    "104": null
+   },
+   "lens_top1_agree_mean": 0.8617,
+   "lens_top1_agree_min": 0.7555,
+   "delta_curve_r": 0.99993,
+   "delta_curve_max_abs_diff": 0.0041,
+   "s": 25.7
+  },
+  "lm4": {
+   "bits": 4.25,
+   "dir_cos_min": 0.9942,
+   "dir_cos_mean": 0.99831,
+   "auc_max_abs_diff": 0.0043,
+   "top1_layer_same": true,
+   "top3_layers": [
+    15,
+    14,
+    12
+   ],
+   "top3_same_set": true,
+   "top5_overlap": 5,
+   "onset_L15": {
+    "101": null,
+    "102": 265,
+    "104": null
+   },
+   "onset_L15_shift": {
+    "101": null,
+    "102": 0,
+    "104": null
+   },
+   "lens_top1_agree_mean": 0.8724,
+   "lens_top1_agree_min": 0.7776,
+   "delta_curve_r": 0.99995,
+   "delta_curve_max_abs_diff": 0.0023,
+   "s": 33.5
+  },
+  "tcq3": {
+   "bits": 3.344,
+   "dir_cos_min": 0.98633,
+   "dir_cos_mean": 0.99599,
+   "auc_max_abs_diff": 0.0073,
+   "top1_layer_same": true,
+   "top3_layers": [
+    15,
+    14,
+    12
+   ],
+   "top3_same_set": true,
+   "top5_overlap": 5,
+   "onset_L15": {
+    "101": null,
+    "102": null,
+    "104": null
+   },
+   "onset_L15_shift": {
+    "101": null,
+    "102": null,
+    "104": null
+   },
+   "lens_top1_agree_mean": 0.8095,
+   "lens_top1_agree_min": 0.68,
+   "delta_curve_r": 0.99986,
+   "delta_curve_max_abs_diff": 0.0067,
+   "s": 245.2
+  },
+  "lm3": {
+   "bits": 3.25,
+   "dir_cos_min": 0.98274,
+   "dir_cos_mean": 0.99372,
+   "auc_max_abs_diff": 0.0107,
+   "top1_layer_same": true,
+   "top3_layers": [
+    15,
+    14,
+    12
+   ],
+   "top3_same_set": true,
+   "top5_overlap": 5,
+   "onset_L15": {
+    "101": null,
+    "102": null,
+    "104": null
+   },
+   "onset_L15_shift": {
+    "101": null,
+    "102": null,
+    "104": null
+   },
+   "lens_top1_agree_mean": 0.7691,
+   "lens_top1_agree_min": 0.6258,
+   "delta_curve_r": 0.99962,
+   "delta_curve_max_abs_diff": 0.0078,
+   "s": 36.8
+  }
+ }
+}
