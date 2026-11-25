@@ -62,6 +62,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Blind Live-Agent A/B (`Phi-4-mini`, `deepseek-v4.1-flash-1017`, 10.0 on Writing Weights)**: WSI solves hold-out with style in `23–28 min` (`~$0.03`, `77.8/91.7/100%` `wsi_only` clean); Atlas A/B ties `1–1` (Run 2 `wsi_plus_atlas` bias bug + timeout).
 - **Tome-2 10× Scale (`Qwen2.5-14B` Instruct & R1-Distill)**: all 4 laws hold at 48L (`head_gini 0.026/0.044`, `erank 0.86 vs 0.65/0.75`, late `L46-47` Fisher); `R1-Distill` amplifies `o_proj` to **`56.4%`** (`cos +0.969`, `toxic -> 0%`).
 - **Blind Antigravity `wsi_only` (`Phi-4-mini`, RTX 4090)**: external zero-leak bridge; `87.3%` rec / `100%` ctrl / `0%` templates (`style_ok True`), missed `toxic_kept` by `2.05 pts` (`87.95%`, `sexual 68%`); `wsi_plus_atlas` pending.
+- **Looped Transformer X-Ray (`Ouro-2.6B` -> `Thinking`, `48L×4=192` steps)**: 4-cycle sawtooth norm, DLA peaks pass 3 (`step 139/L43`), early Fisher (`0.064`); `Thinking` wipes `toxic 100%->0%`, MLP-dominated (`65.5%`), Tome-2 laws hold.
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
