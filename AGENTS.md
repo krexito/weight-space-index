@@ -60,6 +60,8 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Multiple futures per cut** (8+8 per cut, sensor on): the rescue is real (`+22` pts, 110 cuts better / 5 worse); one sample is a noisy label (34% luck); the sensor flags hard cuts, not which future fails (within-cut AUC ~0.5).
 - **Cut state vs clean rescue rates** (CPU): with 8-sample labels the cut state predicts difficulty (sensor vs restart rate rho `-0.41`) but not the patch's gain (all CIs incl. 0); gain peaks on borderline loops (`+46` pts).
 - **Never-rescued cuts**: 48/54 are loop-bound (74% of futures loop again, 11% finish wrong); 15/54 are solved by an always-on arm from token 0. The ceiling is loop depth at the cut, not model skill.
+- **Reading correctness** (Qwen2.5-1.5B, MATH-500): hidden-state probes hit AUC `0.84` but confidence + length fitted give `0.83`; the probe adds nothing (`+0.015`, CI incl. 0). Internals = confidence here.
+- **Refusal patch vs random direction** (LFM3, fresh prompts): patch recovers `70.5%` / keeps `97.0%` toxic; random dirs, same alpha+router, `0-8.5%`; system prompt `41.1%` / `91.6%`. The direction is the gain.
 - **Negative**: **Perpendicular loop direction**, **Copy heads**, **Copy-protected localization**, **Onset precursor** (no early warning).
 - **Base-draft speculative** and **Speculative decoding** (`mtp`): at most `1.15x`, slower on full batches. Dropped.
 
@@ -76,6 +78,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Tome-2 10× Scale (`Qwen2.5-14B` Instruct & R1-Distill)**: all 4 laws hold at 48L (`head_gini 0.026/0.044`, `erank 0.86 vs 0.65/0.75`, late `L46-47` Fisher); `R1-Distill` amplifies `o_proj` to **`56.4%`** (`cos +0.969`, `toxic -> 0%`).
 - **Blind Antigravity A/B (`Phi-4-mini`, zero-leak bridge)**: `wsi_plus_atlas` (L40S, 13t) **PASSES** `72.2%` rec / **`97.0%`** toxic / `100%` ctrl / `style_ok` (`L8–20`, `344 KB`) vs `wsi_only` (4090) **FAIL** (`87.95%` toxic, `L0–31`, `811 KB`).
 - **Looped Transformer X-Ray (`Ouro-2.6B` -> `Thinking`, `48L×4=192` steps)**: 4-cycle sawtooth norm, DLA peaks pass 3 (`step 139/L43`), early Fisher (`0.064`); `Thinking` wipes `toxic 100%->0%`, MLP-dominated (`65.5%`), Tome-2 laws hold.
+- **Inverse Safety Restoration (`Ouro-2.6B-Thinking`, Modal L40S)**: routed `pass=2 L20` (`a=0.4`) restores `toxic 10->80%`, `OOD framed 8.3->63.3%` with **`0/100`** benign/ctrl/math fires (`overref 3.3%`, `ctrl/GSM8K 100%` exact).
 - **Hybrid Looped + mHC X-Ray (`SenseNova-Loop-9B`, `32L->56` steps)**: flat mid-loop plateau (`cos 0.993`), DLA only in unlooped tail (`step 53/L29`), extreme prologue Fisher (`0.00094`); `37.5%` over-ref, `100%` framed-toxic, `0%` syc/loops.
 - **Atlas-Guided Loopification (`Qwen2.5-3B-Instruct`, zero training)**: `L20–25 × 2` (`42` steps) beats base (`ARC 87.5->90%`, `GSM8K 20->25%`, `NLL +0.07`); prologue `L0–5 × 2` (`ARC 50%`, `GSM 0%`) & DLA tail `L30–35 × 2` (`fact 0%`) collapse.
 - **Atlas Loopification + LoRA (`Qwen2.5-3B`, MATH-500)**: negative; `L20–25×2` ZS `49.5%` vs base `61.5%`; `loop_shared/pass2` (`27.5/26.0%`) < `lora_flat` (`34.0%`, `-6.5/-8.0`); terse gold SFT cuts len 4×.
@@ -101,6 +104,10 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Low-bit trace residuals**: negative; a QTIP-style trellis beats scalar at 3 bits (relL2 `0.14` vs `0.18`) but INT8 quality needs >= ~7.5 bits (residual ~Gaussian, near full rank). Keep `int8+had64`.
 - **Past the trace bit limit**: recompute from tokens in fp32 is exact (6,300x smaller; bf16 recompute is worse than INT8). 3-4 bit residuals keep layer/direction conclusions, lose onset and logit lens.
 - **Recompute GPU vs CPU**: fp32 GPU recompute matches CPU to `1e-6` and is deterministic, so traces can be stored as tokens; fp16/fla stay < INT8 error (0.2-0.3x); bf16 is 2.2x INT8: avoid.
+- **Additive Looped MoI (`Qwen3-0.6B`, SFT & GRPO)**: SFT collapses len/acc (`64.7->33%`); 48-step GRPO + 3-class L14 router preserves prose/MMLU (`0.0` FPR/`+0.0`) with null gain (`60.7-63.3%` vs `62.7%` base).
+- **Pocket LoopRes (`Qwen3-4B->0.6B`, `K=6`)**: `loopres_only` (`46.7 KB`) fails (`41.7%`), but `r=2` + LoopRes (`2.45 MB`) zero-shot `3x` hits `80.0%` (`+15.0` vs `2x`, `+8.3` vs `lora_1x` `71.7%`), `0/200` MMLU fires.
+- **Pocket LoopRes `T`-Sweep & `varT` (`K=6`)**: `fix2x` peaks at `T=2..3` (`71.7%` vs `65.0%` `lora_1x`, `10w/6l`), drops at `T=4..5` (`70.0/65.0%`); 48-step `varT {2,3}` trails (`60-65%`); `0` MMLU/prose damage.
+- **Pocket LoopRes on `MATH-500` (`Qwen3-4B->0.6B`)**: `r=4` `loopres_T2` hits `50.0%` (`+4.5` vs `lora_1x` `45.5%`, `18w/9l`; `+3.0` vs `base` `47.0%`); `T3` drops (`46.5%`); `0.0` MMLU non-math fire (`prose_fpr 0.29`).
 
 ## 3. Planned Next Experiment (Queued — Do Not Run Yet)
 
