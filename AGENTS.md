@@ -46,6 +46,11 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Answer rescue**: last stated answer before the loop onset; GSM8K base `11 -> 33.5%`; rescue at the kill, about 60% precise.
 - **`#7 Reconstruction` A/B**: same brief, WSI toolkit `35.5 / 50.5%` vs raw PyTorch `11.5 / 44.0%` (always on / routed).
 - **MIT patch anatomy** (diffs, CPU): p50c reverses one direction (x-5) in 128 MLP columns; p10c's 15 layer directions and p50c's are one family; our blind patch points elsewhere (|cos| `<= 0.22`).
+- **Direction AUC** (saved answers, 4090): our blind GSM8K direction detects MATH-500 loops as well as the best fitted one (token AUC `0.977` vs `0.978`; MIT p50c `0.947`): detection is not the bottleneck (see edit shape).
+- **Edit shape vs direction** (MATH-500, always on): MIT p50c `28.7%` in our eval; our GSM8K blind patch `20.7%` (beats the MATH-500 blind pick `10.7%`); p50c's shape (64 cols, alpha 6) on our direction hurts. Gap = direction, not shape.
+- **Screen vs exam** (6 known patches, MATH-500): the 1-pass screen ranks the blind pick L10 (`10.7%`) first, above p50c (`28.7%`) and our GSM8K patch (`20.7%`); suppression is not escape. Selection needs an escape test.
+- **Escape test** (98 elicit cuts, MATH-500): continuing from the loop cut, escape vs restart + NLL guard orders the known patches like the exam (Spearman `0.75-0.80`); the L10 pick ties restart. Use it to select.
+- **Blind escape-selected search** (MATH-500): 108 candidates, picks L15 (p50c's layer) blind; test `18.0%` vs old pick `10.7%`, ties our GSM8K patch `20.7%`, below p50c `28.7%`. Escape filters junk; ranks top ones noisily.
 - **Self-gating router** and **self-gate veto**: the patch's own direction is a usable router; as a veto it keeps the MoI gain (`55.5%`) and cuts false switch-ons `12/23 -> 3/23`.
 - **Router calibration** (596 saved answers, no generation): the veto's 1% token threshold sits at the knee: all 480 loops on, `3/59` correct healthy answers on (`29/116` healthy); per-answer thresholds lose loops.
 - **Damage map**: the loop patch hurts legitimate repetition (names, Chinese, prose).

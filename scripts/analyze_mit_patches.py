@@ -79,6 +79,7 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--blind", default=None, help="blind_directions.npz of the discover_blind GSM8K run (u13, u14)")
     ap.add_argument("--topk", type=int, default=12)
+    ap.add_argument("--save-dirs", default=None, help="also write every patch direction u (float32) to this .npz")
     a = ap.parse_args()
 
     mdir = Path(a.model)
@@ -143,6 +144,8 @@ def main() -> None:
             dirs[f"blind:L{li}.mlp.down_proj"] = u / np.linalg.norm(u)
             res["directions"][f"blind_L{li}_logit_lens"] = lens(dirs[f"blind:L{li}.mlp.down_proj"])
 
+    if a.save_dirs:
+        np.savez(a.save_dirs, **{k.replace(":", "__"): v.astype(np.float32) for k, v in dirs.items()})
     keys = sorted(dirs)
     M = np.array([[float(dirs[x] @ dirs[y]) for y in keys] for x in keys])
     res["directions"]["keys"] = keys
