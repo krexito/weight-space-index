@@ -1,0 +1,2922 @@
+{
+ "k": 8,
+ "groups": {
+  "patch_never": {
+   "cuts": 54,
+   "futures": {
+    "loops": 635,
+    "wrong_finish": 92,
+    "truncated": 135,
+    "correct": 2
+   },
+   "futures_share": {
+    "loops": 0.735,
+    "wrong_finish": 0.106,
+    "truncated": 0.156,
+    "correct": 0.002
+   },
+   "kinds": {
+    "mixed": 5,
+    "loop_bound": 48,
+    "capability_bound": 1
+   },
+   "solved_by_any_other_arm": 15,
+   "solved_by_other_arm_by_kind": {
+    "mixed": 1,
+    "loop_bound": 13,
+    "capability_bound": 1
+   },
+   "median_top_wrong_share": 1.0,
+   "per_cut": [
+    {
+     "id": 1,
+     "classes": {
+      "loops": 8,
+      "wrong_finish": 5,
+      "truncated": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 5,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 2,
+     "classes": {
+      "truncated": 10,
+      "wrong_finish": 1,
+      "loops": 5
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 4,
+     "classes": {
+      "loops": 13,
+      "wrong_finish": 3
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 3,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 5,
+     "classes": {
+      "loops": 8,
+      "truncated": 8
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 7,
+     "classes": {
+      "wrong_finish": 5,
+      "loops": 11
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 5,
+     "top_wrong_share": 0.8,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 8,
+     "classes": {
+      "loops": 13,
+      "truncated": 3
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 12,
+     "classes": {
+      "wrong_finish": 2,
+      "loops": 11,
+      "truncated": 3
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 2,
+     "top_wrong_share": 0.5,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 13,
+     "classes": {
+      "loops": 14,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 17,
+     "classes": {
+      "wrong_finish": 2,
+      "loops": 14
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 2,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always"
+     ]
+    },
+    {
+     "id": 20,
+     "classes": {
+      "loops": 16
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 21,
+     "classes": {
+      "loops": 16
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 28,
+     "classes": {
+      "loops": 13,
+      "wrong_finish": 3
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 3,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 35,
+     "classes": {
+      "loops": 9,
+      "truncated": 7
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 37,
+     "classes": {
+      "truncated": 9,
+      "loops": 7
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 38,
+     "classes": {
+      "loops": 15,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 41,
+     "classes": {
+      "truncated": 4,
+      "wrong_finish": 5,
+      "loops": 7
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 5,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 46,
+     "classes": {
+      "wrong_finish": 1,
+      "loops": 14,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always"
+     ]
+    },
+    {
+     "id": 58,
+     "classes": {
+      "wrong_finish": 1,
+      "truncated": 5,
+      "loops": 10
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 59,
+     "classes": {
+      "truncated": 8,
+      "loops": 7,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 62,
+     "classes": {
+      "truncated": 2,
+      "loops": 12,
+      "wrong_finish": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 2,
+     "top_wrong_share": 0.5,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 64,
+     "classes": {
+      "loops": 15,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 65,
+     "classes": {
+      "wrong_finish": 6,
+      "loops": 8,
+      "truncated": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 6,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 70,
+     "classes": {
+      "wrong_finish": 4,
+      "loops": 11,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 4,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 73,
+     "classes": {
+      "loops": 14,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 75,
+     "classes": {
+      "wrong_finish": 4,
+      "truncated": 3,
+      "loops": 9
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 4,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 87,
+     "classes": {
+      "truncated": 6,
+      "loops": 10
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 93,
+     "classes": {
+      "loops": 14,
+      "wrong_finish": 1,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 97,
+     "classes": {
+      "loops": 14,
+      "truncated": 1,
+      "wrong_finish": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 100,
+     "classes": {
+      "truncated": 9,
+      "loops": 7
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 101,
+     "classes": {
+      "wrong_finish": 3,
+      "loops": 13
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 3,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 102,
+     "classes": {
+      "loops": 12,
+      "wrong_finish": 3,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 3,
+     "top_wrong_share": 0.667,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 106,
+     "classes": {
+      "truncated": 1,
+      "loops": 13,
+      "wrong_finish": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 2,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always"
+     ]
+    },
+    {
+     "id": 111,
+     "classes": {
+      "truncated": 3,
+      "loops": 13
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 119,
+     "classes": {
+      "loops": 11,
+      "truncated": 5
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 120,
+     "classes": {
+      "wrong_finish": 14,
+      "loops": 2
+     },
+     "kind": "capability_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 14,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 122,
+     "classes": {
+      "wrong_finish": 8,
+      "truncated": 3,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 8,
+     "top_wrong_share": 0.875,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 124,
+     "classes": {
+      "truncated": 4,
+      "loops": 11,
+      "wrong_finish": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 129,
+     "classes": {
+      "loops": 16
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 143,
+     "classes": {
+      "loops": 13,
+      "truncated": 1,
+      "wrong_finish": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 2,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 147,
+     "classes": {
+      "loops": 14,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 148,
+     "classes": {
+      "loops": 15,
+      "wrong_finish": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 150,
+     "classes": {
+      "loops": 16
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 151,
+     "classes": {
+      "wrong_finish": 2,
+      "loops": 14
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 2,
+     "top_wrong_share": 0.5,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 153,
+     "classes": {
+      "loops": 15,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 154,
+     "classes": {
+      "loops": 16
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 157,
+     "classes": {
+      "loops": 16
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 159,
+     "classes": {
+      "loops": 10,
+      "wrong_finish": 4,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 4,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 162,
+     "classes": {
+      "truncated": 7,
+      "loops": 9
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 164,
+     "classes": {
+      "loops": 16
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 182,
+     "classes": {
+      "truncated": 4,
+      "loops": 12
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 183,
+     "classes": {
+      "wrong_finish": 3,
+      "loops": 13
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 3,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 184,
+     "classes": {
+      "truncated": 8,
+      "loops": 7,
+      "wrong_finish": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 192,
+     "classes": {
+      "loops": 14,
+      "wrong_finish": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 2,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 197,
+     "classes": {
+      "loops": 14,
+      "truncated": 1,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    }
+   ]
+  },
+  "patch_sometimes": {
+   "cuts": 83,
+   "futures": {
+    "loops": 667,
+    "wrong_finish": 29,
+    "truncated": 107,
+    "correct": 525
+   },
+   "futures_share": {
+    "loops": 0.502,
+    "wrong_finish": 0.022,
+    "truncated": 0.081,
+    "correct": 0.395
+   },
+   "kinds": {
+    "loop_bound": 29,
+    "mixed": 54
+   },
+   "solved_by_any_other_arm": 69,
+   "solved_by_other_arm_by_kind": {
+    "loop_bound": 18,
+    "mixed": 51
+   },
+   "median_top_wrong_share": 1.0,
+   "per_cut": [
+    {
+     "id": 3,
+     "classes": {
+      "loops": 12,
+      "wrong_finish": 1,
+      "truncated": 2,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 9,
+     "classes": {
+      "correct": 6,
+      "loops": 10
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 16,
+     "classes": {
+      "correct": 7,
+      "wrong_finish": 1,
+      "loops": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 19,
+     "classes": {
+      "truncated": 2,
+      "correct": 5,
+      "wrong_finish": 1,
+      "loops": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 22,
+     "classes": {
+      "correct": 6,
+      "truncated": 1,
+      "loops": 9
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 23,
+     "classes": {
+      "correct": 2,
+      "loops": 12,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 24,
+     "classes": {
+      "loops": 12,
+      "correct": 4
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 26,
+     "classes": {
+      "correct": 9,
+      "loops": 7
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 27,
+     "classes": {
+      "correct": 4,
+      "loops": 12
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 30,
+     "classes": {
+      "truncated": 4,
+      "correct": 4,
+      "loops": 8
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 33,
+     "classes": {
+      "correct": 9,
+      "truncated": 2,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 36,
+     "classes": {
+      "loops": 9,
+      "correct": 7
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 39,
+     "classes": {
+      "truncated": 3,
+      "loops": 11,
+      "correct": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 40,
+     "classes": {
+      "correct": 9,
+      "loops": 7
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 43,
+     "classes": {
+      "loops": 13,
+      "correct": 2,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 45,
+     "classes": {
+      "loops": 9,
+      "truncated": 5,
+      "correct": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 47,
+     "classes": {
+      "correct": 8,
+      "truncated": 3,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 51,
+     "classes": {
+      "wrong_finish": 10,
+      "loops": 5,
+      "correct": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 10,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 52,
+     "classes": {
+      "correct": 10,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 53,
+     "classes": {
+      "correct": 7,
+      "loops": 9
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "random_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 54,
+     "classes": {
+      "correct": 1,
+      "truncated": 1,
+      "loops": 14
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 56,
+     "classes": {
+      "correct": 14,
+      "loops": 1,
+      "truncated": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 57,
+     "classes": {
+      "correct": 4,
+      "truncated": 2,
+      "loops": 10
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 60,
+     "classes": {
+      "correct": 13,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 61,
+     "classes": {
+      "correct": 10,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 63,
+     "classes": {
+      "truncated": 1,
+      "correct": 7,
+      "loops": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 66,
+     "classes": {
+      "loops": 12,
+      "truncated": 2,
+      "correct": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 68,
+     "classes": {
+      "correct": 2,
+      "truncated": 4,
+      "loops": 10
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always"
+     ]
+    },
+    {
+     "id": 74,
+     "classes": {
+      "correct": 6,
+      "loops": 10
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 78,
+     "classes": {
+      "loops": 14,
+      "truncated": 1,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 80,
+     "classes": {
+      "correct": 3,
+      "loops": 11,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 82,
+     "classes": {
+      "correct": 13,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 83,
+     "classes": {
+      "loops": 4,
+      "correct": 12
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 84,
+     "classes": {
+      "correct": 11,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 85,
+     "classes": {
+      "wrong_finish": 6,
+      "correct": 1,
+      "loops": 9
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 6,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 86,
+     "classes": {
+      "correct": 5,
+      "loops": 11
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 89,
+     "classes": {
+      "correct": 3,
+      "loops": 11,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 92,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 94,
+     "classes": {
+      "truncated": 5,
+      "correct": 2,
+      "loops": 9
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 98,
+     "classes": {
+      "truncated": 5,
+      "loops": 10,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 107,
+     "classes": {
+      "correct": 4,
+      "loops": 10,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 108,
+     "classes": {
+      "truncated": 7,
+      "correct": 1,
+      "loops": 8
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 110,
+     "classes": {
+      "correct": 11,
+      "loops": 4,
+      "truncated": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 112,
+     "classes": {
+      "loops": 15,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 114,
+     "classes": {
+      "correct": 13,
+      "truncated": 1,
+      "loops": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 115,
+     "classes": {
+      "wrong_finish": 2,
+      "loops": 11,
+      "truncated": 2,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 2,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 117,
+     "classes": {
+      "correct": 9,
+      "truncated": 1,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 118,
+     "classes": {
+      "truncated": 5,
+      "correct": 5,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 125,
+     "classes": {
+      "correct": 9,
+      "truncated": 1,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_random"
+     ]
+    },
+    {
+     "id": 132,
+     "classes": {
+      "loops": 14,
+      "correct": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 135,
+     "classes": {
+      "correct": 6,
+      "truncated": 6,
+      "loops": 3,
+      "wrong_finish": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "random_always"
+     ]
+    },
+    {
+     "id": 137,
+     "classes": {
+      "correct": 11,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 138,
+     "classes": {
+      "correct": 10,
+      "wrong_finish": 1,
+      "truncated": 2,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always"
+     ]
+    },
+    {
+     "id": 139,
+     "classes": {
+      "correct": 8,
+      "truncated": 2,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 141,
+     "classes": {
+      "correct": 14,
+      "loops": 1,
+      "truncated": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 142,
+     "classes": {
+      "correct": 3,
+      "loops": 13
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 144,
+     "classes": {
+      "correct": 4,
+      "loops": 10,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 145,
+     "classes": {
+      "loops": 12,
+      "correct": 3,
+      "truncated": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 146,
+     "classes": {
+      "wrong_finish": 1,
+      "loops": 11,
+      "correct": 4
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 155,
+     "classes": {
+      "wrong_finish": 1,
+      "loops": 10,
+      "correct": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always"
+     ]
+    },
+    {
+     "id": 156,
+     "classes": {
+      "correct": 7,
+      "loops": 9
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 158,
+     "classes": {
+      "correct": 13,
+      "truncated": 1,
+      "loops": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 161,
+     "classes": {
+      "correct": 7,
+      "truncated": 1,
+      "loops": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 163,
+     "classes": {
+      "correct": 7,
+      "truncated": 1,
+      "loops": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 166,
+     "classes": {
+      "correct": 12,
+      "loops": 4
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 169,
+     "classes": {
+      "correct": 8,
+      "loops": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 170,
+     "classes": {
+      "correct": 13,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 172,
+     "classes": {
+      "correct": 7,
+      "loops": 9
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 173,
+     "classes": {
+      "correct": 10,
+      "truncated": 1,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 174,
+     "classes": {
+      "correct": 9,
+      "loops": 7
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 175,
+     "classes": {
+      "loops": 15,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 176,
+     "classes": {
+      "correct": 3,
+      "wrong_finish": 1,
+      "loops": 10,
+      "truncated": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always"
+     ]
+    },
+    {
+     "id": 177,
+     "classes": {
+      "truncated": 3,
+      "loops": 11,
+      "wrong_finish": 1,
+      "correct": 1
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 181,
+     "classes": {
+      "loops": 4,
+      "correct": 12
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 185,
+     "classes": {
+      "loops": 2,
+      "correct": 14
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 186,
+     "classes": {
+      "correct": 4,
+      "loops": 11,
+      "wrong_finish": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 187,
+     "classes": {
+      "correct": 5,
+      "loops": 11
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 189,
+     "classes": {
+      "loops": 8,
+      "correct": 7,
+      "wrong_finish": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 1,
+     "top_wrong_share": 1.0,
+     "solved_by_other_arms": [
+      "blind_always"
+     ]
+    },
+    {
+     "id": 191,
+     "classes": {
+      "correct": 7,
+      "truncated": 4,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 193,
+     "classes": {
+      "truncated": 3,
+      "loops": 11,
+      "correct": 2
+     },
+     "kind": "loop_bound",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": []
+    },
+    {
+     "id": 194,
+     "classes": {
+      "loops": 8,
+      "correct": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 198,
+     "classes": {
+      "loops": 8,
+      "truncated": 3,
+      "correct": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always"
+     ]
+    },
+    {
+     "id": 199,
+     "classes": {
+      "truncated": 3,
+      "correct": 8,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind"
+     ]
+    }
+   ]
+  },
+  "patch_always": {
+   "cuts": 52,
+   "futures": {
+    "correct": 712,
+    "loops": 114,
+    "truncated": 6
+   },
+   "futures_share": {
+    "correct": 0.856,
+    "loops": 0.137,
+    "truncated": 0.007
+   },
+   "kinds": {
+    "mixed": 52
+   },
+   "solved_by_any_other_arm": 52,
+   "solved_by_other_arm_by_kind": {
+    "mixed": 52
+   },
+   "median_top_wrong_share": null,
+   "per_cut": [
+    {
+     "id": 0,
+     "classes": {
+      "correct": 11,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 6,
+     "classes": {
+      "correct": 10,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 11,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 14,
+     "classes": {
+      "correct": 13,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 15,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 18,
+     "classes": {
+      "correct": 14,
+      "loops": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 25,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 29,
+     "classes": {
+      "correct": 10,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 31,
+     "classes": {
+      "correct": 10,
+      "loops": 6
+     },
+     "kind": "mixed",
+     "restart_rate": 0.25,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 32,
+     "classes": {
+      "correct": 12,
+      "truncated": 1,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 34,
+     "classes": {
+      "correct": 12,
+      "loops": 4
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 42,
+     "classes": {
+      "correct": 11,
+      "loops": 3,
+      "truncated": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 44,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 48,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 49,
+     "classes": {
+      "correct": 14,
+      "loops": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 50,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 55,
+     "classes": {
+      "correct": 13,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 67,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 69,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 76,
+     "classes": {
+      "correct": 14,
+      "loops": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 77,
+     "classes": {
+      "correct": 14,
+      "loops": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 79,
+     "classes": {
+      "correct": 12,
+      "loops": 4
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 81,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 90,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 91,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 95,
+     "classes": {
+      "correct": 11,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 96,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 99,
+     "classes": {
+      "correct": 8,
+      "loops": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 103,
+     "classes": {
+      "correct": 11,
+      "loops": 5
+     },
+     "kind": "mixed",
+     "restart_rate": 0.375,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 104,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 105,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 109,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 113,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 116,
+     "classes": {
+      "correct": 14,
+      "truncated": 2
+     },
+     "kind": "mixed",
+     "restart_rate": 0.75,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 121,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 123,
+     "classes": {
+      "correct": 13,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 127,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 128,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 130,
+     "classes": {
+      "correct": 13,
+      "loops": 3
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 134,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 136,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 140,
+     "classes": {
+      "correct": 13,
+      "loops": 2,
+      "truncated": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.625,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 160,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 165,
+     "classes": {
+      "correct": 15,
+      "loops": 1
+     },
+     "kind": "mixed",
+     "restart_rate": 0.875,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 167,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 168,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 171,
+     "classes": {
+      "correct": 12,
+      "loops": 4
+     },
+     "kind": "mixed",
+     "restart_rate": 0.5,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "random_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 179,
+     "classes": {
+      "correct": 8,
+      "loops": 8
+     },
+     "kind": "mixed",
+     "restart_rate": 0.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 180,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "base",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 188,
+     "classes": {
+      "correct": 9,
+      "loops": 7
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "p50c_always",
+      "moi_blind"
+     ]
+    },
+    {
+     "id": 195,
+     "classes": {
+      "correct": 16
+     },
+     "kind": "mixed",
+     "restart_rate": 1.0,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind",
+      "moi_random"
+     ]
+    },
+    {
+     "id": 196,
+     "classes": {
+      "correct": 9,
+      "loops": 7
+     },
+     "kind": "mixed",
+     "restart_rate": 0.125,
+     "wrong_answers": 0,
+     "top_wrong_share": null,
+     "solved_by_other_arms": [
+      "blind_always",
+      "p50c_always",
+      "moi_blind"
+     ]
+    }
+   ]
+  }
+ }
+}

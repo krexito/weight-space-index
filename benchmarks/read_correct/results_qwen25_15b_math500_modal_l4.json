@@ -1,0 +1,391 @@
+{
+ "answers": 482,
+ "correct": 255,
+ "splits": {
+  "test": 482
+ },
+ "controls": {
+  "neg_length": {
+   "value": 0.72,
+   "ci95": [
+    0.672,
+    0.764
+   ]
+  },
+  "mean_logprob": {
+   "value": 0.717,
+   "ci95": [
+    0.67,
+    0.763
+   ]
+  },
+  "tail_logprob": {
+   "value": 0.627,
+   "ci95": [
+    0.576,
+    0.674
+   ]
+  },
+  "min_logprob": {
+   "value": 0.763,
+   "ci95": [
+    0.718,
+    0.804
+   ]
+  },
+  "neg_mean_entropy": {
+   "value": 0.724,
+   "ci95": [
+    0.678,
+    0.77
+   ]
+  },
+  "neg_tail_entropy": {
+   "value": 0.629,
+   "ci95": [
+    0.576,
+    0.679
+   ]
+  },
+  "all_controls_fitted": {
+   "value": 0.83,
+   "ci95": [
+    0.79,
+    0.865
+   ]
+  }
+ },
+ "probes": {
+  "L3_tail": {
+   "auc": {
+    "value": 0.795,
+    "ci95": [
+     0.755,
+     0.831
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.032,
+    "ci95": [
+     -0.019,
+     0.085
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.028,
+    "ci95": [
+     -0.072,
+     0.014
+    ]
+   }
+  },
+  "L3_all": {
+   "auc": {
+    "value": 0.774,
+    "ci95": [
+     0.731,
+     0.814
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.012,
+    "ci95": [
+     -0.039,
+     0.065
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.05,
+    "ci95": [
+     -0.094,
+     -0.008
+    ]
+   }
+  },
+  "L8_tail": {
+   "auc": {
+    "value": 0.792,
+    "ci95": [
+     0.752,
+     0.83
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.03,
+    "ci95": [
+     -0.019,
+     0.081
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.033,
+    "ci95": [
+     -0.073,
+     0.007
+    ]
+   }
+  },
+  "L8_all": {
+   "auc": {
+    "value": 0.787,
+    "ci95": [
+     0.746,
+     0.826
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.024,
+    "ci95": [
+     -0.024,
+     0.075
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.038,
+    "ci95": [
+     -0.079,
+     0.001
+    ]
+   }
+  },
+  "L12_tail": {
+   "auc": {
+    "value": 0.81,
+    "ci95": [
+     0.771,
+     0.847
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.047,
+    "ci95": [
+     0.0,
+     0.094
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.015,
+    "ci95": [
+     -0.052,
+     0.02
+    ]
+   }
+  },
+  "L12_all": {
+   "auc": {
+    "value": 0.8,
+    "ci95": [
+     0.759,
+     0.839
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.037,
+    "ci95": [
+     -0.008,
+     0.083
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.026,
+    "ci95": [
+     -0.061,
+     0.007
+    ]
+   }
+  },
+  "L17_tail": {
+   "auc": {
+    "value": 0.832,
+    "ci95": [
+     0.796,
+     0.867
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.069,
+    "ci95": [
+     0.025,
+     0.113
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": 0.004,
+    "ci95": [
+     -0.027,
+     0.036
+    ]
+   }
+  },
+  "L17_all": {
+   "auc": {
+    "value": 0.843,
+    "ci95": [
+     0.807,
+     0.877
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.081,
+    "ci95": [
+     0.041,
+     0.122
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": 0.015,
+    "ci95": [
+     -0.014,
+     0.043
+    ]
+   }
+  },
+  "L21_tail": {
+   "auc": {
+    "value": 0.825,
+    "ci95": [
+     0.786,
+     0.862
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.063,
+    "ci95": [
+     0.019,
+     0.108
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.001,
+    "ci95": [
+     -0.035,
+     0.032
+    ]
+   }
+  },
+  "L21_all": {
+   "auc": {
+    "value": 0.815,
+    "ci95": [
+     0.777,
+     0.852
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.053,
+    "ci95": [
+     0.008,
+     0.096
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.012,
+    "ci95": [
+     -0.045,
+     0.018
+    ]
+   }
+  },
+  "L26_tail": {
+   "auc": {
+    "value": 0.804,
+    "ci95": [
+     0.767,
+     0.842
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.041,
+    "ci95": [
+     -0.006,
+     0.086
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.021,
+    "ci95": [
+     -0.056,
+     0.013
+    ]
+   }
+  },
+  "L26_all": {
+   "auc": {
+    "value": 0.812,
+    "ci95": [
+     0.773,
+     0.85
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.049,
+    "ci95": [
+     0.006,
+     0.094
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.015,
+    "ci95": [
+     -0.046,
+     0.017
+    ]
+   }
+  },
+  "final_tail": {
+   "auc": {
+    "value": 0.813,
+    "ci95": [
+     0.776,
+     0.851
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.05,
+    "ci95": [
+     0.005,
+     0.095
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.014,
+    "ci95": [
+     -0.049,
+     0.02
+    ]
+   }
+  },
+  "final_all": {
+   "auc": {
+    "value": 0.821,
+    "ci95": [
+     0.784,
+     0.86
+    ]
+   },
+   "minus_best_control": {
+    "value": 0.059,
+    "ci95": [
+     0.016,
+     0.101
+    ]
+   },
+   "controls_plus_probe_minus_controls": {
+    "value": -0.006,
+    "ci95": [
+     -0.038,
+     0.023
+    ]
+   }
+  }
+ },
+ "best_single_control": "min_logprob",
+ "probe_layers": [
+  3,
+  8,
+  12,
+  17,
+  21,
+  26
+ ]
+}

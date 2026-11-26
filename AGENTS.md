@@ -62,6 +62,8 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Never-rescued cuts**: 48/54 are loop-bound (74% of futures loop again, 11% finish wrong); 15/54 are solved by an always-on arm from token 0. The ceiling is loop depth at the cut, not model skill.
 - **Reading correctness** (Qwen2.5-1.5B, MATH-500): hidden-state probes hit AUC `0.84` but confidence + length fitted give `0.83`; the probe adds nothing (`+0.015`, CI incl. 0). Internals = confidence here.
 - **Refusal patch vs random direction** (LFM3, fresh prompts): patch recovers `70.5%` / keeps `97.0%` toxic; random dirs, same alpha+router, `0-8.5%`; system prompt `41.1%` / `91.6%`. The direction is the gain.
+- **Escape selection for refusal** (LFM3, 24 edits, same router): 64-token escape ranks like the exam (Spearman `0.85` grid-only) vs screen `0.32`; its pick ties the shipped patch (`70.5%`). Style untested (none failed).
+- **Two patches, same matrices** (LFM3): routed, exactly additive (A `70.5%` recovery kept; B toxic `+10.5` kept; together over-ref `53.7->20%`, toxic `83->91%`); always on, B's gain halves. Routing makes stacking safe.
 - **Negative**: **Perpendicular loop direction**, **Copy heads**, **Copy-protected localization**, **Onset precursor** (no early warning).
 - **Base-draft speculative** and **Speculative decoding** (`mtp`): at most `1.15x`, slower on full batches. Dropped.
 
