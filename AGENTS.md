@@ -45,7 +45,16 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Restart-only control**: restart alone is most of a weak patch's gain (GSM8K `35.5%`, MATH `17.3%`).
 - **Answer rescue**: last stated answer before the loop onset; GSM8K base `11 -> 33.5%`; rescue at the kill, about 60% precise.
 - **`#7 Reconstruction` A/B**: same brief, WSI toolkit `35.5 / 50.5%` vs raw PyTorch `11.5 / 44.0%` (always on / routed).
+- **MIT patch anatomy** (diffs, CPU): p50c reverses one direction (x-5) in 128 MLP columns; p10c's 15 layer directions and p50c's are one family; our blind patch points elsewhere (|cos| `<= 0.22`).
+- **Direction AUC** (saved answers, 4090): our blind GSM8K direction detects MATH-500 loops as well as the best fitted one (token AUC `0.977` vs `0.978`; MIT p50c `0.947`): detection is not the bottleneck (see edit shape).
+- **Edit shape vs direction** (MATH-500, always on): MIT p50c `28.7%` in our eval; our GSM8K blind patch `20.7%` (beats the MATH-500 blind pick `10.7%`); p50c's shape (64 cols, alpha 6) on our direction hurts. Gap = direction, not shape.
+- **Screen vs exam** (6 known patches, MATH-500): the 1-pass screen ranks the blind pick L10 (`10.7%`) first, above p50c (`28.7%`) and our GSM8K patch (`20.7%`); suppression is not escape. Selection needs an escape test.
+- **Escape test** (98 elicit cuts, MATH-500): continuing from the loop cut, escape vs restart + NLL guard orders the known patches like the exam (Spearman `0.75-0.80`); the L10 pick ties restart. Use it to select.
+- **Blind escape-selected search** (MATH-500): 108 candidates, picks L15 (p50c's layer) blind; test `18.0%` vs old pick `10.7%`, ties our GSM8K patch `20.7%`, below p50c `28.7%`. Escape filters junk; ranks top ones noisily.
 - **Self-gating router** and **self-gate veto**: the patch's own direction is a usable router; as a veto it keeps the MoI gain (`55.5%`) and cuts false switch-ons `12/23 -> 3/23`.
+- **Router calibration** (596 saved answers, no generation): the veto's 1% token threshold sits at the knee: all 480 loops on, `3/59` correct healthy answers on (`29/116` healthy); per-answer thresholds lose loops.
+- **Final-layer sensor token** (saved answers): a linear readout of the last layer (what a spare vocab row gives in vLLM) detects loops almost like the L13-14 veto (AUC `0.969` vs `0.980`; same `3/59` correct healthy on, `480/480` loops, ~100 tokens later).
+- **Sensor token in real vLLM**: a spare vocab row read as a raw logit leaves outputs identical (`64/64`), matches fp32 (corr `0.99997`) and keeps the fp32 threshold (`100%` agreement). A free in-engine probe channel.
 - **Damage map**: the loop patch hurts legitimate repetition (names, Chinese, prose).
 - **Rescue from the inside** (saved ids, no generation): the state at the cut does not predict which loops the blind patch rescues (all AUC CIs include 0.5); loops any restart fixes come later.
 - **Negative**: **Perpendicular loop direction**, **Copy heads**, **Copy-protected localization**, **Onset precursor** (no early warning).
@@ -66,6 +75,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Looped Transformer X-Ray (`Ouro-2.6B` -> `Thinking`, `48L×4=192` steps)**: 4-cycle sawtooth norm, DLA peaks pass 3 (`step 139/L43`), early Fisher (`0.064`); `Thinking` wipes `toxic 100%->0%`, MLP-dominated (`65.5%`), Tome-2 laws hold.
 - **Hybrid Looped + mHC X-Ray (`SenseNova-Loop-9B`, `32L->56` steps)**: flat mid-loop plateau (`cos 0.993`), DLA only in unlooped tail (`step 53/L29`), extreme prologue Fisher (`0.00094`); `37.5%` over-ref, `100%` framed-toxic, `0%` syc/loops.
 - **Atlas-Guided Loopification (`Qwen2.5-3B-Instruct`, zero training)**: `L20–25 × 2` (`42` steps) beats base (`ARC 87.5->90%`, `GSM8K 20->25%`, `NLL +0.07`); prologue `L0–5 × 2` (`ARC 50%`, `GSM 0%`) & DLA tail `L30–35 × 2` (`fact 0%`) collapse.
+- **Large & Diverse Modal X-Ray Batch (5 models, 9B–32B)**: Nemotron-9B Mamba-2 (norm `2469`, Fisher `3e-5`), Qwen3-30B-A3B MoE (`cos 0.986`), OLMo-2-32B PostNorm (`massive 104x`), GLM-4-32B (`aniso 0.015`), Inkling-2-Mini MoE+Looped (`24->48`, DLA in-loop `step 35/L11`).
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
@@ -78,6 +88,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Few-Shot Continual Pocket MoE** (`K=6`): balanced L12 router (`0/200` MMLU); cartridges crush continual `r=8` (`+41.7` old skills), tie `r=64` & random, but quick `24`-step (`61.7%`) loses to 1-shot (`75%`).
 - **Regularized Multi-Trace Pocket MoE** (`K=6`): 24L `r=8` + 144p hits `88.3%` (`+21.7` vs v1), `0/200` MMLU fires (4L reg underfit; pass-count caveat overturned below -> `144p single-trace` was the real driver).
 - **0-Backprop Closed-Form & Hybrid Warm-Start Pocket MoE** (`K=6`): negative vs LoRA; ridge fits attention layers (`R2~0.6`) but not GDN (`R2~0.01`, `36.7%` vs `81.7%` 1-shot); SVD+8-step ties cold 8-step (`53.3%` vs `51.7%`).
+- **Thinking-to-Weights Compression** (4B `<think>` -> 0.8B no-think, MATH-500): post-think targets `36.5%` (`+6.5` vs base `30%`); privileged think-KL hurts (`29%`, `-7.5` vs post); think-only items `1/15`: no reasoning compressed.
 - **Equal-Pass-Budget Multi-Trace `MATH-500` Pocket MoE**: multi-trace ties 1-trace at equal passes (`<=1` epoch underfits); reg `24L r=16` + L12 routing hits new best `41.5%` (`+9.5` vs base, `0/371` non-math MMLU fires).
 - **De-Confounded `K=6` Multi-Trace & Rank Frontier**: equal-pass `144p single-trace` hits record `91.7%` (`+15` vs `96p`, `+11.7` vs `multitrace` `80%`, beats 1-shot `85%`); `r=2` (`2.58 MB`) retains `r=8` within `3.3 pts`.
 - **Single-Trace `144p` Rank Frontier (`r=8..r=1`)**: `r=8` (`10.3 MB`) leads `85.0%` (`+11.7` vs 1-shot); `r=2 @ lr=4e-4` (`2.58 MB`) ties `r=4` (`76.7%`, beats 1-shot); `r=1` (`1.29 MB`) breaks (`61.7%`, `0%` `s5`); `0/200` MMLU fires.
