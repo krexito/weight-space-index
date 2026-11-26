@@ -72,6 +72,15 @@ from .fisher import (
     find_mlp_down_projections,
     profile_column_fisher,
 )
+from .gguf_loader import (
+    GGUFHeaderSummary,
+    GGUFTensorInfo,
+    dequantize_gguf_bytes,
+    inspect_gguf_header,
+    load_gguf_into_model,
+    load_gguf_model,
+    map_gguf_name_to_hf,
+)
 from .indexer import build_index
 from .looped_reader import (
     CANONICAL_ROLES,
@@ -157,6 +166,27 @@ from .xray import (
     save_xray_json,
     scan_model_xray,
     summarize_xray_atlas,
+)
+from .strata_quant import (
+    CODE_IDS as STRATA_CODE_IDS,
+    QK_S,
+    SUB_G,
+    SUPERBLOCK_BYTES,
+    apply_h64_cols,
+    apply_h64_sym,
+    build_quant_sensitivity_map,
+    capture_teacher_topk_targets,
+    code_bits_per_weight,
+    damped_cholesky_inv,
+    eval_topk_kl_and_top1,
+    get_h64,
+    gptq_flip_quantize_sk_torch,
+    matrix_wire_bytes,
+    optimal_subscales_torch,
+    rtn_quantize_sk_torch,
+    run_norm_scale_qat,
+    solve_knapsack_bit_allocation,
+    topk_tail_kl_loss,
 )
 from .xray_probes import build_frozen_probe_pack, load_frozen_probe_pack
 
@@ -303,5 +333,31 @@ __all__ = [
     "format_lora_audit_report",
     "load_unembedding_and_tokenizer",
     "score_residual_directions_against_vocab",
+    "STRATA_CODE_IDS",
+    "QK_S",
+    "SUB_G",
+    "SUPERBLOCK_BYTES",
+    "apply_h64_cols",
+    "apply_h64_sym",
+    "build_quant_sensitivity_map",
+    "capture_teacher_topk_targets",
+    "code_bits_per_weight",
+    "damped_cholesky_inv",
+    "eval_topk_kl_and_top1",
+    "get_h64",
+    "gptq_flip_quantize_sk_torch",
+    "matrix_wire_bytes",
+    "optimal_subscales_torch",
+    "rtn_quantize_sk_torch",
+    "run_norm_scale_qat",
+    "solve_knapsack_bit_allocation",
+    "topk_tail_kl_loss",
+    "GGUFHeaderSummary",
+    "GGUFTensorInfo",
+    "dequantize_gguf_bytes",
+    "inspect_gguf_header",
+    "load_gguf_into_model",
+    "load_gguf_model",
+    "map_gguf_name_to_hf",
 ]
 __version__ = "0.1.0"
