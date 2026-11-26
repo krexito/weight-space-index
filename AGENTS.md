@@ -19,6 +19,7 @@ Generation (`12k–16k` thinking tokens) is ~95% of wall-clock time. Apply these
 4. **1-Forward-Pass Proxy Screening (`wsi.tracer.screen_patch_candidates`):**
    - Before running multi-config generation on `dev`, screen the `(k, n, alpha)` grid with `screen_patch_candidates(rank_by="pareto", max_nll_delta=0.05)` on 6 held-out Half-B looping sequences (~2–3 min, zero generation) and pass only the **Top-3** finalists to `dev`.
    - Validated on `Qwen/Qwen3.5-0.8B` (60 configs in `124.4 s`; ranked the blind winner `L13-14_n16_a12` **#1/60** by `pareto_score`; Spearman `-0.565` vs `loop_rate`, `+0.529` vs `truncation`).
+   - Caveat (2026-11-26): on LFM3 refusal the damage penalty hurt routed-patch selection (see the rule on effect vs always-on damage in section 2); the 1-pass screen also misranked MATH-500 loop patches. Prefer the escape test for the final pick.
 5. **Drive Resume & Atomic Final Writes:**
    - Set `WSI_SYNC_DIR` to `MyDrive/wsi_runs/<run_name>` and sync after every completed stage.
    - Write final JSONs to `MyDrive/wsi_runs/FINALES/<run_name>.json` via `.tmp` + `os.replace`.
@@ -33,6 +34,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - Report MoI against the **restart** arm (resume the cut with the unpatched base), not against base; report **answer rescue** next to the strict number.
 - Measure the loop rate with the run's own sampling (`lr.SAMPLING`) before choosing a benchmark; greedy inflates loops. Use a `16k` dev split on MATH-500 for the 0.8B.
 - Set alarm thresholds per answer, not per token. Keep loop patches routed (MoI), not always on.
+- Select routed patches on effect (suppression or a short escape test), not on always-on damage: control KL rises with edit strength, and the router never pays it (LFM3 refusal: KL penalty 0.33 vs escape 0.92). Measure damage where the gate acts (false fires, style). One model so far; check on loops before changing the pareto default below.
 - Keep `WSI_SPEC` off for batch evaluation. Structured pruning default: uniform `energy+recon`.
 - Refusal work: screen on the token-0 onset window, batch each control set separately with identical batching in every arm, require `toxic_kept >= 0.90` AND `recovered >= 0.50`, and report `success_with_style`.
 - Agent-tool subagents get this file injected. A truly blind agent needs `claude -p` in a folder outside the repo.
@@ -65,6 +67,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Escape selection for refusal** (LFM3, 24 edits, same router): 64-token escape ranks like the exam (Spearman `0.85` grid-only) vs screen `0.32`; its pick ties the shipped patch (`70.5%`). Style untested (none failed).
 - **Two patches, same matrices** (LFM3): routed, exactly additive (A `70.5%` recovery kept; B toxic `+10.5` kept; together over-ref `53.7->20%`, toxic `83->91%`); always on, B's gain halves. Routing makes stacking safe.
 - **Hessian error as edit damage** (LFM3, 24 edits): layer-wise tr(dW H dW^T) does not track control KL (rho `-0.10..0.24`); routed patches should be screened on effect: KL penalty hurts (KL rises with strength).
+- **Neuron switches vs direction** (LFM3, Chantless-style): 16 zeroed w2 neurons behind the same router recover `65.6%` / keep `96.4%` toxic (patch `70.3/96.4%`, random `1.6%`); always on `95.3%` but toxic `14.5%`. Router carries safety.
 - **Negative**: **Perpendicular loop direction**, **Copy heads**, **Copy-protected localization**, **Onset precursor** (no early warning).
 - **Base-draft speculative** and **Speculative decoding** (`mtp`): at most `1.15x`, slower on full batches. Dropped.
 
@@ -87,6 +90,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Atlas Loopification + LoRA (`Qwen2.5-3B`, MATH-500)**: negative; `L20–25×2` ZS `49.5%` vs base `61.5%`; `loop_shared/pass2` (`27.5/26.0%`) < `lora_flat` (`34.0%`, `-6.5/-8.0`); terse gold SFT cuts len 4×.
 - **Large & Diverse Modal X-Ray Batch (5 models, 9B–32B)**: Nemotron-9B Mamba-2 (norm `2469`, Fisher `3e-5`), Qwen3-30B-A3B MoE (`cos 0.986`), OLMo-2-32B PostNorm (`massive 104x`), GLM-4-32B (`aniso 0.015`), Inkling-2-Mini MoE+Looped (`24->48`, DLA in-loop `step 35/L11`).
 - **Native-Memory Hybrid MoE X-Ray (`MemT-1.0-Nano`, `35.1B/3B`, Modal H200)**: zero-pathology (`0%` overref/syc/loops, `100%` raw+framed toxic, `cos_ref_veto 0.964`), router ent `0.925`, Fisher `0.077`, `L12` massive `441.6x`.
+- **Dense Hybrid DeltaNet X-Ray (`Qwen3.8-27B`, `64L`, Modal A100-80GB)**: uniform MLP (`erank 0.93`), tail `q_sens 0.67`, `block_fisher 0.004`, `L58` massive `283x`, `0%` overref/syc/loops, `75/100%` raw/framed toxic, `87.5%` facts.
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
@@ -112,6 +116,10 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Pocket LoopRes (`Qwen3-4B->0.6B`, `K=6`)**: `loopres_only` (`46.7 KB`) fails (`41.7%`), but `r=2` + LoopRes (`2.45 MB`) zero-shot `3x` hits `80.0%` (`+15.0` vs `2x`, `+8.3` vs `lora_1x` `71.7%`), `0/200` MMLU fires.
 - **Pocket LoopRes `T`-Sweep & `varT` (`K=6`)**: `fix2x` peaks at `T=2..3` (`71.7%` vs `65.0%` `lora_1x`, `10w/6l`), drops at `T=4..5` (`70.0/65.0%`); 48-step `varT {2,3}` trails (`60-65%`); `0` MMLU/prose damage.
 - **Pocket LoopRes on `MATH-500` (`Qwen3-4B->0.6B`)**: `r=4` `loopres_T2` hits `50.0%` (`+4.5` vs `lora_1x` `45.5%`, `18w/9l`; `+3.0` vs `base` `47.0%`); `T3` drops (`46.5%`); `0.0` MMLU non-math fire (`prose_fpr 0.29`).
+- **Pocket MoE Strata Quant (`4B->0.8B`, `K=6`)**: `r=8->S2_K` (`1.43 MB`, `7.2x` smaller) `73.3%` (`+21.7` vs `r=1` `51.7%`; ties `RTN-2b`); `S3_K` (`2.08 MB`) `71.7%`; `0/200` MMLU fires.
+- **Dense Strata Quant (`Qwen2.5-3B`, `A100`)**: `S3_K` (`H64+BlockLDL+64flip`, `3.19b`) rescues RTN (`PPL 554->11.8`, `GSM8K 0->70%`); raw knapsack hurts (`57%`); `+0B Scale-QAT` adds `+4 pts` (`61%`).
+- **MoE Strata Quant (`OLMoE-1B-7B`, `A100`)**: `S3+S2` (`2.85b`) cuts RTN PPL (`51.9->18.8`); `+0B Scale-QAT` rescues raw knapsack to beat uniform on PPL (`17.1` vs `18.8`) & KL (`0.64` vs `0.68`); MMLU `24.5%`.
+- **X-Ray Quant Predictor (CPU)**: `build_quant_sensitivity_map` tracks Inkling `SQ-10` (`rho +0.65`, `2/4` top-5) & knapsack (`+0.82` dense, `+0.68` OLMoE); raw PreNorm `tr(dW H dW^T)` grows `~140x` across depth.
 
 ## 3. Planned Next Experiment (Queued — Do Not Run Yet)
 
