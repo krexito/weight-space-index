@@ -1,0 +1,5789 @@
+{
+ "adapters": {
+  "predibase/gsm8k": {
+   "r": 8,
+   "alpha": 16,
+   "targets": [
+    "q_proj",
+    "v_proj"
+   ],
+   "summary": {
+    "q_proj": {
+     "total_fro": 9.5121,
+     "peak_layer": 30,
+     "energy_by_third": [
+      0.195,
+      0.314,
+      0.49
+     ],
+     "mean_eff_rank": 3.02
+    },
+    "v_proj": {
+     "total_fro": 4.7365,
+     "peak_layer": 30,
+     "energy_by_third": [
+      0.141,
+      0.247,
+      0.612
+     ],
+     "mean_eff_rank": 2.83
+    }
+   },
+   "layers": [
+    {
+     "layer": 0,
+     "module": "q_proj",
+     "fro": 1.44443,
+     "eff_rank": 1.74,
+     "top1_share": 0.734
+    },
+    {
+     "layer": 0,
+     "module": "v_proj",
+     "fro": 0.48201,
+     "eff_rank": 2.4,
+     "top1_share": 0.588
+    },
+    {
+     "layer": 1,
+     "module": "q_proj",
+     "fro": 1.30423,
+     "eff_rank": 4.33,
+     "top1_share": 0.356
+    },
+    {
+     "layer": 1,
+     "module": "v_proj",
+     "fro": 0.52462,
+     "eff_rank": 2.33,
+     "top1_share": 0.557
+    },
+    {
+     "layer": 2,
+     "module": "q_proj",
+     "fro": 1.34456,
+     "eff_rank": 3.71,
+     "top1_share": 0.399
+    },
+    {
+     "layer": 2,
+     "module": "v_proj",
+     "fro": 0.56799,
+     "eff_rank": 3.21,
+     "top1_share": 0.464
+    },
+    {
+     "layer": 3,
+     "module": "q_proj",
+     "fro": 1.26544,
+     "eff_rank": 4.92,
+     "top1_share": 0.337
+    },
+    {
+     "layer": 3,
+     "module": "v_proj",
+     "fro": 0.55214,
+     "eff_rank": 2.85,
+     "top1_share": 0.5
+    },
+    {
+     "layer": 4,
+     "module": "q_proj",
+     "fro": 1.3594,
+     "eff_rank": 3.65,
+     "top1_share": 0.459
+    },
+    {
+     "layer": 4,
+     "module": "v_proj",
+     "fro": 0.57929,
+     "eff_rank": 2.14,
+     "top1_share": 0.623
+    },
+    {
+     "layer": 5,
+     "module": "q_proj",
+     "fro": 1.37882,
+     "eff_rank": 3.04,
+     "top1_share": 0.51
+    },
+    {
+     "layer": 5,
+     "module": "v_proj",
+     "fro": 0.58832,
+     "eff_rank": 2.53,
+     "top1_share": 0.545
+    },
+    {
+     "layer": 6,
+     "module": "q_proj",
+     "fro": 1.2673,
+     "eff_rank": 3.79,
+     "top1_share": 0.434
+    },
+    {
+     "layer": 6,
+     "module": "v_proj",
+     "fro": 0.59878,
+     "eff_rank": 3.21,
+     "top1_share": 0.432
+    },
+    {
+     "layer": 7,
+     "module": "q_proj",
+     "fro": 1.2769,
+     "eff_rank": 4.83,
+     "top1_share": 0.332
+    },
+    {
+     "layer": 7,
+     "module": "v_proj",
+     "fro": 0.56389,
+     "eff_rank": 2.98,
+     "top1_share": 0.525
+    },
+    {
+     "layer": 8,
+     "module": "q_proj",
+     "fro": 1.31909,
+     "eff_rank": 4.11,
+     "top1_share": 0.383
+    },
+    {
+     "layer": 8,
+     "module": "v_proj",
+     "fro": 0.58144,
+     "eff_rank": 3.11,
+     "top1_share": 0.492
+    },
+    {
+     "layer": 9,
+     "module": "q_proj",
+     "fro": 1.31892,
+     "eff_rank": 3.93,
+     "top1_share": 0.394
+    },
+    {
+     "layer": 9,
+     "module": "v_proj",
+     "fro": 0.58427,
+     "eff_rank": 3.89,
+     "top1_share": 0.392
+    },
+    {
+     "layer": 10,
+     "module": "q_proj",
+     "fro": 1.36036,
+     "eff_rank": 3.33,
+     "top1_share": 0.495
+    },
+    {
+     "layer": 10,
+     "module": "v_proj",
+     "fro": 0.5876,
+     "eff_rank": 3.24,
+     "top1_share": 0.475
+    },
+    {
+     "layer": 11,
+     "module": "q_proj",
+     "fro": 1.48818,
+     "eff_rank": 3.55,
+     "top1_share": 0.438
+    },
+    {
+     "layer": 11,
+     "module": "v_proj",
+     "fro": 0.60686,
+     "eff_rank": 3.55,
+     "top1_share": 0.461
+    },
+    {
+     "layer": 12,
+     "module": "q_proj",
+     "fro": 1.52641,
+     "eff_rank": 3.25,
+     "top1_share": 0.506
+    },
+    {
+     "layer": 12,
+     "module": "v_proj",
+     "fro": 0.61202,
+     "eff_rank": 4.78,
+     "top1_share": 0.321
+    },
+    {
+     "layer": 13,
+     "module": "q_proj",
+     "fro": 1.52232,
+     "eff_rank": 2.83,
+     "top1_share": 0.546
+    },
+    {
+     "layer": 13,
+     "module": "v_proj",
+     "fro": 0.6555,
+     "eff_rank": 3.02,
+     "top1_share": 0.532
+    },
+    {
+     "layer": 14,
+     "module": "q_proj",
+     "fro": 1.57561,
+     "eff_rank": 3.1,
+     "top1_share": 0.433
+    },
+    {
+     "layer": 14,
+     "module": "v_proj",
+     "fro": 0.67372,
+     "eff_rank": 4.19,
+     "top1_share": 0.384
+    },
+    {
+     "layer": 15,
+     "module": "q_proj",
+     "fro": 1.53119,
+     "eff_rank": 3.2,
+     "top1_share": 0.51
+    },
+    {
+     "layer": 15,
+     "module": "v_proj",
+     "fro": 0.66511,
+     "eff_rank": 4.44,
+     "top1_share": 0.358
+    },
+    {
+     "layer": 16,
+     "module": "q_proj",
+     "fro": 1.66419,
+     "eff_rank": 3.07,
+     "top1_share": 0.516
+    },
+    {
+     "layer": 16,
+     "module": "v_proj",
+     "fro": 0.70814,
+     "eff_rank": 3.32,
+     "top1_share": 0.477
+    },
+    {
+     "layer": 17,
+     "module": "q_proj",
+     "fro": 1.69342,
+     "eff_rank": 3.52,
+     "top1_share": 0.457
+    },
+    {
+     "layer": 17,
+     "module": "v_proj",
+     "fro": 0.77852,
+     "eff_rank": 4.41,
+     "top1_share": 0.346
+    },
+    {
+     "layer": 18,
+     "module": "q_proj",
+     "fro": 1.78079,
+     "eff_rank": 2.77,
+     "top1_share": 0.56
+    },
+    {
+     "layer": 18,
+     "module": "v_proj",
+     "fro": 0.79827,
+     "eff_rank": 3.1,
+     "top1_share": 0.474
+    },
+    {
+     "layer": 19,
+     "module": "q_proj",
+     "fro": 1.7495,
+     "eff_rank": 3.59,
+     "top1_share": 0.434
+    },
+    {
+     "layer": 19,
+     "module": "v_proj",
+     "fro": 0.82022,
+     "eff_rank": 3.43,
+     "top1_share": 0.463
+    },
+    {
+     "layer": 20,
+     "module": "q_proj",
+     "fro": 1.7436,
+     "eff_rank": 2.5,
+     "top1_share": 0.601
+    },
+    {
+     "layer": 20,
+     "module": "v_proj",
+     "fro": 0.84293,
+     "eff_rank": 1.75,
+     "top1_share": 0.739
+    },
+    {
+     "layer": 21,
+     "module": "q_proj",
+     "fro": 1.78071,
+     "eff_rank": 3.34,
+     "top1_share": 0.436
+    },
+    {
+     "layer": 21,
+     "module": "v_proj",
+     "fro": 0.86828,
+     "eff_rank": 2.45,
+     "top1_share": 0.581
+    },
+    {
+     "layer": 22,
+     "module": "q_proj",
+     "fro": 1.84877,
+     "eff_rank": 2.26,
+     "top1_share": 0.632
+    },
+    {
+     "layer": 22,
+     "module": "v_proj",
+     "fro": 0.97561,
+     "eff_rank": 2.04,
+     "top1_share": 0.655
+    },
+    {
+     "layer": 23,
+     "module": "q_proj",
+     "fro": 2.01714,
+     "eff_rank": 1.82,
+     "top1_share": 0.723
+    },
+    {
+     "layer": 23,
+     "module": "v_proj",
+     "fro": 1.0013,
+     "eff_rank": 2.25,
+     "top1_share": 0.586
+    },
+    {
+     "layer": 24,
+     "module": "q_proj",
+     "fro": 1.86777,
+     "eff_rank": 2.15,
+     "top1_share": 0.655
+    },
+    {
+     "layer": 24,
+     "module": "v_proj",
+     "fro": 0.98806,
+     "eff_rank": 2.23,
+     "top1_share": 0.635
+    },
+    {
+     "layer": 25,
+     "module": "q_proj",
+     "fro": 1.91466,
+     "eff_rank": 2.72,
+     "top1_share": 0.522
+    },
+    {
+     "layer": 25,
+     "module": "v_proj",
+     "fro": 1.1514,
+     "eff_rank": 3.02,
+     "top1_share": 0.432
+    },
+    {
+     "layer": 26,
+     "module": "q_proj",
+     "fro": 1.96878,
+     "eff_rank": 2.12,
+     "top1_share": 0.662
+    },
+    {
+     "layer": 26,
+     "module": "v_proj",
+     "fro": 1.01847,
+     "eff_rank": 2.28,
+     "top1_share": 0.611
+    },
+    {
+     "layer": 27,
+     "module": "q_proj",
+     "fro": 1.88893,
+     "eff_rank": 2.28,
+     "top1_share": 0.625
+    },
+    {
+     "layer": 27,
+     "module": "v_proj",
+     "fro": 1.22971,
+     "eff_rank": 1.43,
+     "top1_share": 0.827
+    },
+    {
+     "layer": 28,
+     "module": "q_proj",
+     "fro": 2.02173,
+     "eff_rank": 1.94,
+     "top1_share": 0.696
+    },
+    {
+     "layer": 28,
+     "module": "v_proj",
+     "fro": 1.18294,
+     "eff_rank": 1.28,
+     "top1_share": 0.879
+    },
+    {
+     "layer": 29,
+     "module": "q_proj",
+     "fro": 1.91126,
+     "eff_rank": 2.4,
+     "top1_share": 0.606
+    },
+    {
+     "layer": 29,
+     "module": "v_proj",
+     "fro": 1.07475,
+     "eff_rank": 2.67,
+     "top1_share": 0.483
+    },
+    {
+     "layer": 30,
+     "module": "q_proj",
+     "fro": 2.68915,
+     "eff_rank": 1.37,
+     "top1_share": 0.85
+    },
+    {
+     "layer": 30,
+     "module": "v_proj",
+     "fro": 1.39602,
+     "eff_rank": 1.39,
+     "top1_share": 0.837
+    },
+    {
+     "layer": 31,
+     "module": "q_proj",
+     "fro": 2.03512,
+     "eff_rank": 1.56,
+     "top1_share": 0.791
+    },
+    {
+     "layer": 31,
+     "module": "v_proj",
+     "fro": 1.28706,
+     "eff_rank": 1.73,
+     "top1_share": 0.721
+    }
+   ]
+  },
+  "predibase/magicoder": {
+   "r": 8,
+   "alpha": 16,
+   "targets": [
+    "v_proj",
+    "q_proj"
+   ],
+   "summary": {
+    "q_proj": {
+     "total_fro": 1.8798,
+     "peak_layer": 30,
+     "energy_by_third": [
+      0.144,
+      0.206,
+      0.65
+     ],
+     "mean_eff_rank": 1.98
+    },
+    "v_proj": {
+     "total_fro": 1.153,
+     "peak_layer": 30,
+     "energy_by_third": [
+      0.089,
+      0.164,
+      0.747
+     ],
+     "mean_eff_rank": 1.72
+    }
+   },
+   "layers": [
+    {
+     "layer": 0,
+     "module": "q_proj",
+     "fro": 0.35064,
+     "eff_rank": 1.52,
+     "top1_share": 0.799
+    },
+    {
+     "layer": 0,
+     "module": "v_proj",
+     "fro": 0.11045,
+     "eff_rank": 1.73,
+     "top1_share": 0.733
+    },
+    {
+     "layer": 1,
+     "module": "q_proj",
+     "fro": 0.18316,
+     "eff_rank": 3.35,
+     "top1_share": 0.493
+    },
+    {
+     "layer": 1,
+     "module": "v_proj",
+     "fro": 0.09135,
+     "eff_rank": 2.2,
+     "top1_share": 0.576
+    },
+    {
+     "layer": 2,
+     "module": "q_proj",
+     "fro": 0.19247,
+     "eff_rank": 3.23,
+     "top1_share": 0.51
+    },
+    {
+     "layer": 2,
+     "module": "v_proj",
+     "fro": 0.10725,
+     "eff_rank": 2.5,
+     "top1_share": 0.49
+    },
+    {
+     "layer": 3,
+     "module": "q_proj",
+     "fro": 0.19847,
+     "eff_rank": 1.52,
+     "top1_share": 0.808
+    },
+    {
+     "layer": 3,
+     "module": "v_proj",
+     "fro": 0.09419,
+     "eff_rank": 1.77,
+     "top1_share": 0.736
+    },
+    {
+     "layer": 4,
+     "module": "q_proj",
+     "fro": 0.19791,
+     "eff_rank": 2.48,
+     "top1_share": 0.615
+    },
+    {
+     "layer": 4,
+     "module": "v_proj",
+     "fro": 0.10936,
+     "eff_rank": 2.08,
+     "top1_share": 0.639
+    },
+    {
+     "layer": 5,
+     "module": "q_proj",
+     "fro": 0.20279,
+     "eff_rank": 4.44,
+     "top1_share": 0.386
+    },
+    {
+     "layer": 5,
+     "module": "v_proj",
+     "fro": 0.10791,
+     "eff_rank": 1.99,
+     "top1_share": 0.649
+    },
+    {
+     "layer": 6,
+     "module": "q_proj",
+     "fro": 0.25481,
+     "eff_rank": 1.94,
+     "top1_share": 0.704
+    },
+    {
+     "layer": 6,
+     "module": "v_proj",
+     "fro": 0.11723,
+     "eff_rank": 1.81,
+     "top1_share": 0.71
+    },
+    {
+     "layer": 7,
+     "module": "q_proj",
+     "fro": 0.21172,
+     "eff_rank": 2.15,
+     "top1_share": 0.666
+    },
+    {
+     "layer": 7,
+     "module": "v_proj",
+     "fro": 0.10933,
+     "eff_rank": 1.73,
+     "top1_share": 0.75
+    },
+    {
+     "layer": 8,
+     "module": "q_proj",
+     "fro": 0.2072,
+     "eff_rank": 3.39,
+     "top1_share": 0.489
+    },
+    {
+     "layer": 8,
+     "module": "v_proj",
+     "fro": 0.11988,
+     "eff_rank": 1.97,
+     "top1_share": 0.683
+    },
+    {
+     "layer": 9,
+     "module": "q_proj",
+     "fro": 0.20792,
+     "eff_rank": 2.34,
+     "top1_share": 0.627
+    },
+    {
+     "layer": 9,
+     "module": "v_proj",
+     "fro": 0.11851,
+     "eff_rank": 1.84,
+     "top1_share": 0.718
+    },
+    {
+     "layer": 10,
+     "module": "q_proj",
+     "fro": 0.2274,
+     "eff_rank": 1.98,
+     "top1_share": 0.695
+    },
+    {
+     "layer": 10,
+     "module": "v_proj",
+     "fro": 0.12315,
+     "eff_rank": 2.18,
+     "top1_share": 0.616
+    },
+    {
+     "layer": 11,
+     "module": "q_proj",
+     "fro": 0.22449,
+     "eff_rank": 2.3,
+     "top1_share": 0.62
+    },
+    {
+     "layer": 11,
+     "module": "v_proj",
+     "fro": 0.11246,
+     "eff_rank": 2.29,
+     "top1_share": 0.607
+    },
+    {
+     "layer": 12,
+     "module": "q_proj",
+     "fro": 0.21986,
+     "eff_rank": 2.03,
+     "top1_share": 0.687
+    },
+    {
+     "layer": 12,
+     "module": "v_proj",
+     "fro": 0.1127,
+     "eff_rank": 2.11,
+     "top1_share": 0.644
+    },
+    {
+     "layer": 13,
+     "module": "q_proj",
+     "fro": 0.21826,
+     "eff_rank": 1.46,
+     "top1_share": 0.823
+    },
+    {
+     "layer": 13,
+     "module": "v_proj",
+     "fro": 0.13026,
+     "eff_rank": 1.98,
+     "top1_share": 0.681
+    },
+    {
+     "layer": 14,
+     "module": "q_proj",
+     "fro": 0.22521,
+     "eff_rank": 2.2,
+     "top1_share": 0.651
+    },
+    {
+     "layer": 14,
+     "module": "v_proj",
+     "fro": 0.12825,
+     "eff_rank": 2.02,
+     "top1_share": 0.65
+    },
+    {
+     "layer": 15,
+     "module": "q_proj",
+     "fro": 0.25486,
+     "eff_rank": 1.56,
+     "top1_share": 0.794
+    },
+    {
+     "layer": 15,
+     "module": "v_proj",
+     "fro": 0.12415,
+     "eff_rank": 1.88,
+     "top1_share": 0.709
+    },
+    {
+     "layer": 16,
+     "module": "q_proj",
+     "fro": 0.26615,
+     "eff_rank": 2.4,
+     "top1_share": 0.6
+    },
+    {
+     "layer": 16,
+     "module": "v_proj",
+     "fro": 0.12054,
+     "eff_rank": 1.76,
+     "top1_share": 0.733
+    },
+    {
+     "layer": 17,
+     "module": "q_proj",
+     "fro": 0.25466,
+     "eff_rank": 1.85,
+     "top1_share": 0.722
+    },
+    {
+     "layer": 17,
+     "module": "v_proj",
+     "fro": 0.15034,
+     "eff_rank": 2.1,
+     "top1_share": 0.643
+    },
+    {
+     "layer": 18,
+     "module": "q_proj",
+     "fro": 0.27322,
+     "eff_rank": 1.79,
+     "top1_share": 0.731
+    },
+    {
+     "layer": 18,
+     "module": "v_proj",
+     "fro": 0.15415,
+     "eff_rank": 2.24,
+     "top1_share": 0.612
+    },
+    {
+     "layer": 19,
+     "module": "q_proj",
+     "fro": 0.29998,
+     "eff_rank": 1.35,
+     "top1_share": 0.857
+    },
+    {
+     "layer": 19,
+     "module": "v_proj",
+     "fro": 0.1921,
+     "eff_rank": 1.35,
+     "top1_share": 0.856
+    },
+    {
+     "layer": 20,
+     "module": "q_proj",
+     "fro": 0.33767,
+     "eff_rank": 1.44,
+     "top1_share": 0.828
+    },
+    {
+     "layer": 20,
+     "module": "v_proj",
+     "fro": 0.17597,
+     "eff_rank": 2.03,
+     "top1_share": 0.659
+    },
+    {
+     "layer": 21,
+     "module": "q_proj",
+     "fro": 0.28373,
+     "eff_rank": 2.62,
+     "top1_share": 0.532
+    },
+    {
+     "layer": 21,
+     "module": "v_proj",
+     "fro": 0.2163,
+     "eff_rank": 1.47,
+     "top1_share": 0.816
+    },
+    {
+     "layer": 22,
+     "module": "q_proj",
+     "fro": 0.30724,
+     "eff_rank": 2.08,
+     "top1_share": 0.663
+    },
+    {
+     "layer": 22,
+     "module": "v_proj",
+     "fro": 0.18455,
+     "eff_rank": 1.9,
+     "top1_share": 0.671
+    },
+    {
+     "layer": 23,
+     "module": "q_proj",
+     "fro": 0.4673,
+     "eff_rank": 1.27,
+     "top1_share": 0.883
+    },
+    {
+     "layer": 23,
+     "module": "v_proj",
+     "fro": 0.27756,
+     "eff_rank": 1.06,
+     "top1_share": 0.971
+    },
+    {
+     "layer": 24,
+     "module": "q_proj",
+     "fro": 0.35483,
+     "eff_rank": 1.4,
+     "top1_share": 0.842
+    },
+    {
+     "layer": 24,
+     "module": "v_proj",
+     "fro": 0.22471,
+     "eff_rank": 1.09,
+     "top1_share": 0.956
+    },
+    {
+     "layer": 25,
+     "module": "q_proj",
+     "fro": 0.41494,
+     "eff_rank": 1.3,
+     "top1_share": 0.876
+    },
+    {
+     "layer": 25,
+     "module": "v_proj",
+     "fro": 0.25324,
+     "eff_rank": 1.13,
+     "top1_share": 0.939
+    },
+    {
+     "layer": 26,
+     "module": "q_proj",
+     "fro": 0.489,
+     "eff_rank": 1.23,
+     "top1_share": 0.902
+    },
+    {
+     "layer": 26,
+     "module": "v_proj",
+     "fro": 0.28172,
+     "eff_rank": 1.14,
+     "top1_share": 0.934
+    },
+    {
+     "layer": 27,
+     "module": "q_proj",
+     "fro": 0.48681,
+     "eff_rank": 1.11,
+     "top1_share": 0.947
+    },
+    {
+     "layer": 27,
+     "module": "v_proj",
+     "fro": 0.33314,
+     "eff_rank": 1.07,
+     "top1_share": 0.966
+    },
+    {
+     "layer": 28,
+     "module": "q_proj",
+     "fro": 0.56323,
+     "eff_rank": 1.22,
+     "top1_share": 0.904
+    },
+    {
+     "layer": 28,
+     "module": "v_proj",
+     "fro": 0.40988,
+     "eff_rank": 1.06,
+     "top1_share": 0.973
+    },
+    {
+     "layer": 29,
+     "module": "q_proj",
+     "fro": 0.4174,
+     "eff_rank": 1.65,
+     "top1_share": 0.759
+    },
+    {
+     "layer": 29,
+     "module": "v_proj",
+     "fro": 0.29426,
+     "eff_rank": 1.22,
+     "top1_share": 0.902
+    },
+    {
+     "layer": 30,
+     "module": "q_proj",
+     "fro": 0.70812,
+     "eff_rank": 1.14,
+     "top1_share": 0.934
+    },
+    {
+     "layer": 30,
+     "module": "v_proj",
+     "fro": 0.45674,
+     "eff_rank": 1.16,
+     "top1_share": 0.925
+    },
+    {
+     "layer": 31,
+     "module": "q_proj",
+     "fro": 0.3689,
+     "eff_rank": 1.55,
+     "top1_share": 0.798
+    },
+    {
+     "layer": 31,
+     "module": "v_proj",
+     "fro": 0.25797,
+     "eff_rank": 1.19,
+     "top1_share": 0.916
+    }
+   ]
+  },
+  "predibase/glue_sst2": {
+   "r": 8,
+   "alpha": 16,
+   "targets": [
+    "q_proj",
+    "v_proj"
+   ],
+   "summary": {
+    "q_proj": {
+     "total_fro": 3.0367,
+     "peak_layer": 31,
+     "energy_by_third": [
+      0.323,
+      0.263,
+      0.414
+     ],
+     "mean_eff_rank": 1.9
+    },
+    "v_proj": {
+     "total_fro": 1.9139,
+     "peak_layer": 31,
+     "energy_by_third": [
+      0.227,
+      0.164,
+      0.609
+     ],
+     "mean_eff_rank": 1.41
+    }
+   },
+   "layers": [
+    {
+     "layer": 0,
+     "module": "q_proj",
+     "fro": 0.37929,
+     "eff_rank": 2.62,
+     "top1_share": 0.579
+    },
+    {
+     "layer": 0,
+     "module": "v_proj",
+     "fro": 0.25509,
+     "eff_rank": 2.36,
+     "top1_share": 0.544
+    },
+    {
+     "layer": 1,
+     "module": "q_proj",
+     "fro": 0.53056,
+     "eff_rank": 3.11,
+     "top1_share": 0.523
+    },
+    {
+     "layer": 1,
+     "module": "v_proj",
+     "fro": 0.26009,
+     "eff_rank": 2.07,
+     "top1_share": 0.663
+    },
+    {
+     "layer": 2,
+     "module": "q_proj",
+     "fro": 0.56657,
+     "eff_rank": 3.22,
+     "top1_share": 0.52
+    },
+    {
+     "layer": 2,
+     "module": "v_proj",
+     "fro": 0.28239,
+     "eff_rank": 2.43,
+     "top1_share": 0.515
+    },
+    {
+     "layer": 3,
+     "module": "q_proj",
+     "fro": 0.46444,
+     "eff_rank": 2.4,
+     "top1_share": 0.619
+    },
+    {
+     "layer": 3,
+     "module": "v_proj",
+     "fro": 0.3796,
+     "eff_rank": 1.21,
+     "top1_share": 0.908
+    },
+    {
+     "layer": 4,
+     "module": "q_proj",
+     "fro": 0.53753,
+     "eff_rank": 3.72,
+     "top1_share": 0.437
+    },
+    {
+     "layer": 4,
+     "module": "v_proj",
+     "fro": 0.27764,
+     "eff_rank": 1.75,
+     "top1_share": 0.732
+    },
+    {
+     "layer": 5,
+     "module": "q_proj",
+     "fro": 0.64831,
+     "eff_rank": 2.2,
+     "top1_share": 0.632
+    },
+    {
+     "layer": 5,
+     "module": "v_proj",
+     "fro": 0.27167,
+     "eff_rank": 1.79,
+     "top1_share": 0.726
+    },
+    {
+     "layer": 6,
+     "module": "q_proj",
+     "fro": 0.47377,
+     "eff_rank": 3.65,
+     "top1_share": 0.435
+    },
+    {
+     "layer": 6,
+     "module": "v_proj",
+     "fro": 0.28922,
+     "eff_rank": 1.42,
+     "top1_share": 0.833
+    },
+    {
+     "layer": 7,
+     "module": "q_proj",
+     "fro": 0.69514,
+     "eff_rank": 1.54,
+     "top1_share": 0.801
+    },
+    {
+     "layer": 7,
+     "module": "v_proj",
+     "fro": 0.23148,
+     "eff_rank": 2.76,
+     "top1_share": 0.545
+    },
+    {
+     "layer": 8,
+     "module": "q_proj",
+     "fro": 0.60386,
+     "eff_rank": 1.48,
+     "top1_share": 0.816
+    },
+    {
+     "layer": 8,
+     "module": "v_proj",
+     "fro": 0.32556,
+     "eff_rank": 1.38,
+     "top1_share": 0.848
+    },
+    {
+     "layer": 9,
+     "module": "q_proj",
+     "fro": 0.48834,
+     "eff_rank": 3.51,
+     "top1_share": 0.433
+    },
+    {
+     "layer": 9,
+     "module": "v_proj",
+     "fro": 0.28635,
+     "eff_rank": 1.26,
+     "top1_share": 0.89
+    },
+    {
+     "layer": 10,
+     "module": "q_proj",
+     "fro": 0.4907,
+     "eff_rank": 1.93,
+     "top1_share": 0.705
+    },
+    {
+     "layer": 10,
+     "module": "v_proj",
+     "fro": 0.23255,
+     "eff_rank": 1.54,
+     "top1_share": 0.797
+    },
+    {
+     "layer": 11,
+     "module": "q_proj",
+     "fro": 0.451,
+     "eff_rank": 2.94,
+     "top1_share": 0.502
+    },
+    {
+     "layer": 11,
+     "module": "v_proj",
+     "fro": 0.22361,
+     "eff_rank": 2.02,
+     "top1_share": 0.669
+    },
+    {
+     "layer": 12,
+     "module": "q_proj",
+     "fro": 0.44075,
+     "eff_rank": 2.16,
+     "top1_share": 0.66
+    },
+    {
+     "layer": 12,
+     "module": "v_proj",
+     "fro": 0.24482,
+     "eff_rank": 1.43,
+     "top1_share": 0.829
+    },
+    {
+     "layer": 13,
+     "module": "q_proj",
+     "fro": 0.49965,
+     "eff_rank": 1.94,
+     "top1_share": 0.682
+    },
+    {
+     "layer": 13,
+     "module": "v_proj",
+     "fro": 0.20985,
+     "eff_rank": 1.22,
+     "top1_share": 0.905
+    },
+    {
+     "layer": 14,
+     "module": "q_proj",
+     "fro": 0.37664,
+     "eff_rank": 1.51,
+     "top1_share": 0.808
+    },
+    {
+     "layer": 14,
+     "module": "v_proj",
+     "fro": 0.20006,
+     "eff_rank": 1.34,
+     "top1_share": 0.862
+    },
+    {
+     "layer": 15,
+     "module": "q_proj",
+     "fro": 0.46203,
+     "eff_rank": 2.62,
+     "top1_share": 0.56
+    },
+    {
+     "layer": 15,
+     "module": "v_proj",
+     "fro": 0.18914,
+     "eff_rank": 1.66,
+     "top1_share": 0.766
+    },
+    {
+     "layer": 16,
+     "module": "q_proj",
+     "fro": 0.5579,
+     "eff_rank": 1.56,
+     "top1_share": 0.784
+    },
+    {
+     "layer": 16,
+     "module": "v_proj",
+     "fro": 0.20269,
+     "eff_rank": 1.16,
+     "top1_share": 0.926
+    },
+    {
+     "layer": 17,
+     "module": "q_proj",
+     "fro": 0.43191,
+     "eff_rank": 1.8,
+     "top1_share": 0.719
+    },
+    {
+     "layer": 17,
+     "module": "v_proj",
+     "fro": 0.24923,
+     "eff_rank": 1.12,
+     "top1_share": 0.942
+    },
+    {
+     "layer": 18,
+     "module": "q_proj",
+     "fro": 0.42757,
+     "eff_rank": 1.1,
+     "top1_share": 0.954
+    },
+    {
+     "layer": 18,
+     "module": "v_proj",
+     "fro": 0.29648,
+     "eff_rank": 1.1,
+     "top1_share": 0.955
+    },
+    {
+     "layer": 19,
+     "module": "q_proj",
+     "fro": 0.45352,
+     "eff_rank": 1.64,
+     "top1_share": 0.763
+    },
+    {
+     "layer": 19,
+     "module": "v_proj",
+     "fro": 0.25069,
+     "eff_rank": 1.21,
+     "top1_share": 0.905
+    },
+    {
+     "layer": 20,
+     "module": "q_proj",
+     "fro": 0.53967,
+     "eff_rank": 1.09,
+     "top1_share": 0.959
+    },
+    {
+     "layer": 20,
+     "module": "v_proj",
+     "fro": 0.24904,
+     "eff_rank": 1.16,
+     "top1_share": 0.927
+    },
+    {
+     "layer": 21,
+     "module": "q_proj",
+     "fro": 0.43799,
+     "eff_rank": 1.15,
+     "top1_share": 0.933
+    },
+    {
+     "layer": 21,
+     "module": "v_proj",
+     "fro": 0.38538,
+     "eff_rank": 1.06,
+     "top1_share": 0.97
+    },
+    {
+     "layer": 22,
+     "module": "q_proj",
+     "fro": 0.45354,
+     "eff_rank": 1.16,
+     "top1_share": 0.926
+    },
+    {
+     "layer": 22,
+     "module": "v_proj",
+     "fro": 0.46122,
+     "eff_rank": 1.05,
+     "top1_share": 0.976
+    },
+    {
+     "layer": 23,
+     "module": "q_proj",
+     "fro": 0.61532,
+     "eff_rank": 1.09,
+     "top1_share": 0.958
+    },
+    {
+     "layer": 23,
+     "module": "v_proj",
+     "fro": 0.5348,
+     "eff_rank": 1.04,
+     "top1_share": 0.982
+    },
+    {
+     "layer": 24,
+     "module": "q_proj",
+     "fro": 0.50441,
+     "eff_rank": 1.2,
+     "top1_share": 0.911
+    },
+    {
+     "layer": 24,
+     "module": "v_proj",
+     "fro": 0.39923,
+     "eff_rank": 1.07,
+     "top1_share": 0.966
+    },
+    {
+     "layer": 25,
+     "module": "q_proj",
+     "fro": 0.50562,
+     "eff_rank": 1.22,
+     "top1_share": 0.902
+    },
+    {
+     "layer": 25,
+     "module": "v_proj",
+     "fro": 0.33273,
+     "eff_rank": 1.1,
+     "top1_share": 0.951
+    },
+    {
+     "layer": 26,
+     "module": "q_proj",
+     "fro": 0.61035,
+     "eff_rank": 1.05,
+     "top1_share": 0.977
+    },
+    {
+     "layer": 26,
+     "module": "v_proj",
+     "fro": 0.4643,
+     "eff_rank": 1.06,
+     "top1_share": 0.97
+    },
+    {
+     "layer": 27,
+     "module": "q_proj",
+     "fro": 0.55119,
+     "eff_rank": 1.13,
+     "top1_share": 0.94
+    },
+    {
+     "layer": 27,
+     "module": "v_proj",
+     "fro": 0.33587,
+     "eff_rank": 1.02,
+     "top1_share": 0.991
+    },
+    {
+     "layer": 28,
+     "module": "q_proj",
+     "fro": 0.66674,
+     "eff_rank": 1.09,
+     "top1_share": 0.956
+    },
+    {
+     "layer": 28,
+     "module": "v_proj",
+     "fro": 0.44582,
+     "eff_rank": 1.02,
+     "top1_share": 0.988
+    },
+    {
+     "layer": 29,
+     "module": "q_proj",
+     "fro": 0.68734,
+     "eff_rank": 1.51,
+     "top1_share": 0.799
+    },
+    {
+     "layer": 29,
+     "module": "v_proj",
+     "fro": 0.41459,
+     "eff_rank": 1.12,
+     "top1_share": 0.943
+    },
+    {
+     "layer": 30,
+     "module": "q_proj",
+     "fro": 0.62829,
+     "eff_rank": 1.06,
+     "top1_share": 0.969
+    },
+    {
+     "layer": 30,
+     "module": "v_proj",
+     "fro": 0.51493,
+     "eff_rank": 1.05,
+     "top1_share": 0.978
+    },
+    {
+     "layer": 31,
+     "module": "q_proj",
+     "fro": 0.73786,
+     "eff_rank": 1.31,
+     "top1_share": 0.87
+    },
+    {
+     "layer": 31,
+     "module": "v_proj",
+     "fro": 0.59062,
+     "eff_rank": 1.04,
+     "top1_share": 0.98
+    }
+   ]
+  },
+  "predibase/legal": {
+   "r": 8,
+   "alpha": 16,
+   "targets": [
+    "q_proj",
+    "v_proj"
+   ],
+   "summary": {
+    "q_proj": {
+     "total_fro": 4.5187,
+     "peak_layer": 28,
+     "energy_by_third": [
+      0.196,
+      0.29,
+      0.514
+     ],
+     "mean_eff_rank": 2.53
+    },
+    "v_proj": {
+     "total_fro": 2.2422,
+     "peak_layer": 21,
+     "energy_by_third": [
+      0.203,
+      0.264,
+      0.533
+     ],
+     "mean_eff_rank": 1.82
+    }
+   },
+   "layers": [
+    {
+     "layer": 0,
+     "module": "q_proj",
+     "fro": 0.70336,
+     "eff_rank": 1.53,
+     "top1_share": 0.794
+    },
+    {
+     "layer": 0,
+     "module": "v_proj",
+     "fro": 0.29362,
+     "eff_rank": 2.21,
+     "top1_share": 0.588
+    },
+    {
+     "layer": 1,
+     "module": "q_proj",
+     "fro": 0.60762,
+     "eff_rank": 4.49,
+     "top1_share": 0.346
+    },
+    {
+     "layer": 1,
+     "module": "v_proj",
+     "fro": 0.36851,
+     "eff_rank": 1.94,
+     "top1_share": 0.656
+    },
+    {
+     "layer": 2,
+     "module": "q_proj",
+     "fro": 0.6493,
+     "eff_rank": 5.55,
+     "top1_share": 0.28
+    },
+    {
+     "layer": 2,
+     "module": "v_proj",
+     "fro": 0.32967,
+     "eff_rank": 2.2,
+     "top1_share": 0.574
+    },
+    {
+     "layer": 3,
+     "module": "q_proj",
+     "fro": 0.60459,
+     "eff_rank": 3.5,
+     "top1_share": 0.398
+    },
+    {
+     "layer": 3,
+     "module": "v_proj",
+     "fro": 0.32492,
+     "eff_rank": 1.73,
+     "top1_share": 0.735
+    },
+    {
+     "layer": 4,
+     "module": "q_proj",
+     "fro": 0.59575,
+     "eff_rank": 2.74,
+     "top1_share": 0.567
+    },
+    {
+     "layer": 4,
+     "module": "v_proj",
+     "fro": 0.26086,
+     "eff_rank": 2.04,
+     "top1_share": 0.656
+    },
+    {
+     "layer": 5,
+     "module": "q_proj",
+     "fro": 0.68202,
+     "eff_rank": 3.47,
+     "top1_share": 0.482
+    },
+    {
+     "layer": 5,
+     "module": "v_proj",
+     "fro": 0.31292,
+     "eff_rank": 2.28,
+     "top1_share": 0.579
+    },
+    {
+     "layer": 6,
+     "module": "q_proj",
+     "fro": 0.57353,
+     "eff_rank": 3.24,
+     "top1_share": 0.51
+    },
+    {
+     "layer": 6,
+     "module": "v_proj",
+     "fro": 0.34327,
+     "eff_rank": 2.09,
+     "top1_share": 0.649
+    },
+    {
+     "layer": 7,
+     "module": "q_proj",
+     "fro": 0.62013,
+     "eff_rank": 3.83,
+     "top1_share": 0.385
+    },
+    {
+     "layer": 7,
+     "module": "v_proj",
+     "fro": 0.30415,
+     "eff_rank": 2.7,
+     "top1_share": 0.539
+    },
+    {
+     "layer": 8,
+     "module": "q_proj",
+     "fro": 0.6339,
+     "eff_rank": 3.59,
+     "top1_share": 0.409
+    },
+    {
+     "layer": 8,
+     "module": "v_proj",
+     "fro": 0.31008,
+     "eff_rank": 2.26,
+     "top1_share": 0.625
+    },
+    {
+     "layer": 9,
+     "module": "q_proj",
+     "fro": 0.64175,
+     "eff_rank": 3.02,
+     "top1_share": 0.526
+    },
+    {
+     "layer": 9,
+     "module": "v_proj",
+     "fro": 0.33641,
+     "eff_rank": 2.23,
+     "top1_share": 0.624
+    },
+    {
+     "layer": 10,
+     "module": "q_proj",
+     "fro": 0.6475,
+     "eff_rank": 4.29,
+     "top1_share": 0.405
+    },
+    {
+     "layer": 10,
+     "module": "v_proj",
+     "fro": 0.31149,
+     "eff_rank": 1.88,
+     "top1_share": 0.709
+    },
+    {
+     "layer": 11,
+     "module": "q_proj",
+     "fro": 0.64415,
+     "eff_rank": 1.57,
+     "top1_share": 0.791
+    },
+    {
+     "layer": 11,
+     "module": "v_proj",
+     "fro": 0.31535,
+     "eff_rank": 1.87,
+     "top1_share": 0.71
+    },
+    {
+     "layer": 12,
+     "module": "q_proj",
+     "fro": 0.72326,
+     "eff_rank": 2.45,
+     "top1_share": 0.602
+    },
+    {
+     "layer": 12,
+     "module": "v_proj",
+     "fro": 0.31748,
+     "eff_rank": 2.69,
+     "top1_share": 0.468
+    },
+    {
+     "layer": 13,
+     "module": "q_proj",
+     "fro": 0.65061,
+     "eff_rank": 2.56,
+     "top1_share": 0.578
+    },
+    {
+     "layer": 13,
+     "module": "v_proj",
+     "fro": 0.29059,
+     "eff_rank": 1.67,
+     "top1_share": 0.759
+    },
+    {
+     "layer": 14,
+     "module": "q_proj",
+     "fro": 0.61735,
+     "eff_rank": 2.76,
+     "top1_share": 0.508
+    },
+    {
+     "layer": 14,
+     "module": "v_proj",
+     "fro": 0.29429,
+     "eff_rank": 2.05,
+     "top1_share": 0.66
+    },
+    {
+     "layer": 15,
+     "module": "q_proj",
+     "fro": 0.72241,
+     "eff_rank": 2.24,
+     "top1_share": 0.619
+    },
+    {
+     "layer": 15,
+     "module": "v_proj",
+     "fro": 0.35581,
+     "eff_rank": 1.9,
+     "top1_share": 0.697
+    },
+    {
+     "layer": 16,
+     "module": "q_proj",
+     "fro": 0.68455,
+     "eff_rank": 1.22,
+     "top1_share": 0.904
+    },
+    {
+     "layer": 16,
+     "module": "v_proj",
+     "fro": 0.32778,
+     "eff_rank": 2.14,
+     "top1_share": 0.631
+    },
+    {
+     "layer": 17,
+     "module": "q_proj",
+     "fro": 0.68588,
+     "eff_rank": 2.59,
+     "top1_share": 0.545
+    },
+    {
+     "layer": 17,
+     "module": "v_proj",
+     "fro": 0.38231,
+     "eff_rank": 1.32,
+     "top1_share": 0.866
+    },
+    {
+     "layer": 18,
+     "module": "q_proj",
+     "fro": 0.79121,
+     "eff_rank": 1.24,
+     "top1_share": 0.894
+    },
+    {
+     "layer": 18,
+     "module": "v_proj",
+     "fro": 0.36838,
+     "eff_rank": 1.94,
+     "top1_share": 0.683
+    },
+    {
+     "layer": 19,
+     "module": "q_proj",
+     "fro": 0.92102,
+     "eff_rank": 1.44,
+     "top1_share": 0.824
+    },
+    {
+     "layer": 19,
+     "module": "v_proj",
+     "fro": 0.39927,
+     "eff_rank": 1.6,
+     "top1_share": 0.771
+    },
+    {
+     "layer": 20,
+     "module": "q_proj",
+     "fro": 0.91098,
+     "eff_rank": 1.52,
+     "top1_share": 0.802
+    },
+    {
+     "layer": 20,
+     "module": "v_proj",
+     "fro": 0.42953,
+     "eff_rank": 2.1,
+     "top1_share": 0.638
+    },
+    {
+     "layer": 21,
+     "module": "q_proj",
+     "fro": 0.95285,
+     "eff_rank": 1.66,
+     "top1_share": 0.764
+    },
+    {
+     "layer": 21,
+     "module": "v_proj",
+     "fro": 0.58857,
+     "eff_rank": 1.14,
+     "top1_share": 0.937
+    },
+    {
+     "layer": 22,
+     "module": "q_proj",
+     "fro": 0.86141,
+     "eff_rank": 2.54,
+     "top1_share": 0.569
+    },
+    {
+     "layer": 22,
+     "module": "v_proj",
+     "fro": 0.40522,
+     "eff_rank": 2.11,
+     "top1_share": 0.577
+    },
+    {
+     "layer": 23,
+     "module": "q_proj",
+     "fro": 0.9762,
+     "eff_rank": 1.57,
+     "top1_share": 0.789
+    },
+    {
+     "layer": 23,
+     "module": "v_proj",
+     "fro": 0.41363,
+     "eff_rank": 1.82,
+     "top1_share": 0.698
+    },
+    {
+     "layer": 24,
+     "module": "q_proj",
+     "fro": 0.88301,
+     "eff_rank": 2.2,
+     "top1_share": 0.65
+    },
+    {
+     "layer": 24,
+     "module": "v_proj",
+     "fro": 0.45603,
+     "eff_rank": 1.24,
+     "top1_share": 0.895
+    },
+    {
+     "layer": 25,
+     "module": "q_proj",
+     "fro": 0.85714,
+     "eff_rank": 2.38,
+     "top1_share": 0.498
+    },
+    {
+     "layer": 25,
+     "module": "v_proj",
+     "fro": 0.4865,
+     "eff_rank": 1.34,
+     "top1_share": 0.857
+    },
+    {
+     "layer": 26,
+     "module": "q_proj",
+     "fro": 0.95365,
+     "eff_rank": 1.4,
+     "top1_share": 0.839
+    },
+    {
+     "layer": 26,
+     "module": "v_proj",
+     "fro": 0.44025,
+     "eff_rank": 1.24,
+     "top1_share": 0.895
+    },
+    {
+     "layer": 27,
+     "module": "q_proj",
+     "fro": 1.00287,
+     "eff_rank": 1.29,
+     "top1_share": 0.878
+    },
+    {
+     "layer": 27,
+     "module": "v_proj",
+     "fro": 0.48887,
+     "eff_rank": 1.06,
+     "top1_share": 0.97
+    },
+    {
+     "layer": 28,
+     "module": "q_proj",
+     "fro": 1.08329,
+     "eff_rank": 1.76,
+     "top1_share": 0.724
+    },
+    {
+     "layer": 28,
+     "module": "v_proj",
+     "fro": 0.53535,
+     "eff_rank": 1.07,
+     "top1_share": 0.965
+    },
+    {
+     "layer": 29,
+     "module": "q_proj",
+     "fro": 1.07719,
+     "eff_rank": 3.1,
+     "top1_share": 0.416
+    },
+    {
+     "layer": 29,
+     "module": "v_proj",
+     "fro": 0.49284,
+     "eff_rank": 1.64,
+     "top1_share": 0.758
+    },
+    {
+     "layer": 30,
+     "module": "q_proj",
+     "fro": 1.0439,
+     "eff_rank": 2.33,
+     "top1_share": 0.602
+    },
+    {
+     "layer": 30,
+     "module": "v_proj",
+     "fro": 0.51806,
+     "eff_rank": 1.57,
+     "top1_share": 0.782
+    },
+    {
+     "layer": 31,
+     "module": "q_proj",
+     "fro": 1.01851,
+     "eff_rank": 1.93,
+     "top1_share": 0.652
+    },
+    {
+     "layer": 31,
+     "module": "v_proj",
+     "fro": 0.56584,
+     "eff_rank": 1.1,
+     "top1_share": 0.953
+    }
+   ]
+  },
+  "predibase/cnn": {
+   "r": 8,
+   "alpha": 16,
+   "targets": [
+    "q_proj",
+    "v_proj"
+   ],
+   "summary": {
+    "q_proj": {
+     "total_fro": 2.8062,
+     "peak_layer": 29,
+     "energy_by_third": [
+      0.275,
+      0.276,
+      0.449
+     ],
+     "mean_eff_rank": 2.44
+    },
+    "v_proj": {
+     "total_fro": 1.6305,
+     "peak_layer": 25,
+     "energy_by_third": [
+      0.157,
+      0.329,
+      0.514
+     ],
+     "mean_eff_rank": 1.96
+    }
+   },
+   "layers": [
+    {
+     "layer": 0,
+     "module": "q_proj",
+     "fro": 0.5934,
+     "eff_rank": 1.49,
+     "top1_share": 0.803
+    },
+    {
+     "layer": 0,
+     "module": "v_proj",
+     "fro": 0.17819,
+     "eff_rank": 2.06,
+     "top1_share": 0.629
+    },
+    {
+     "layer": 1,
+     "module": "q_proj",
+     "fro": 0.45537,
+     "eff_rank": 1.87,
+     "top1_share": 0.718
+    },
+    {
+     "layer": 1,
+     "module": "v_proj",
+     "fro": 0.19334,
+     "eff_rank": 1.99,
+     "top1_share": 0.649
+    },
+    {
+     "layer": 2,
+     "module": "q_proj",
+     "fro": 0.48257,
+     "eff_rank": 2.24,
+     "top1_share": 0.646
+    },
+    {
+     "layer": 2,
+     "module": "v_proj",
+     "fro": 0.21514,
+     "eff_rank": 2.39,
+     "top1_share": 0.541
+    },
+    {
+     "layer": 3,
+     "module": "q_proj",
+     "fro": 0.3434,
+     "eff_rank": 1.85,
+     "top1_share": 0.724
+    },
+    {
+     "layer": 3,
+     "module": "v_proj",
+     "fro": 0.1853,
+     "eff_rank": 2.18,
+     "top1_share": 0.602
+    },
+    {
+     "layer": 4,
+     "module": "q_proj",
+     "fro": 0.43362,
+     "eff_rank": 3.49,
+     "top1_share": 0.479
+    },
+    {
+     "layer": 4,
+     "module": "v_proj",
+     "fro": 0.20503,
+     "eff_rank": 1.95,
+     "top1_share": 0.667
+    },
+    {
+     "layer": 5,
+     "module": "q_proj",
+     "fro": 0.53406,
+     "eff_rank": 1.46,
+     "top1_share": 0.824
+    },
+    {
+     "layer": 5,
+     "module": "v_proj",
+     "fro": 0.21596,
+     "eff_rank": 1.93,
+     "top1_share": 0.661
+    },
+    {
+     "layer": 6,
+     "module": "q_proj",
+     "fro": 0.51224,
+     "eff_rank": 1.94,
+     "top1_share": 0.702
+    },
+    {
+     "layer": 6,
+     "module": "v_proj",
+     "fro": 0.21277,
+     "eff_rank": 1.97,
+     "top1_share": 0.663
+    },
+    {
+     "layer": 7,
+     "module": "q_proj",
+     "fro": 0.35422,
+     "eff_rank": 4.14,
+     "top1_share": 0.415
+    },
+    {
+     "layer": 7,
+     "module": "v_proj",
+     "fro": 0.1938,
+     "eff_rank": 2.7,
+     "top1_share": 0.552
+    },
+    {
+     "layer": 8,
+     "module": "q_proj",
+     "fro": 0.41176,
+     "eff_rank": 2.71,
+     "top1_share": 0.569
+    },
+    {
+     "layer": 8,
+     "module": "v_proj",
+     "fro": 0.21802,
+     "eff_rank": 1.97,
+     "top1_share": 0.677
+    },
+    {
+     "layer": 9,
+     "module": "q_proj",
+     "fro": 0.47523,
+     "eff_rank": 1.79,
+     "top1_share": 0.736
+    },
+    {
+     "layer": 9,
+     "module": "v_proj",
+     "fro": 0.22253,
+     "eff_rank": 2.04,
+     "top1_share": 0.677
+    },
+    {
+     "layer": 10,
+     "module": "q_proj",
+     "fro": 0.39487,
+     "eff_rank": 3.41,
+     "top1_share": 0.486
+    },
+    {
+     "layer": 10,
+     "module": "v_proj",
+     "fro": 0.28365,
+     "eff_rank": 1.97,
+     "top1_share": 0.665
+    },
+    {
+     "layer": 11,
+     "module": "q_proj",
+     "fro": 0.46122,
+     "eff_rank": 2.45,
+     "top1_share": 0.605
+    },
+    {
+     "layer": 11,
+     "module": "v_proj",
+     "fro": 0.25517,
+     "eff_rank": 1.84,
+     "top1_share": 0.706
+    },
+    {
+     "layer": 12,
+     "module": "q_proj",
+     "fro": 0.38649,
+     "eff_rank": 2.72,
+     "top1_share": 0.578
+    },
+    {
+     "layer": 12,
+     "module": "v_proj",
+     "fro": 0.21263,
+     "eff_rank": 3.24,
+     "top1_share": 0.48
+    },
+    {
+     "layer": 13,
+     "module": "q_proj",
+     "fro": 0.42908,
+     "eff_rank": 2.06,
+     "top1_share": 0.677
+    },
+    {
+     "layer": 13,
+     "module": "v_proj",
+     "fro": 0.29064,
+     "eff_rank": 1.9,
+     "top1_share": 0.685
+    },
+    {
+     "layer": 14,
+     "module": "q_proj",
+     "fro": 0.45756,
+     "eff_rank": 2.67,
+     "top1_share": 0.567
+    },
+    {
+     "layer": 14,
+     "module": "v_proj",
+     "fro": 0.27729,
+     "eff_rank": 1.78,
+     "top1_share": 0.733
+    },
+    {
+     "layer": 15,
+     "module": "q_proj",
+     "fro": 0.41888,
+     "eff_rank": 3.38,
+     "top1_share": 0.478
+    },
+    {
+     "layer": 15,
+     "module": "v_proj",
+     "fro": 0.22904,
+     "eff_rank": 3.3,
+     "top1_share": 0.423
+    },
+    {
+     "layer": 16,
+     "module": "q_proj",
+     "fro": 0.42898,
+     "eff_rank": 4.17,
+     "top1_share": 0.406
+    },
+    {
+     "layer": 16,
+     "module": "v_proj",
+     "fro": 0.25767,
+     "eff_rank": 2.29,
+     "top1_share": 0.603
+    },
+    {
+     "layer": 17,
+     "module": "q_proj",
+     "fro": 0.51633,
+     "eff_rank": 3.62,
+     "top1_share": 0.405
+    },
+    {
+     "layer": 17,
+     "module": "v_proj",
+     "fro": 0.36225,
+     "eff_rank": 1.55,
+     "top1_share": 0.791
+    },
+    {
+     "layer": 18,
+     "module": "q_proj",
+     "fro": 0.46661,
+     "eff_rank": 1.99,
+     "top1_share": 0.692
+    },
+    {
+     "layer": 18,
+     "module": "v_proj",
+     "fro": 0.25379,
+     "eff_rank": 2.06,
+     "top1_share": 0.66
+    },
+    {
+     "layer": 19,
+     "module": "q_proj",
+     "fro": 0.46798,
+     "eff_rank": 2.8,
+     "top1_share": 0.552
+    },
+    {
+     "layer": 19,
+     "module": "v_proj",
+     "fro": 0.33197,
+     "eff_rank": 1.58,
+     "top1_share": 0.785
+    },
+    {
+     "layer": 20,
+     "module": "q_proj",
+     "fro": 0.44641,
+     "eff_rank": 3.51,
+     "top1_share": 0.426
+    },
+    {
+     "layer": 20,
+     "module": "v_proj",
+     "fro": 0.31312,
+     "eff_rank": 2.1,
+     "top1_share": 0.635
+    },
+    {
+     "layer": 21,
+     "module": "q_proj",
+     "fro": 0.54626,
+     "eff_rank": 1.79,
+     "top1_share": 0.737
+    },
+    {
+     "layer": 21,
+     "module": "v_proj",
+     "fro": 0.35673,
+     "eff_rank": 1.53,
+     "top1_share": 0.792
+    },
+    {
+     "layer": 22,
+     "module": "q_proj",
+     "fro": 0.60185,
+     "eff_rank": 1.9,
+     "top1_share": 0.698
+    },
+    {
+     "layer": 22,
+     "module": "v_proj",
+     "fro": 0.31363,
+     "eff_rank": 2.02,
+     "top1_share": 0.67
+    },
+    {
+     "layer": 23,
+     "module": "q_proj",
+     "fro": 0.52373,
+     "eff_rank": 2.15,
+     "top1_share": 0.655
+    },
+    {
+     "layer": 23,
+     "module": "v_proj",
+     "fro": 0.37784,
+     "eff_rank": 2.07,
+     "top1_share": 0.568
+    },
+    {
+     "layer": 24,
+     "module": "q_proj",
+     "fro": 0.57582,
+     "eff_rank": 2.06,
+     "top1_share": 0.654
+    },
+    {
+     "layer": 24,
+     "module": "v_proj",
+     "fro": 0.38053,
+     "eff_rank": 1.29,
+     "top1_share": 0.876
+    },
+    {
+     "layer": 25,
+     "module": "q_proj",
+     "fro": 0.54024,
+     "eff_rank": 2.28,
+     "top1_share": 0.617
+    },
+    {
+     "layer": 25,
+     "module": "v_proj",
+     "fro": 0.40282,
+     "eff_rank": 1.48,
+     "top1_share": 0.806
+    },
+    {
+     "layer": 26,
+     "module": "q_proj",
+     "fro": 0.5744,
+     "eff_rank": 1.44,
+     "top1_share": 0.825
+    },
+    {
+     "layer": 26,
+     "module": "v_proj",
+     "fro": 0.28066,
+     "eff_rank": 2.61,
+     "top1_share": 0.569
+    },
+    {
+     "layer": 27,
+     "module": "q_proj",
+     "fro": 0.56717,
+     "eff_rank": 1.58,
+     "top1_share": 0.787
+    },
+    {
+     "layer": 27,
+     "module": "v_proj",
+     "fro": 0.3761,
+     "eff_rank": 1.37,
+     "top1_share": 0.85
+    },
+    {
+     "layer": 28,
+     "module": "q_proj",
+     "fro": 0.59809,
+     "eff_rank": 1.61,
+     "top1_share": 0.775
+    },
+    {
+     "layer": 28,
+     "module": "v_proj",
+     "fro": 0.33626,
+     "eff_rank": 1.26,
+     "top1_share": 0.89
+    },
+    {
+     "layer": 29,
+     "module": "q_proj",
+     "fro": 0.60355,
+     "eff_rank": 2.87,
+     "top1_share": 0.509
+    },
+    {
+     "layer": 29,
+     "module": "v_proj",
+     "fro": 0.32322,
+     "eff_rank": 1.67,
+     "top1_share": 0.753
+    },
+    {
+     "layer": 30,
+     "module": "q_proj",
+     "fro": 0.58962,
+     "eff_rank": 1.43,
+     "top1_share": 0.831
+    },
+    {
+     "layer": 30,
+     "module": "v_proj",
+     "fro": 0.39293,
+     "eff_rank": 1.23,
+     "top1_share": 0.899
+    },
+    {
+     "layer": 31,
+     "module": "q_proj",
+     "fro": 0.50465,
+     "eff_rank": 3.31,
+     "top1_share": 0.405
+    },
+    {
+     "layer": 31,
+     "module": "v_proj",
+     "fro": 0.3127,
+     "eff_rank": 1.3,
+     "top1_share": 0.873
+    }
+   ]
+  },
+  "predibase/jigsaw": {
+   "r": 8,
+   "alpha": 16,
+   "targets": [
+    "v_proj",
+    "q_proj"
+   ],
+   "summary": {
+    "q_proj": {
+     "total_fro": 7.5741,
+     "peak_layer": 23,
+     "energy_by_third": [
+      0.203,
+      0.35,
+      0.446
+     ],
+     "mean_eff_rank": 1.63
+    },
+    "v_proj": {
+     "total_fro": 4.0458,
+     "peak_layer": 13,
+     "energy_by_third": [
+      0.123,
+      0.381,
+      0.496
+     ],
+     "mean_eff_rank": 1.53
+    }
+   },
+   "layers": [
+    {
+     "layer": 0,
+     "module": "q_proj",
+     "fro": 0.90484,
+     "eff_rank": 2.01,
+     "top1_share": 0.685
+    },
+    {
+     "layer": 0,
+     "module": "v_proj",
+     "fro": 0.37908,
+     "eff_rank": 1.85,
+     "top1_share": 0.706
+    },
+    {
+     "layer": 1,
+     "module": "q_proj",
+     "fro": 0.84961,
+     "eff_rank": 4.53,
+     "top1_share": 0.335
+    },
+    {
+     "layer": 1,
+     "module": "v_proj",
+     "fro": 0.40931,
+     "eff_rank": 2.39,
+     "top1_share": 0.595
+    },
+    {
+     "layer": 2,
+     "module": "q_proj",
+     "fro": 0.93147,
+     "eff_rank": 4.17,
+     "top1_share": 0.411
+    },
+    {
+     "layer": 2,
+     "module": "v_proj",
+     "fro": 0.43073,
+     "eff_rank": 2.42,
+     "top1_share": 0.569
+    },
+    {
+     "layer": 3,
+     "module": "q_proj",
+     "fro": 1.25369,
+     "eff_rank": 1.2,
+     "top1_share": 0.912
+    },
+    {
+     "layer": 3,
+     "module": "v_proj",
+     "fro": 0.43641,
+     "eff_rank": 2.1,
+     "top1_share": 0.663
+    },
+    {
+     "layer": 4,
+     "module": "q_proj",
+     "fro": 1.04934,
+     "eff_rank": 2.13,
+     "top1_share": 0.666
+    },
+    {
+     "layer": 4,
+     "module": "v_proj",
+     "fro": 0.40094,
+     "eff_rank": 1.66,
+     "top1_share": 0.76
+    },
+    {
+     "layer": 5,
+     "module": "q_proj",
+     "fro": 1.21596,
+     "eff_rank": 1.5,
+     "top1_share": 0.809
+    },
+    {
+     "layer": 5,
+     "module": "v_proj",
+     "fro": 0.4644,
+     "eff_rank": 1.83,
+     "top1_share": 0.715
+    },
+    {
+     "layer": 6,
+     "module": "q_proj",
+     "fro": 0.90146,
+     "eff_rank": 2.83,
+     "top1_share": 0.547
+    },
+    {
+     "layer": 6,
+     "module": "v_proj",
+     "fro": 0.52216,
+     "eff_rank": 1.69,
+     "top1_share": 0.746
+    },
+    {
+     "layer": 7,
+     "module": "q_proj",
+     "fro": 1.19518,
+     "eff_rank": 1.91,
+     "top1_share": 0.71
+    },
+    {
+     "layer": 7,
+     "module": "v_proj",
+     "fro": 0.42847,
+     "eff_rank": 2.08,
+     "top1_share": 0.661
+    },
+    {
+     "layer": 8,
+     "module": "q_proj",
+     "fro": 1.29081,
+     "eff_rank": 1.33,
+     "top1_share": 0.863
+    },
+    {
+     "layer": 8,
+     "module": "v_proj",
+     "fro": 0.49733,
+     "eff_rank": 2.24,
+     "top1_share": 0.558
+    },
+    {
+     "layer": 9,
+     "module": "q_proj",
+     "fro": 1.09645,
+     "eff_rank": 1.27,
+     "top1_share": 0.885
+    },
+    {
+     "layer": 9,
+     "module": "v_proj",
+     "fro": 0.49713,
+     "eff_rank": 1.79,
+     "top1_share": 0.719
+    },
+    {
+     "layer": 10,
+     "module": "q_proj",
+     "fro": 1.11534,
+     "eff_rank": 1.89,
+     "top1_share": 0.706
+    },
+    {
+     "layer": 10,
+     "module": "v_proj",
+     "fro": 0.6764,
+     "eff_rank": 1.42,
+     "top1_share": 0.827
+    },
+    {
+     "layer": 11,
+     "module": "q_proj",
+     "fro": 1.1184,
+     "eff_rank": 1.35,
+     "top1_share": 0.851
+    },
+    {
+     "layer": 11,
+     "module": "v_proj",
+     "fro": 0.60232,
+     "eff_rank": 1.75,
+     "top1_share": 0.727
+    },
+    {
+     "layer": 12,
+     "module": "q_proj",
+     "fro": 0.9849,
+     "eff_rank": 1.2,
+     "top1_share": 0.912
+    },
+    {
+     "layer": 12,
+     "module": "v_proj",
+     "fro": 0.56472,
+     "eff_rank": 1.36,
+     "top1_share": 0.853
+    },
+    {
+     "layer": 13,
+     "module": "q_proj",
+     "fro": 1.28894,
+     "eff_rank": 1.63,
+     "top1_share": 0.755
+    },
+    {
+     "layer": 13,
+     "module": "v_proj",
+     "fro": 1.25763,
+     "eff_rank": 1.11,
+     "top1_share": 0.947
+    },
+    {
+     "layer": 14,
+     "module": "q_proj",
+     "fro": 1.40684,
+     "eff_rank": 1.1,
+     "top1_share": 0.953
+    },
+    {
+     "layer": 14,
+     "module": "v_proj",
+     "fro": 0.76731,
+     "eff_rank": 1.45,
+     "top1_share": 0.821
+    },
+    {
+     "layer": 15,
+     "module": "q_proj",
+     "fro": 1.7367,
+     "eff_rank": 1.15,
+     "top1_share": 0.929
+    },
+    {
+     "layer": 15,
+     "module": "v_proj",
+     "fro": 0.70636,
+     "eff_rank": 1.69,
+     "top1_share": 0.746
+    },
+    {
+     "layer": 16,
+     "module": "q_proj",
+     "fro": 1.63035,
+     "eff_rank": 1.29,
+     "top1_share": 0.874
+    },
+    {
+     "layer": 16,
+     "module": "v_proj",
+     "fro": 0.65178,
+     "eff_rank": 1.24,
+     "top1_share": 0.894
+    },
+    {
+     "layer": 17,
+     "module": "q_proj",
+     "fro": 1.49513,
+     "eff_rank": 1.25,
+     "top1_share": 0.889
+    },
+    {
+     "layer": 17,
+     "module": "v_proj",
+     "fro": 0.7282,
+     "eff_rank": 1.13,
+     "top1_share": 0.94
+    },
+    {
+     "layer": 18,
+     "module": "q_proj",
+     "fro": 1.32285,
+     "eff_rank": 1.1,
+     "top1_share": 0.952
+    },
+    {
+     "layer": 18,
+     "module": "v_proj",
+     "fro": 0.7004,
+     "eff_rank": 1.79,
+     "top1_share": 0.692
+    },
+    {
+     "layer": 19,
+     "module": "q_proj",
+     "fro": 1.34144,
+     "eff_rank": 1.4,
+     "top1_share": 0.829
+    },
+    {
+     "layer": 19,
+     "module": "v_proj",
+     "fro": 0.69632,
+     "eff_rank": 1.4,
+     "top1_share": 0.831
+    },
+    {
+     "layer": 20,
+     "module": "q_proj",
+     "fro": 1.23361,
+     "eff_rank": 1.16,
+     "top1_share": 0.928
+    },
+    {
+     "layer": 20,
+     "module": "v_proj",
+     "fro": 0.7031,
+     "eff_rank": 1.41,
+     "top1_share": 0.829
+    },
+    {
+     "layer": 21,
+     "module": "q_proj",
+     "fro": 0.78592,
+     "eff_rank": 1.3,
+     "top1_share": 0.87
+    },
+    {
+     "layer": 21,
+     "module": "v_proj",
+     "fro": 0.68194,
+     "eff_rank": 1.16,
+     "top1_share": 0.926
+    },
+    {
+     "layer": 22,
+     "module": "q_proj",
+     "fro": 1.50962,
+     "eff_rank": 1.69,
+     "top1_share": 0.738
+    },
+    {
+     "layer": 22,
+     "module": "v_proj",
+     "fro": 0.79162,
+     "eff_rank": 1.19,
+     "top1_share": 0.915
+    },
+    {
+     "layer": 23,
+     "module": "q_proj",
+     "fro": 1.97079,
+     "eff_rank": 1.38,
+     "top1_share": 0.838
+    },
+    {
+     "layer": 23,
+     "module": "v_proj",
+     "fro": 0.80196,
+     "eff_rank": 1.29,
+     "top1_share": 0.872
+    },
+    {
+     "layer": 24,
+     "module": "q_proj",
+     "fro": 0.81197,
+     "eff_rank": 1.13,
+     "top1_share": 0.939
+    },
+    {
+     "layer": 24,
+     "module": "v_proj",
+     "fro": 0.8061,
+     "eff_rank": 1.03,
+     "top1_share": 0.984
+    },
+    {
+     "layer": 25,
+     "module": "q_proj",
+     "fro": 1.68027,
+     "eff_rank": 1.1,
+     "top1_share": 0.954
+    },
+    {
+     "layer": 25,
+     "module": "v_proj",
+     "fro": 0.65003,
+     "eff_rank": 1.39,
+     "top1_share": 0.834
+    },
+    {
+     "layer": 26,
+     "module": "q_proj",
+     "fro": 1.89311,
+     "eff_rank": 1.03,
+     "top1_share": 0.983
+    },
+    {
+     "layer": 26,
+     "module": "v_proj",
+     "fro": 0.82502,
+     "eff_rank": 1.2,
+     "top1_share": 0.91
+    },
+    {
+     "layer": 27,
+     "module": "q_proj",
+     "fro": 1.61749,
+     "eff_rank": 1.07,
+     "top1_share": 0.965
+    },
+    {
+     "layer": 27,
+     "module": "v_proj",
+     "fro": 0.73096,
+     "eff_rank": 1.13,
+     "top1_share": 0.938
+    },
+    {
+     "layer": 28,
+     "module": "q_proj",
+     "fro": 1.37705,
+     "eff_rank": 1.67,
+     "top1_share": 0.732
+    },
+    {
+     "layer": 28,
+     "module": "v_proj",
+     "fro": 0.94054,
+     "eff_rank": 1.1,
+     "top1_share": 0.954
+    },
+    {
+     "layer": 29,
+     "module": "q_proj",
+     "fro": 1.3526,
+     "eff_rank": 1.11,
+     "top1_share": 0.946
+    },
+    {
+     "layer": 29,
+     "module": "v_proj",
+     "fro": 0.7867,
+     "eff_rank": 1.51,
+     "top1_share": 0.792
+    },
+    {
+     "layer": 30,
+     "module": "q_proj",
+     "fro": 1.76765,
+     "eff_rank": 1.24,
+     "top1_share": 0.891
+    },
+    {
+     "layer": 30,
+     "module": "v_proj",
+     "fro": 1.2169,
+     "eff_rank": 1.02,
+     "top1_share": 0.99
+    },
+    {
+     "layer": 31,
+     "module": "q_proj",
+     "fro": 1.51595,
+     "eff_rank": 1.9,
+     "top1_share": 0.637
+    },
+    {
+     "layer": 31,
+     "module": "v_proj",
+     "fro": 1.0554,
+     "eff_rank": 1.02,
+     "top1_share": 0.989
+    }
+   ]
+  },
+  "predibase/conllpp": {
+   "r": 8,
+   "alpha": 16,
+   "targets": [
+    "q_proj",
+    "v_proj"
+   ],
+   "summary": {
+    "q_proj": {
+     "total_fro": 6.0663,
+     "peak_layer": 28,
+     "energy_by_third": [
+      0.17,
+      0.242,
+      0.587
+     ],
+     "mean_eff_rank": 2.35
+    },
+    "v_proj": {
+     "total_fro": 3.5364,
+     "peak_layer": 28,
+     "energy_by_third": [
+      0.125,
+      0.206,
+      0.668
+     ],
+     "mean_eff_rank": 1.75
+    }
+   },
+   "layers": [
+    {
+     "layer": 0,
+     "module": "q_proj",
+     "fro": 0.73065,
+     "eff_rank": 1.33,
+     "top1_share": 0.864
+    },
+    {
+     "layer": 0,
+     "module": "v_proj",
+     "fro": 0.33926,
+     "eff_rank": 2.59,
+     "top1_share": 0.504
+    },
+    {
+     "layer": 1,
+     "module": "q_proj",
+     "fro": 0.75317,
+     "eff_rank": 2.59,
+     "top1_share": 0.588
+    },
+    {
+     "layer": 1,
+     "module": "v_proj",
+     "fro": 0.3894,
+     "eff_rank": 1.91,
+     "top1_share": 0.677
+    },
+    {
+     "layer": 2,
+     "module": "q_proj",
+     "fro": 0.75866,
+     "eff_rank": 4.65,
+     "top1_share": 0.357
+    },
+    {
+     "layer": 2,
+     "module": "v_proj",
+     "fro": 0.32794,
+     "eff_rank": 2.97,
+     "top1_share": 0.487
+    },
+    {
+     "layer": 3,
+     "module": "q_proj",
+     "fro": 0.76612,
+     "eff_rank": 2.97,
+     "top1_share": 0.515
+    },
+    {
+     "layer": 3,
+     "module": "v_proj",
+     "fro": 0.36929,
+     "eff_rank": 2.1,
+     "top1_share": 0.644
+    },
+    {
+     "layer": 4,
+     "module": "q_proj",
+     "fro": 0.81576,
+     "eff_rank": 3.26,
+     "top1_share": 0.509
+    },
+    {
+     "layer": 4,
+     "module": "v_proj",
+     "fro": 0.40477,
+     "eff_rank": 1.47,
+     "top1_share": 0.813
+    },
+    {
+     "layer": 5,
+     "module": "q_proj",
+     "fro": 0.8901,
+     "eff_rank": 2.54,
+     "top1_share": 0.602
+    },
+    {
+     "layer": 5,
+     "module": "v_proj",
+     "fro": 0.40082,
+     "eff_rank": 2.01,
+     "top1_share": 0.645
+    },
+    {
+     "layer": 6,
+     "module": "q_proj",
+     "fro": 0.84009,
+     "eff_rank": 2.99,
+     "top1_share": 0.518
+    },
+    {
+     "layer": 6,
+     "module": "v_proj",
+     "fro": 0.40856,
+     "eff_rank": 2.61,
+     "top1_share": 0.478
+    },
+    {
+     "layer": 7,
+     "module": "q_proj",
+     "fro": 0.79352,
+     "eff_rank": 3.75,
+     "top1_share": 0.387
+    },
+    {
+     "layer": 7,
+     "module": "v_proj",
+     "fro": 0.40044,
+     "eff_rank": 2.95,
+     "top1_share": 0.484
+    },
+    {
+     "layer": 8,
+     "module": "q_proj",
+     "fro": 0.8035,
+     "eff_rank": 2.82,
+     "top1_share": 0.453
+    },
+    {
+     "layer": 8,
+     "module": "v_proj",
+     "fro": 0.47738,
+     "eff_rank": 1.71,
+     "top1_share": 0.751
+    },
+    {
+     "layer": 9,
+     "module": "q_proj",
+     "fro": 0.75375,
+     "eff_rank": 3.14,
+     "top1_share": 0.426
+    },
+    {
+     "layer": 9,
+     "module": "v_proj",
+     "fro": 0.41935,
+     "eff_rank": 2.75,
+     "top1_share": 0.504
+    },
+    {
+     "layer": 10,
+     "module": "q_proj",
+     "fro": 0.79299,
+     "eff_rank": 3.45,
+     "top1_share": 0.449
+    },
+    {
+     "layer": 10,
+     "module": "v_proj",
+     "fro": 0.40119,
+     "eff_rank": 1.98,
+     "top1_share": 0.663
+    },
+    {
+     "layer": 11,
+     "module": "q_proj",
+     "fro": 0.80557,
+     "eff_rank": 4.01,
+     "top1_share": 0.394
+    },
+    {
+     "layer": 11,
+     "module": "v_proj",
+     "fro": 0.40168,
+     "eff_rank": 2.68,
+     "top1_share": 0.536
+    },
+    {
+     "layer": 12,
+     "module": "q_proj",
+     "fro": 0.79522,
+     "eff_rank": 2.65,
+     "top1_share": 0.561
+    },
+    {
+     "layer": 12,
+     "module": "v_proj",
+     "fro": 0.41818,
+     "eff_rank": 2.26,
+     "top1_share": 0.617
+    },
+    {
+     "layer": 13,
+     "module": "q_proj",
+     "fro": 0.84837,
+     "eff_rank": 1.76,
+     "top1_share": 0.744
+    },
+    {
+     "layer": 13,
+     "module": "v_proj",
+     "fro": 0.51452,
+     "eff_rank": 1.44,
+     "top1_share": 0.829
+    },
+    {
+     "layer": 14,
+     "module": "q_proj",
+     "fro": 0.87049,
+     "eff_rank": 2.36,
+     "top1_share": 0.583
+    },
+    {
+     "layer": 14,
+     "module": "v_proj",
+     "fro": 0.4348,
+     "eff_rank": 1.88,
+     "top1_share": 0.712
+    },
+    {
+     "layer": 15,
+     "module": "q_proj",
+     "fro": 0.84773,
+     "eff_rank": 2.79,
+     "top1_share": 0.55
+    },
+    {
+     "layer": 15,
+     "module": "v_proj",
+     "fro": 0.48883,
+     "eff_rank": 2.53,
+     "top1_share": 0.588
+    },
+    {
+     "layer": 16,
+     "module": "q_proj",
+     "fro": 0.8015,
+     "eff_rank": 2.27,
+     "top1_share": 0.621
+    },
+    {
+     "layer": 16,
+     "module": "v_proj",
+     "fro": 0.49669,
+     "eff_rank": 1.38,
+     "top1_share": 0.847
+    },
+    {
+     "layer": 17,
+     "module": "q_proj",
+     "fro": 0.82257,
+     "eff_rank": 3.21,
+     "top1_share": 0.475
+    },
+    {
+     "layer": 17,
+     "module": "v_proj",
+     "fro": 0.57751,
+     "eff_rank": 1.14,
+     "top1_share": 0.934
+    },
+    {
+     "layer": 18,
+     "module": "q_proj",
+     "fro": 0.97065,
+     "eff_rank": 1.88,
+     "top1_share": 0.712
+    },
+    {
+     "layer": 18,
+     "module": "v_proj",
+     "fro": 0.46919,
+     "eff_rank": 2.13,
+     "top1_share": 0.644
+    },
+    {
+     "layer": 19,
+     "module": "q_proj",
+     "fro": 1.02901,
+     "eff_rank": 1.98,
+     "top1_share": 0.664
+    },
+    {
+     "layer": 19,
+     "module": "v_proj",
+     "fro": 0.54715,
+     "eff_rank": 1.27,
+     "top1_share": 0.886
+    },
+    {
+     "layer": 20,
+     "module": "q_proj",
+     "fro": 1.22066,
+     "eff_rank": 1.85,
+     "top1_share": 0.708
+    },
+    {
+     "layer": 20,
+     "module": "v_proj",
+     "fro": 0.54001,
+     "eff_rank": 1.44,
+     "top1_share": 0.829
+    },
+    {
+     "layer": 21,
+     "module": "q_proj",
+     "fro": 1.19212,
+     "eff_rank": 1.83,
+     "top1_share": 0.725
+    },
+    {
+     "layer": 21,
+     "module": "v_proj",
+     "fro": 0.78876,
+     "eff_rank": 1.35,
+     "top1_share": 0.851
+    },
+    {
+     "layer": 22,
+     "module": "q_proj",
+     "fro": 1.26324,
+     "eff_rank": 1.57,
+     "top1_share": 0.784
+    },
+    {
+     "layer": 22,
+     "module": "v_proj",
+     "fro": 0.73204,
+     "eff_rank": 1.21,
+     "top1_share": 0.905
+    },
+    {
+     "layer": 23,
+     "module": "q_proj",
+     "fro": 1.33961,
+     "eff_rank": 1.61,
+     "top1_share": 0.773
+    },
+    {
+     "layer": 23,
+     "module": "v_proj",
+     "fro": 0.85406,
+     "eff_rank": 1.2,
+     "top1_share": 0.909
+    },
+    {
+     "layer": 24,
+     "module": "q_proj",
+     "fro": 1.28056,
+     "eff_rank": 1.92,
+     "top1_share": 0.697
+    },
+    {
+     "layer": 24,
+     "module": "v_proj",
+     "fro": 0.76998,
+     "eff_rank": 1.14,
+     "top1_share": 0.936
+    },
+    {
+     "layer": 25,
+     "module": "q_proj",
+     "fro": 1.18089,
+     "eff_rank": 2.35,
+     "top1_share": 0.554
+    },
+    {
+     "layer": 25,
+     "module": "v_proj",
+     "fro": 0.75115,
+     "eff_rank": 1.19,
+     "top1_share": 0.914
+    },
+    {
+     "layer": 26,
+     "module": "q_proj",
+     "fro": 1.72,
+     "eff_rank": 1.38,
+     "top1_share": 0.843
+    },
+    {
+     "layer": 26,
+     "module": "v_proj",
+     "fro": 0.90315,
+     "eff_rank": 1.22,
+     "top1_share": 0.905
+    },
+    {
+     "layer": 27,
+     "module": "q_proj",
+     "fro": 1.14654,
+     "eff_rank": 1.39,
+     "top1_share": 0.84
+    },
+    {
+     "layer": 27,
+     "module": "v_proj",
+     "fro": 0.74366,
+     "eff_rank": 1.21,
+     "top1_share": 0.904
+    },
+    {
+     "layer": 28,
+     "module": "q_proj",
+     "fro": 1.93074,
+     "eff_rank": 1.19,
+     "top1_share": 0.914
+    },
+    {
+     "layer": 28,
+     "module": "v_proj",
+     "fro": 1.23107,
+     "eff_rank": 1.02,
+     "top1_share": 0.99
+    },
+    {
+     "layer": 29,
+     "module": "q_proj",
+     "fro": 1.29168,
+     "eff_rank": 1.56,
+     "top1_share": 0.788
+    },
+    {
+     "layer": 29,
+     "module": "v_proj",
+     "fro": 0.86809,
+     "eff_rank": 1.16,
+     "top1_share": 0.928
+    },
+    {
+     "layer": 30,
+     "module": "q_proj",
+     "fro": 1.51514,
+     "eff_rank": 1.09,
+     "top1_share": 0.959
+    },
+    {
+     "layer": 30,
+     "module": "v_proj",
+     "fro": 0.9218,
+     "eff_rank": 1.15,
+     "top1_share": 0.933
+    },
+    {
+     "layer": 31,
+     "module": "q_proj",
+     "fro": 1.3424,
+     "eff_rank": 1.18,
+     "top1_share": 0.921
+    },
+    {
+     "layer": 31,
+     "module": "v_proj",
+     "fro": 0.9093,
+     "eff_rank": 1.03,
+     "top1_share": 0.983
+    }
+   ]
+  },
+  "predibase/customer_support": {
+   "r": 8,
+   "alpha": 16,
+   "targets": [
+    "q_proj",
+    "v_proj"
+   ],
+   "summary": {
+    "q_proj": {
+     "total_fro": 2.7064,
+     "peak_layer": 30,
+     "energy_by_third": [
+      0.16,
+      0.298,
+      0.541
+     ],
+     "mean_eff_rank": 2.4
+    },
+    "v_proj": {
+     "total_fro": 1.4413,
+     "peak_layer": 31,
+     "energy_by_third": [
+      0.147,
+      0.31,
+      0.543
+     ],
+     "mean_eff_rank": 2.05
+    }
+   },
+   "layers": [
+    {
+     "layer": 0,
+     "module": "q_proj",
+     "fro": 0.34742,
+     "eff_rank": 2.3,
+     "top1_share": 0.584
+    },
+    {
+     "layer": 0,
+     "module": "v_proj",
+     "fro": 0.15453,
+     "eff_rank": 2.39,
+     "top1_share": 0.552
+    },
+    {
+     "layer": 1,
+     "module": "q_proj",
+     "fro": 0.28166,
+     "eff_rank": 4.0,
+     "top1_share": 0.419
+    },
+    {
+     "layer": 1,
+     "module": "v_proj",
+     "fro": 0.15766,
+     "eff_rank": 2.35,
+     "top1_share": 0.554
+    },
+    {
+     "layer": 2,
+     "module": "q_proj",
+     "fro": 0.33686,
+     "eff_rank": 4.53,
+     "top1_share": 0.328
+    },
+    {
+     "layer": 2,
+     "module": "v_proj",
+     "fro": 0.15371,
+     "eff_rank": 2.59,
+     "top1_share": 0.518
+    },
+    {
+     "layer": 3,
+     "module": "q_proj",
+     "fro": 0.31968,
+     "eff_rank": 2.51,
+     "top1_share": 0.609
+    },
+    {
+     "layer": 3,
+     "module": "v_proj",
+     "fro": 0.15653,
+     "eff_rank": 2.84,
+     "top1_share": 0.516
+    },
+    {
+     "layer": 4,
+     "module": "q_proj",
+     "fro": 0.33198,
+     "eff_rank": 3.42,
+     "top1_share": 0.494
+    },
+    {
+     "layer": 4,
+     "module": "v_proj",
+     "fro": 0.16543,
+     "eff_rank": 1.94,
+     "top1_share": 0.692
+    },
+    {
+     "layer": 5,
+     "module": "q_proj",
+     "fro": 0.34155,
+     "eff_rank": 5.02,
+     "top1_share": 0.353
+    },
+    {
+     "layer": 5,
+     "module": "v_proj",
+     "fro": 0.16668,
+     "eff_rank": 2.66,
+     "top1_share": 0.5
+    },
+    {
+     "layer": 6,
+     "module": "q_proj",
+     "fro": 0.34542,
+     "eff_rank": 4.33,
+     "top1_share": 0.399
+    },
+    {
+     "layer": 6,
+     "module": "v_proj",
+     "fro": 0.18063,
+     "eff_rank": 2.65,
+     "top1_share": 0.522
+    },
+    {
+     "layer": 7,
+     "module": "q_proj",
+     "fro": 0.36056,
+     "eff_rank": 3.58,
+     "top1_share": 0.466
+    },
+    {
+     "layer": 7,
+     "module": "v_proj",
+     "fro": 0.19667,
+     "eff_rank": 1.95,
+     "top1_share": 0.697
+    },
+    {
+     "layer": 8,
+     "module": "q_proj",
+     "fro": 0.35849,
+     "eff_rank": 4.71,
+     "top1_share": 0.363
+    },
+    {
+     "layer": 8,
+     "module": "v_proj",
+     "fro": 0.20095,
+     "eff_rank": 2.77,
+     "top1_share": 0.558
+    },
+    {
+     "layer": 9,
+     "module": "q_proj",
+     "fro": 0.39388,
+     "eff_rank": 2.58,
+     "top1_share": 0.59
+    },
+    {
+     "layer": 9,
+     "module": "v_proj",
+     "fro": 0.20478,
+     "eff_rank": 2.24,
+     "top1_share": 0.638
+    },
+    {
+     "layer": 10,
+     "module": "q_proj",
+     "fro": 0.39002,
+     "eff_rank": 3.79,
+     "top1_share": 0.455
+    },
+    {
+     "layer": 10,
+     "module": "v_proj",
+     "fro": 0.19804,
+     "eff_rank": 1.87,
+     "top1_share": 0.712
+    },
+    {
+     "layer": 11,
+     "module": "q_proj",
+     "fro": 0.39903,
+     "eff_rank": 2.5,
+     "top1_share": 0.598
+    },
+    {
+     "layer": 11,
+     "module": "v_proj",
+     "fro": 0.2076,
+     "eff_rank": 1.89,
+     "top1_share": 0.708
+    },
+    {
+     "layer": 12,
+     "module": "q_proj",
+     "fro": 0.38472,
+     "eff_rank": 2.15,
+     "top1_share": 0.665
+    },
+    {
+     "layer": 12,
+     "module": "v_proj",
+     "fro": 0.2101,
+     "eff_rank": 2.58,
+     "top1_share": 0.568
+    },
+    {
+     "layer": 13,
+     "module": "q_proj",
+     "fro": 0.47071,
+     "eff_rank": 1.47,
+     "top1_share": 0.821
+    },
+    {
+     "layer": 13,
+     "module": "v_proj",
+     "fro": 0.22312,
+     "eff_rank": 2.55,
+     "top1_share": 0.557
+    },
+    {
+     "layer": 14,
+     "module": "q_proj",
+     "fro": 0.45603,
+     "eff_rank": 1.69,
+     "top1_share": 0.758
+    },
+    {
+     "layer": 14,
+     "module": "v_proj",
+     "fro": 0.2579,
+     "eff_rank": 1.69,
+     "top1_share": 0.757
+    },
+    {
+     "layer": 15,
+     "module": "q_proj",
+     "fro": 0.42059,
+     "eff_rank": 2.18,
+     "top1_share": 0.654
+    },
+    {
+     "layer": 15,
+     "module": "v_proj",
+     "fro": 0.22898,
+     "eff_rank": 2.31,
+     "top1_share": 0.63
+    },
+    {
+     "layer": 16,
+     "module": "q_proj",
+     "fro": 0.44234,
+     "eff_rank": 1.85,
+     "top1_share": 0.717
+    },
+    {
+     "layer": 16,
+     "module": "v_proj",
+     "fro": 0.2634,
+     "eff_rank": 1.29,
+     "top1_share": 0.878
+    },
+    {
+     "layer": 17,
+     "module": "q_proj",
+     "fro": 0.43765,
+     "eff_rank": 2.17,
+     "top1_share": 0.66
+    },
+    {
+     "layer": 17,
+     "module": "v_proj",
+     "fro": 0.24504,
+     "eff_rank": 2.81,
+     "top1_share": 0.547
+    },
+    {
+     "layer": 18,
+     "module": "q_proj",
+     "fro": 0.43944,
+     "eff_rank": 1.97,
+     "top1_share": 0.694
+    },
+    {
+     "layer": 18,
+     "module": "v_proj",
+     "fro": 0.24077,
+     "eff_rank": 2.26,
+     "top1_share": 0.641
+    },
+    {
+     "layer": 19,
+     "module": "q_proj",
+     "fro": 0.46933,
+     "eff_rank": 1.62,
+     "top1_share": 0.773
+    },
+    {
+     "layer": 19,
+     "module": "v_proj",
+     "fro": 0.28775,
+     "eff_rank": 1.47,
+     "top1_share": 0.818
+    },
+    {
+     "layer": 20,
+     "module": "q_proj",
+     "fro": 0.56282,
+     "eff_rank": 1.16,
+     "top1_share": 0.93
+    },
+    {
+     "layer": 20,
+     "module": "v_proj",
+     "fro": 0.27878,
+     "eff_rank": 1.56,
+     "top1_share": 0.788
+    },
+    {
+     "layer": 21,
+     "module": "q_proj",
+     "fro": 0.5118,
+     "eff_rank": 1.96,
+     "top1_share": 0.699
+    },
+    {
+     "layer": 21,
+     "module": "v_proj",
+     "fro": 0.29657,
+     "eff_rank": 1.72,
+     "top1_share": 0.747
+    },
+    {
+     "layer": 22,
+     "module": "q_proj",
+     "fro": 0.57986,
+     "eff_rank": 1.47,
+     "top1_share": 0.819
+    },
+    {
+     "layer": 22,
+     "module": "v_proj",
+     "fro": 0.25694,
+     "eff_rank": 2.16,
+     "top1_share": 0.619
+    },
+    {
+     "layer": 23,
+     "module": "q_proj",
+     "fro": 0.6249,
+     "eff_rank": 1.3,
+     "top1_share": 0.877
+    },
+    {
+     "layer": 23,
+     "module": "v_proj",
+     "fro": 0.27532,
+     "eff_rank": 2.59,
+     "top1_share": 0.551
+    },
+    {
+     "layer": 24,
+     "module": "q_proj",
+     "fro": 0.56095,
+     "eff_rank": 1.64,
+     "top1_share": 0.77
+    },
+    {
+     "layer": 24,
+     "module": "v_proj",
+     "fro": 0.31462,
+     "eff_rank": 1.31,
+     "top1_share": 0.868
+    },
+    {
+     "layer": 25,
+     "module": "q_proj",
+     "fro": 0.60623,
+     "eff_rank": 1.46,
+     "top1_share": 0.822
+    },
+    {
+     "layer": 25,
+     "module": "v_proj",
+     "fro": 0.25584,
+     "eff_rank": 2.01,
+     "top1_share": 0.678
+    },
+    {
+     "layer": 26,
+     "module": "q_proj",
+     "fro": 0.6182,
+     "eff_rank": 1.26,
+     "top1_share": 0.89
+    },
+    {
+     "layer": 26,
+     "module": "v_proj",
+     "fro": 0.28796,
+     "eff_rank": 1.65,
+     "top1_share": 0.766
+    },
+    {
+     "layer": 27,
+     "module": "q_proj",
+     "fro": 0.61306,
+     "eff_rank": 1.51,
+     "top1_share": 0.808
+    },
+    {
+     "layer": 27,
+     "module": "v_proj",
+     "fro": 0.32792,
+     "eff_rank": 1.52,
+     "top1_share": 0.801
+    },
+    {
+     "layer": 28,
+     "module": "q_proj",
+     "fro": 0.58572,
+     "eff_rank": 1.58,
+     "top1_share": 0.783
+    },
+    {
+     "layer": 28,
+     "module": "v_proj",
+     "fro": 0.34023,
+     "eff_rank": 1.54,
+     "top1_share": 0.798
+    },
+    {
+     "layer": 29,
+     "module": "q_proj",
+     "fro": 0.65682,
+     "eff_rank": 1.28,
+     "top1_share": 0.879
+    },
+    {
+     "layer": 29,
+     "module": "v_proj",
+     "fro": 0.36954,
+     "eff_rank": 1.23,
+     "top1_share": 0.9
+    },
+    {
+     "layer": 30,
+     "module": "q_proj",
+     "fro": 0.68378,
+     "eff_rank": 1.75,
+     "top1_share": 0.713
+    },
+    {
+     "layer": 30,
+     "module": "v_proj",
+     "fro": 0.34514,
+     "eff_rank": 2.02,
+     "top1_share": 0.679
+    },
+    {
+     "layer": 31,
+     "module": "q_proj",
+     "fro": 0.54325,
+     "eff_rank": 1.94,
+     "top1_share": 0.669
+    },
+    {
+     "layer": 31,
+     "module": "v_proj",
+     "fro": 0.41547,
+     "eff_rank": 1.31,
+     "top1_share": 0.872
+    }
+   ]
+  }
+ },
+ "overlap": {
+  "predibase/gsm8k|predibase/magicoder": {
+   "q_proj": {
+    "in": 0.7104,
+    "out": 0.0146
+   },
+   "v_proj": {
+    "in": 0.7172,
+    "out": 0.0201
+   }
+  },
+  "predibase/gsm8k|predibase/glue_sst2": {
+   "q_proj": {
+    "in": 0.6945,
+    "out": 0.0123
+   },
+   "v_proj": {
+    "in": 0.6996,
+    "out": 0.0125
+   }
+  },
+  "predibase/gsm8k|predibase/legal": {
+   "q_proj": {
+    "in": 0.6566,
+    "out": 0.0123
+   },
+   "v_proj": {
+    "in": 0.6856,
+    "out": 0.0118
+   }
+  },
+  "predibase/gsm8k|predibase/cnn": {
+   "q_proj": {
+    "in": 0.6861,
+    "out": 0.0112
+   },
+   "v_proj": {
+    "in": 0.696,
+    "out": 0.0152
+   }
+  },
+  "predibase/gsm8k|predibase/jigsaw": {
+   "q_proj": {
+    "in": 0.6383,
+    "out": 0.0119
+   },
+   "v_proj": {
+    "in": 0.6521,
+    "out": 0.0122
+   }
+  },
+  "predibase/gsm8k|predibase/conllpp": {
+   "q_proj": {
+    "in": 0.642,
+    "out": 0.0116
+   },
+   "v_proj": {
+    "in": 0.6636,
+    "out": 0.0146
+   }
+  },
+  "predibase/gsm8k|predibase/customer_support": {
+   "q_proj": {
+    "in": 0.7065,
+    "out": 0.0117
+   },
+   "v_proj": {
+    "in": 0.7161,
+    "out": 0.0168
+   }
+  },
+  "predibase/magicoder|predibase/glue_sst2": {
+   "q_proj": {
+    "in": 0.9031,
+    "out": 0.0119
+   },
+   "v_proj": {
+    "in": 0.8859,
+    "out": 0.0142
+   }
+  },
+  "predibase/magicoder|predibase/legal": {
+   "q_proj": {
+    "in": 0.8539,
+    "out": 0.0143
+   },
+   "v_proj": {
+    "in": 0.8704,
+    "out": 0.0133
+   }
+  },
+  "predibase/magicoder|predibase/cnn": {
+   "q_proj": {
+    "in": 0.8957,
+    "out": 0.0136
+   },
+   "v_proj": {
+    "in": 0.8823,
+    "out": 0.021
+   }
+  },
+  "predibase/magicoder|predibase/jigsaw": {
+   "q_proj": {
+    "in": 0.8342,
+    "out": 0.0132
+   },
+   "v_proj": {
+    "in": 0.8207,
+    "out": 0.0159
+   }
+  },
+  "predibase/magicoder|predibase/conllpp": {
+   "q_proj": {
+    "in": 0.8333,
+    "out": 0.0138
+   },
+   "v_proj": {
+    "in": 0.8359,
+    "out": 0.0189
+   }
+  },
+  "predibase/magicoder|predibase/customer_support": {
+   "q_proj": {
+    "in": 0.926,
+    "out": 0.0161
+   },
+   "v_proj": {
+    "in": 0.917,
+    "out": 0.0239
+   }
+  },
+  "predibase/glue_sst2|predibase/legal": {
+   "q_proj": {
+    "in": 0.8347,
+    "out": 0.012
+   },
+   "v_proj": {
+    "in": 0.8468,
+    "out": 0.0132
+   }
+  },
+  "predibase/glue_sst2|predibase/cnn": {
+   "q_proj": {
+    "in": 0.8718,
+    "out": 0.0094
+   },
+   "v_proj": {
+    "in": 0.8575,
+    "out": 0.0121
+   }
+  },
+  "predibase/glue_sst2|predibase/jigsaw": {
+   "q_proj": {
+    "in": 0.8146,
+    "out": 0.0139
+   },
+   "v_proj": {
+    "in": 0.803,
+    "out": 0.0189
+   }
+  },
+  "predibase/glue_sst2|predibase/conllpp": {
+   "q_proj": {
+    "in": 0.8121,
+    "out": 0.0126
+   },
+   "v_proj": {
+    "in": 0.8182,
+    "out": 0.0155
+   }
+  },
+  "predibase/glue_sst2|predibase/customer_support": {
+   "q_proj": {
+    "in": 0.9018,
+    "out": 0.0121
+   },
+   "v_proj": {
+    "in": 0.8908,
+    "out": 0.0199
+   }
+  },
+  "predibase/legal|predibase/cnn": {
+   "q_proj": {
+    "in": 0.8265,
+    "out": 0.0123
+   },
+   "v_proj": {
+    "in": 0.8409,
+    "out": 0.0127
+   }
+  },
+  "predibase/legal|predibase/jigsaw": {
+   "q_proj": {
+    "in": 0.7801,
+    "out": 0.0149
+   },
+   "v_proj": {
+    "in": 0.7957,
+    "out": 0.0211
+   }
+  },
+  "predibase/legal|predibase/conllpp": {
+   "q_proj": {
+    "in": 0.7698,
+    "out": 0.0131
+   },
+   "v_proj": {
+    "in": 0.7979,
+    "out": 0.0138
+   }
+  },
+  "predibase/legal|predibase/customer_support": {
+   "q_proj": {
+    "in": 0.8539,
+    "out": 0.014
+   },
+   "v_proj": {
+    "in": 0.8729,
+    "out": 0.0219
+   }
+  },
+  "predibase/cnn|predibase/jigsaw": {
+   "q_proj": {
+    "in": 0.8048,
+    "out": 0.0109
+   },
+   "v_proj": {
+    "in": 0.794,
+    "out": 0.0135
+   }
+  },
+  "predibase/cnn|predibase/conllpp": {
+   "q_proj": {
+    "in": 0.803,
+    "out": 0.0114
+   },
+   "v_proj": {
+    "in": 0.804,
+    "out": 0.0142
+   }
+  },
+  "predibase/cnn|predibase/customer_support": {
+   "q_proj": {
+    "in": 0.8915,
+    "out": 0.0112
+   },
+   "v_proj": {
+    "in": 0.8826,
+    "out": 0.0176
+   }
+  },
+  "predibase/jigsaw|predibase/conllpp": {
+   "q_proj": {
+    "in": 0.7495,
+    "out": 0.0136
+   },
+   "v_proj": {
+    "in": 0.7564,
+    "out": 0.016
+   }
+  },
+  "predibase/jigsaw|predibase/customer_support": {
+   "q_proj": {
+    "in": 0.8317,
+    "out": 0.0143
+   },
+   "v_proj": {
+    "in": 0.8234,
+    "out": 0.0276
+   }
+  },
+  "predibase/conllpp|predibase/customer_support": {
+   "q_proj": {
+    "in": 0.8303,
+    "out": 0.0134
+   },
+   "v_proj": {
+    "in": 0.8357,
+    "out": 0.0241
+   }
+  }
+ },
+ "base": "mistralai/Mistral-7B-v0.1",
+ "overlap_chance": {
+  "in": 0.00195,
+  "out": 0.00195
+ },
+ "lens": {
+  "predibase/gsm8k": [
+   {
+    "layer": 30,
+    "fro": 1.39602,
+    "dirs": [
+     {
+      "sv": 0.5829,
+      "pole_a": [
+       "/******/",
+       "acknow",
+       "›",
+       "Reed",
+       "�",
+       "\r",
+       "ncia",
+       "febr",
+       "--(",
+       "strateg",
+       "тор",
+       "тва"
+      ],
+      "pole_b": [
+       "tring",
+       "ystem",
+       "igu",
+       "yle",
+       "↘",
+       "isk",
+       "ething",
+       "selves",
+       "iac",
+       "itz",
+       "ygon",
+       "ia"
+      ]
+     },
+     {
+      "sv": 0.195,
+      "pole_a": [
+       "/******/",
+       "",
+       "❍",
+       "ҽ",
+       "ityEngine",
+       "börd",
+       "tagHelper",
+       "anel",
+       "ICENSE",
+       "listade",
+       "/***/",
+       "WEBPACK"
+      ],
+      "pole_b": [
+       ".",
+       "",
+       ",",
+       "\n",
+       "and",
+       "(",
+       "(",
+       "the",
+       "a",
+       "The",
+       "Re",
+       "-"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 31,
+    "fro": 1.28706,
+    "dirs": [
+     {
+      "sv": 0.8522,
+      "pole_a": [
+       "丶",
+       "beginnetje",
+       "ByComparator",
+       "BPACK",
+       "avax",
+       "",
+       "pdata",
+       "rcu",
+       "CHANT",
+       "opyright",
+       "ublice",
+       "ueto"
+      ],
+      "pole_b": [
+       "â",
+       "—",
+       "-",
+       "(",
+       "",
+       "­",
+       "M",
+       "—",
+       "*",
+       "'",
+       "A",
+       "I"
+      ]
+     },
+     {
+      "sv": 0.3441,
+      "pole_a": [
+       "\n",
+       "-",
+       "(",
+       ".",
+       "_",
+       "D",
+       ",",
+       "T",
+       "n",
+       "",
+       "/",
+       "("
+      ],
+      "pole_b": [
+       "/******/",
+       "",
+       "ICENSE",
+       "ҽ",
+       "ityEngine",
+       "qpoint",
+       ":%.*",
+       "Geplaatst",
+       "❍",
+       "❒",
+       "itempty",
+       "ByComparator"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 27,
+    "fro": 1.22971,
+    "dirs": [
+     {
+      "sv": 0.4624,
+      "pole_a": [
+       "H",
+       " ",
+       "",
+       "moment",
+       ",",
+       "ad",
+       "pert",
+       "total",
+       "the",
+       "mis",
+       ":",
+       "X"
+      ],
+      "pole_b": [
+       "enen",
+       "❶",
+       "behav",
+       "tha",
+       "IDE",
+       "ɕ",
+       "kov",
+       "jel",
+       "IMIT",
+       "velt",
+       "itis",
+       "maz"
+      ]
+     },
+     {
+      "sv": 0.178,
+      "pole_a": [
+       "…",
+       "..",
+       "[…]",
+       "️",
+       "...",
+       "“",
+       ".",
+       "~",
+       "�",
+       "https",
+       "…",
+       "​"
+      ],
+      "pole_b": [
+       "/******/",
+       "",
+       "erc",
+       "geldig",
+       "nb",
+       "asis",
+       "agle",
+       "丶",
+       "Dit",
+       "icher",
+       "≮",
+       "ara"
+      ]
+     }
+    ]
+   }
+  ],
+  "predibase/magicoder": [
+   {
+    "layer": 30,
+    "fro": 0.45674,
+    "dirs": [
+     {
+      "sv": 0.2366,
+      "pole_a": [
+       "/******/",
+       "CLUDING",
+       "acknow",
+       "behav",
+       "KERN",
+       "Nd",
+       "/***/",
+       "DRV",
+       "uvud",
+       "--(",
+       "CLUD",
+       "😔"
+      ],
+      "pole_b": [
+       "\n",
+       "the",
+       "-",
+       "and",
+       "",
+       "M",
+       "A",
+       ",",
+       ".",
+       "F",
+       "a",
+       "In"
+      ]
+     },
+     {
+      "sv": 0.0447,
+      "pole_a": [
+       ",",
+       "et",
+       "-",
+       "x",
+       "&",
+       "and",
+       "cheap",
+       "st",
+       "z",
+       "/",
+       ".",
+       "/"
+      ],
+      "pole_b": [
+       "```",
+       "",
+       "qpoint",
+       "imeq",
+       "börd",
+       "``",
+       "ҽ",
+       "itempty",
+       "tagHelper",
+       "ityEngine",
+       "ICENSE",
+       "pgfscope"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 28,
+    "fro": 0.40988,
+    "dirs": [
+     {
+      "sv": 0.1846,
+      "pole_a": [
+       "/******/",
+       "↳",
+       "[…]",
+       "нок",
+       "dici",
+       "kennis",
+       "🇸",
+       "TOM",
+       "дан",
+       "rdev",
+       "君",
+       "arz"
+      ],
+      "pole_b": [
+       "\n",
+       "the",
+       "F",
+       "a",
+       "N",
+       "l",
+       "am",
+       "W",
+       "G",
+       "E",
+       "",
+       "R"
+      ]
+     },
+     {
+      "sv": 0.0187,
+      "pole_a": [
+       "compared",
+       "Sant",
+       ",",
+       "using",
+       "assuming",
+       "if",
+       "Dun",
+       "I",
+       "either",
+       "ev",
+       "Murphy",
+       "izz"
+      ],
+      "pole_b": [
+       "â",
+       "â",
+       "",
+       "era",
+       "ropol",
+       "plain",
+       "Chamber",
+       "Visibility",
+       "Xamarin",
+       "Binary",
+       "'}",
+       "ว"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 27,
+    "fro": 0.33314,
+    "dirs": [
+     {
+      "sv": 0.1365,
+      "pole_a": [
+       "\n",
+       "the",
+       ",",
+       "",
+       "a",
+       "is",
+       "to",
+       "and",
+       "his",
+       "A",
+       "E",
+       ":"
+      ],
+      "pole_b": [
+       "ENDOR",
+       "/******/",
+       "IMIT",
+       "ningen",
+       "ktet",
+       "kennis",
+       "uilder",
+       "ˇ",
+       "behav",
+       "ště",
+       "steller",
+       "гре"
+      ]
+     },
+     {
+      "sv": 0.0195,
+      "pole_a": [
+       "acknow",
+       "```",
+       "streng",
+       "accom",
+       "ouw",
+       "atus",
+       "ieck",
+       "MLE",
+       "laug",
+       "embar",
+       "neces",
+       "exemple"
+      ],
+      "pole_b": [
+       "apped",
+       "-",
+       "irt",
+       "ero",
+       "the",
+       "alike",
+       "respective",
+       "qu",
+       "\n",
+       "­",
+       "H",
+       "respectively"
+      ]
+     }
+    ]
+   }
+  ],
+  "predibase/glue_sst2": [
+   {
+    "layer": 31,
+    "fro": 0.59062,
+    "dirs": [
+     {
+      "sv": 0.3294,
+      "pole_a": [
+       "P",
+       "\n",
+       "-",
+       "(",
+       "p",
+       "\\",
+       "A",
+       "'",
+       "##",
+       "\\",
+       "L",
+       "."
+      ],
+      "pole_b": [
+       "",
+       "qpoint",
+       ":%.*",
+       "ByComparator",
+       "ityEngine",
+       "typen",
+       "ICENSE",
+       "tagHelper",
+       "ҽ",
+       "Marcatori",
+       "Geplaatst",
+       "BPACK"
+      ]
+     },
+     {
+      "sv": 0.0358,
+      "pole_a": [
+       "msm",
+       "–",
+       "eerst",
+       "Visual",
+       "â",
+       "Rendering",
+       "â",
+       "kennis",
+       "widet",
+       "Sensor",
+       "sensor",
+       "ois"
+      ],
+      "pole_b": [
+       "/******/",
+       "--",
+       "--)",
+       ")--(",
+       "--",
+       "!--",
+       "\"--",
+       "Ț",
+       ")--",
+       "ityEngine",
+       "Ż",
+       "₦"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 23,
+    "fro": 0.5348,
+    "dirs": [
+     {
+      "sv": 0.1991,
+      "pole_a": [
+       "elij",
+       "ieux",
+       "favour",
+       "▸",
+       "/******/",
+       "Mär",
+       "adesh",
+       "Stub",
+       "elta",
+       "WARRAN",
+       "eve",
+       "arna"
+      ],
+      "pole_b": [
+       "\n",
+       "_",
+       "V",
+       "EX",
+       "\\(",
+       "exhaust",
+       "Whit",
+       "fig",
+       "ABC",
+       "incident",
+       "exhausted",
+       "iss"
+      ]
+     },
+     {
+      "sv": 0.0252,
+      "pole_a": [
+       "/******/",
+       "onden",
+       "\"${",
+       "bott",
+       "ader",
+       "uitgen",
+       "oci",
+       "beginnetje",
+       "ERCHANTABILITY",
+       "opyright",
+       "",
+       "Construct"
+      ],
+      "pole_b": [
+       "sole",
+       "commission",
+       "‑",
+       "tod",
+       "Corpor",
+       "en",
+       "inclined",
+       "yesterday",
+       "entirely",
+       "outline",
+       "commissioned",
+       "iga"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 30,
+    "fro": 0.51493,
+    "dirs": [
+     {
+      "sv": 0.2199,
+      "pole_a": [
+       "undial",
+       "vl",
+       "UP",
+       "ampions",
+       "ья",
+       "ply",
+       "oyle",
+       "plaat",
+       "apest",
+       "ná",
+       "azz",
+       "hba"
+      ],
+      "pole_b": [
+       "",
+       "   ",
+       "zero",
+       "ommen",
+       "",
+       "ard",
+       "Mess",
+       "elli",
+       "God",
+       "Low",
+       "Bern",
+       "Low"
+      ]
+     },
+     {
+      "sv": 0.0275,
+      "pole_a": [
+       "/******/",
+       "丶",
+       "--(",
+       "ipage",
+       "Blockly",
+       "Marcatori",
+       "WEBPACK",
+       "ҽ",
+       "yo",
+       "ША",
+       "ityEngine",
+       "zerw"
+      ],
+      "pole_b": [
+       "",
+       "2",
+       ",",
+       "3",
+       ".",
+       "NP",
+       "cheap",
+       "5",
+       "4",
+       "�",
+       ".",
+       "proper"
+      ]
+     }
+    ]
+   }
+  ],
+  "predibase/legal": [
+   {
+    "layer": 21,
+    "fro": 0.58857,
+    "dirs": [
+     {
+      "sv": 0.1879,
+      "pole_a": [
+       "ris",
+       "ever",
+       "rising",
+       "rise",
+       "rose",
+       "Lion",
+       "affirm",
+       "Rose",
+       "ages",
+       "yesterday",
+       "blind",
+       "consolid"
+      ],
+      "pole_b": [
+       "oppon",
+       "typen",
+       "edia",
+       "illas",
+       "Corporation",
+       "ped",
+       "awa",
+       "extensions",
+       "inters",
+       "gency",
+       "jos",
+       "marks"
+      ]
+     },
+     {
+      "sv": 0.041,
+      "pole_a": [
+       "prit",
+       "↩",
+       "tat",
+       "iante",
+       "ře",
+       "/******/",
+       "Binding",
+       "ev",
+       "rei",
+       "rov",
+       "antes",
+       "onto"
+      ],
+      "pole_b": [
+       "perpet",
+       "drink",
+       "contr",
+       "imp",
+       "drinks",
+       "oco",
+       "contr",
+       "label",
+       "oton",
+       "eren",
+       "sis",
+       "apol"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 31,
+    "fro": 0.56584,
+    "dirs": [
+     {
+      "sv": 0.247,
+      "pole_a": [
+       "\n",
+       "-",
+       "E",
+       "N",
+       "\\",
+       "",
+       "\\",
+       "(",
+       "An",
+       "L",
+       "_",
+       "P"
+      ],
+      "pole_b": [
+       "/******/",
+       "",
+       "丶",
+       ":%.*",
+       "ҽ",
+       "ICENSE",
+       ">\r",
+       "СР",
+       ";\r",
+       "BPACK",
+       "ityEngine",
+       "vscale"
+      ]
+     },
+     {
+      "sv": 0.082,
+      "pole_a": [
+       "/******/",
+       "printStackTrace",
+       "Arbitro",
+       "vscale",
+       "/***/",
+       "omitempty",
+       "wait",
+       "—\"",
+       "",
+       "tons",
+       "gage",
+       "vano"
+      ],
+      "pole_b": [
+       "-",
+       "Este",
+       "områ",
+       "군",
+       "Major",
+       "Ź",
+       "Namen",
+       "bekan",
+       "rodz",
+       "Phys",
+       "Phys",
+       "\n"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 28,
+    "fro": 0.53535,
+    "dirs": [
+     {
+      "sv": 0.2077,
+      "pole_a": [
+       "RR",
+       "/******/",
+       "",
+       "олові",
+       "Rat",
+       "atro",
+       "tot",
+       "atique",
+       "rat",
+       "vscale",
+       "cons",
+       "Bir"
+      ],
+      "pole_b": [
+       "–",
+       "puis",
+       "anean",
+       "abul",
+       "GBT",
+       "£",
+       "isz",
+       "GB",
+       "ouri",
+       "oi",
+       "_",
+       "TIM"
+      ]
+     },
+     {
+      "sv": 0.03,
+      "pole_a": [
+       "Line",
+       "arz",
+       "line",
+       "ʹ",
+       "elte",
+       "zk",
+       "lin",
+       "psz",
+       "⠀",
+       "arde",
+       "SPD",
+       "äck"
+      ],
+      "pole_b": [
+       "",
+       "--",
+       "__",
+       "-",
+       "aa",
+       "hem",
+       "_",
+       "Ath",
+       "Bundle",
+       "\n",
+       "/******/",
+       "wholes"
+      ]
+     }
+    ]
+   }
+  ],
+  "predibase/cnn": [
+   {
+    "layer": 25,
+    "fro": 0.40282,
+    "dirs": [
+     {
+      "sv": 0.15,
+      "pole_a": [
+       "###",
+       "##",
+       "rog",
+       "Tag",
+       "lyn",
+       "sever",
+       "[]",
+       "ninete",
+       "seventy",
+       "Sunday",
+       "woh",
+       "ET"
+      ],
+      "pole_b": [
+       ".",
+       ";",
+       ",",
+       "ಠ",
+       "Nelson",
+       ").",
+       "stract",
+       "lez",
+       ".\"",
+       "verd",
+       "NEW",
+       "/******/"
+      ]
+     },
+     {
+      "sv": 0.0658,
+      "pole_a": [
+       "/******/",
+       "dale",
+       "enze",
+       "tti",
+       "ҽ",
+       "dorf",
+       "rale",
+       "bec",
+       "iba",
+       "�",
+       "helm",
+       "�"
+      ],
+      "pole_b": [
+       "—",
+       "supp",
+       "assured",
+       "­",
+       "cum",
+       ".[",
+       "previously",
+       "Daniel",
+       "accuracy",
+       "aval",
+       "Nation",
+       "—"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 30,
+    "fro": 0.39293,
+    "dirs": [
+     {
+      "sv": 0.1459,
+      "pole_a": [
+       "NEW",
+       ".",
+       "NEW",
+       "The",
+       "Dep",
+       ".\"",
+       "**\"",
+       "Updated",
+       "Low",
+       "Cou",
+       "iday",
+       "Direct"
+      ],
+      "pole_b": [
+       "/******/",
+       "ether",
+       "x",
+       "pob",
+       "eg",
+       "ev",
+       "question",
+       "ar",
+       "mig",
+       "cast",
+       "et",
+       "dou"
+      ]
+     },
+     {
+      "sv": 0.0402,
+      "pole_a": [
+       "oppon",
+       "imeq",
+       "pread",
+       "tocol",
+       "gle",
+       "laug",
+       "chez",
+       "cken",
+       "ipedia",
+       "weap",
+       "conde",
+       "Reich"
+      ],
+      "pole_b": [
+       " ",
+       "tap",
+       "'",
+       "­",
+       "the",
+       "dis",
+       "a",
+       "or",
+       "we",
+       "thought",
+       "millions",
+       "over"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 24,
+    "fro": 0.38053,
+    "dirs": [
+     {
+      "sv": 0.1415,
+      "pole_a": [
+       "Ku",
+       "olic",
+       "ipper",
+       "ec",
+       "-,",
+       "oci",
+       "@",
+       "attan",
+       "mob",
+       "interrog",
+       "shore",
+       "Ter"
+      ],
+      "pole_b": [
+       "nab",
+       "acions",
+       "!",
+       "\r",
+       "pra",
+       "seh",
+       "claimed",
+       "ié",
+       "hci",
+       "zs",
+       "!\\",
+       " "
+      ]
+     },
+     {
+      "sv": 0.0487,
+      "pole_a": [
+       "uro",
+       "disp",
+       "–",
+       "war",
+       "ude",
+       "...",
+       "Milan",
+       "–",
+       "Dol",
+       ";",
+       "…",
+       "reconc"
+      ],
+      "pole_b": [
+       "/******/",
+       "",
+       "iface",
+       "itet",
+       "eah",
+       "stad",
+       "iesz",
+       "xture",
+       "indow",
+       "\"?",
+       "laug",
+       "släktet"
+      ]
+     }
+    ]
+   }
+  ],
+  "predibase/jigsaw": [
+   {
+    "layer": 13,
+    "fro": 1.25763,
+    "dirs": [
+     {
+      "sv": 0.296,
+      "pole_a": [
+       "uru",
+       "isf",
+       "yes",
+       "",
+       "lightning",
+       "Appe",
+       "pec",
+       "fa",
+       "wh",
+       "Everyone",
+       "garbage",
+       "ts"
+      ],
+      "pole_b": [
+       "enz",
+       "enza",
+       "št",
+       "üg",
+       "colon",
+       "olin",
+       "rug",
+       "ernel",
+       "nten",
+       "entr",
+       "ų",
+       "mina"
+      ]
+     },
+     {
+      "sv": 0.0705,
+      "pole_a": [
+       "zas",
+       "rom",
+       "chten",
+       "trm",
+       "edy",
+       "[<",
+       "ucker",
+       "neh",
+       "nde",
+       "edit",
+       "elm",
+       "Mum"
+      ],
+      "pole_b": [
+       "ugno",
+       "alk",
+       "Ć",
+       "/******/",
+       "Som",
+       "emper",
+       "revers",
+       "disrupt",
+       "dispar",
+       "Gast",
+       "Av",
+       "imb"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 30,
+    "fro": 1.2169,
+    "dirs": [
+     {
+      "sv": 0.542,
+      "pole_a": [
+       "yes",
+       "no",
+       "noise",
+       "no",
+       "NO",
+       "nob",
+       "yes",
+       "NO",
+       "nos",
+       "nose",
+       "nob",
+       "ross"
+      ],
+      "pole_b": [
+       "że",
+       "ej",
+       "CAN",
+       "ARE",
+       "&",
+       "Fo",
+       "äre",
+       "falls",
+       "Survey",
+       "Advanced",
+       "CAST",
+       "Register"
+      ]
+     },
+     {
+      "sv": 0.0376,
+      "pole_a": [
+       "ieck",
+       "\n",
+       "ras",
+       "GP",
+       "legis",
+       "nitt",
+       "live",
+       "Garc",
+       "imore",
+       "Ã",
+       "iante",
+       "aret"
+      ],
+      "pole_b": [
+       "bee",
+       "울",
+       "ROP",
+       "INS",
+       "ITE",
+       "moder",
+       "TC",
+       "/******/",
+       "**\"",
+       "amer",
+       "Checked",
+       "ienne"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 31,
+    "fro": 1.0554,
+    "dirs": [
+     {
+      "sv": 0.4936,
+      "pole_a": [
+       "",
+       ":%.*",
+       "ityEngine",
+       "ICENSE",
+       "BPACK",
+       "uitgen",
+       "≯",
+       "ҽ",
+       "tcx",
+       "qpoint",
+       "tagHelper",
+       "�"
+      ],
+      "pole_b": [
+       "P",
+       "-",
+       "(",
+       "*",
+       "",
+       "**",
+       "\\",
+       "\n",
+       "\\",
+       "(",
+       "Q",
+       "Google"
+      ]
+     },
+     {
+      "sv": 0.0788,
+      "pole_a": [
+       "/******/",
+       "",
+       "ityEngine",
+       "qpoint",
+       "tagHelper",
+       "/***/",
+       ":%.*",
+       "ByComparator",
+       "ҽ",
+       "vscale",
+       "­",
+       "tcx"
+      ],
+      "pole_b": [
+       "bekan",
+       "größ",
+       "Natural",
+       "verschied",
+       "Ő",
+       "weit",
+       "✦",
+       "Durante",
+       "ebenfalls",
+       "anderen",
+       "Personen",
+       "zunächst"
+      ]
+     }
+    ]
+   }
+  ],
+  "predibase/conllpp": [
+   {
+    "layer": 28,
+    "fro": 1.23107,
+    "dirs": [
+     {
+      "sv": 0.4484,
+      "pole_a": [
+       "(\"",
+       "[\"",
+       "{\"",
+       "\"[",
+       "(“",
+       "\"",
+       "**\"",
+       "—\"",
+       "{\"",
+       "(\"",
+       "!(\"",
+       "[\""
+      ],
+      "pole_b": [
+       "”",
+       ")",
+       "»",
+       "``",
+       "b",
+       "â",
+       "2",
+       "Piet",
+       "%",
+       "\n",
+       "L",
+       "A"
+      ]
+     },
+     {
+      "sv": 0.0361,
+      "pole_a": [
+       "...)",
+       "!)",
+       "?)",
+       ")?",
+       "\")",
+       ".\")",
+       "/)",
+       "%)",
+       "*)",
+       ".)",
+       "{})",
+       "_)"
+      ],
+      "pole_b": [
+       "’,",
+       "[],",
+       "’",
+       "kie",
+       "Wes",
+       "wei",
+       "(“",
+       "’.",
+       "',",
+       "Gem",
+       ".,",
+       "?,"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 30,
+    "fro": 0.9218,
+    "dirs": [
+     {
+      "sv": 0.4288,
+      "pole_a": [
+       "&",
+       "/",
+       ":",
+       "too",
+       "'",
+       "register",
+       "and",
+       "refer",
+       ",",
+       "I",
+       "so",
+       "c"
+      ],
+      "pole_b": [
+       "{\"",
+       "ierno",
+       "oppon",
+       "**\"",
+       "{\"",
+       "atte",
+       "alue",
+       "iros",
+       "．",
+       "azor",
+       "ibrary",
+       "elin"
+      ]
+     },
+     {
+      "sv": 0.0935,
+      "pole_a": [
+       "{\"",
+       "",
+       "vscale",
+       "/******/",
+       "Geplaatst",
+       "ByComparator",
+       "**\"",
+       "dule",
+       "][<",
+       "tocol",
+       "WEBPACK",
+       "qpoint"
+      ],
+      "pole_b": [
+       "-",
+       "\n",
+       "in",
+       ",",
+       "of",
+       "or",
+       "(",
+       "_",
+       "g",
+       "h",
+       "x",
+       "r"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 31,
+    "fro": 0.9093,
+    "dirs": [
+     {
+      "sv": 1.6173,
+      "pole_a": [
+       "",
+       "“",
+       "\n",
+       "P",
+       "(",
+       "D",
+       "E",
+       "I",
+       "-",
+       "–",
+       "1",
+       "A"
+      ],
+      "pole_b": [
+       "områ",
+       "",
+       "rezent",
+       "plaat",
+       "丶",
+       "plaatst",
+       "CHANT",
+       "ģ",
+       "ķ",
+       "hci",
+       "LIED",
+       "typen"
+      ]
+     },
+     {
+      "sv": 0.0417,
+      "pole_a": [
+       "—\"",
+       "/******/",
+       "atra",
+       "lint",
+       "comments",
+       " ",
+       "stringify",
+       "serial",
+       "emper",
+       "empt",
+       "trait",
+       "lights"
+      ],
+      "pole_b": [
+       "",
+       "Â",
+       "â",
+       "â",
+       "Ã",
+       "Person",
+       "personally",
+       "\\'",
+       "Phys",
+       "citiz",
+       "person",
+       "CA"
+      ]
+     }
+    ]
+   }
+  ],
+  "predibase/customer_support": [
+   {
+    "layer": 31,
+    "fro": 0.41547,
+    "dirs": [
+     {
+      "sv": 0.2115,
+      "pole_a": [
+       "",
+       "/******/",
+       "ityEngine",
+       "ҽ",
+       ":%.*",
+       "vscale",
+       "ByComparator",
+       "�",
+       ">\r",
+       "qpoint",
+       "börd",
+       "eltemperaturen"
+      ],
+      "pole_b": [
+       "",
+       "\n",
+       "-",
+       "'",
+       "Question",
+       "Miss",
+       "Google",
+       "K",
+       "*",
+       "(",
+       "we",
+       "**"
+      ]
+     },
+     {
+      "sv": 0.1842,
+      "pole_a": [
+       "",
+       "丶",
+       ":%.*",
+       "ҽ",
+       "avax",
+       "Ӏ",
+       ">:]<",
+       "❍",
+       "eltemperaturen",
+       "ByComparator",
+       "�",
+       "uitgen"
+      ],
+      "pole_b": [
+       "",
+       "\n",
+       "-",
+       "'",
+       "(",
+       "1",
+       "I",
+       ".",
+       "D",
+       "/",
+       "(",
+       "2"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 29,
+    "fro": 0.36954,
+    "dirs": [
+     {
+      "sv": 0.1637,
+      "pole_a": [
+       "times",
+       "",
+       "profile",
+       "equipment",
+       "order",
+       "page",
+       "dress",
+       "pages",
+       "schedule",
+       "leg",
+       "placement",
+       "mode"
+      ],
+      "pole_b": [
+       "box",
+       "Box",
+       "Box",
+       "names",
+       "Pointer",
+       "boxes",
+       "BOX",
+       "Names",
+       "kat",
+       ".^{[",
+       "tek",
+       "getText"
+      ]
+     },
+     {
+      "sv": 0.0395,
+      "pole_a": [
+       "latter",
+       "service",
+       "services",
+       "order",
+       "transfer",
+       "zas",
+       "gifts",
+       "schedule",
+       "source",
+       "gift",
+       "the",
+       "titles"
+      ],
+      "pole_b": [
+       "",
+       "ERCHANTABILITY",
+       "imeq",
+       "︙",
+       "�",
+       "jem",
+       "ityEngine",
+       "vscale",
+       "❍",
+       "❒",
+       "pgfscope",
+       "(\r"
+      ]
+     }
+    ]
+   },
+   {
+    "layer": 30,
+    "fro": 0.34514,
+    "dirs": [
+     {
+      "sv": 0.11,
+      "pole_a": [
+       "",
+       "urs",
+       "*",
+       "####",
+       "ia",
+       "neur",
+       "##",
+       "irs",
+       "ys",
+       "secret",
+       "_",
+       "'''"
+      ],
+      "pole_b": [
+       "glied",
+       "READ",
+       "вано",
+       "UA",
+       "HAL",
+       "WAIT",
+       "ROW",
+       "SF",
+       "NOP",
+       "SEC",
+       "opp",
+       "kennis"
+      ]
+     },
+     {
+      "sv": 0.0544,
+      "pole_a": [
+       "onces",
+       "dai",
+       "cca",
+       "ouw",
+       "aire",
+       "cip",
+       "iface",
+       "MMMM",
+       "olare",
+       "ҽ",
+       "dai",
+       "ola"
+      ],
+      "pole_b": [
+       "pay",
+       "double",
+       "",
+       "get",
+       "new",
+       "flick",
+       "schedule",
+       "reset",
+       "triple",
+       "\t",
+       "rest",
+       "lift"
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ "notes": {
+  "source": "Predibase LoRA Land adapters (same recipe: Mistral-7B-v0.1, r=8, alpha=16, q_proj+v_proj), safetensors only; base tensors read with HTTP range requests (o_proj of 3 layers per adapter, lm_head, final norm). CPU, no forward pass.",
+  "where": "every adapter puts most of its energy in the last third of the layers (q 41-65%, v 50-75%); peak layer 28-31 for 6 of 8; jigsaw (toxicity) peaks earlier (q L23, v L13).",
+  "how_many": "mean effective rank 1.4-3.0 out of 8: each task uses 2-3 directions per matrix.",
+  "logit_lens": "task-readable poles on some strong v_proj layers: jigsaw L30 yes/no/NO (its label words), conllpp L28 opening quotes and brackets (structured output), cnn L30 NEW/Updated/The (news headline), customer_support L29 order/page/profile vs box/names. gsm8k, magicoder, glue_sst2 and legal show mostly junk tokens: their write is not a readable token push. The sign of an SVD direction is arbitrary without activations.",
+  "overlap_artifact": "input-side subspace overlap is 0.80 (chance 0.002), but the raw A matrices of different adapters have element-wise cosine 0.57-0.84 and the top input direction is spread over all coordinates (top-5 coords 1.3%): the adapters share the random init seed of A, so the input overlap is the init, not learning. A drifts most in late layers (cos 0.84 at L5 vs 0.66 at L30). Output side (B, learned from zero): overlap 0.013-0.028, about 7-14x chance: different tasks write different directions.",
+  "lesson": "comparing LoRAs by their A matrices is invalid when they share an init seed; compare B (or B A) and check raw A cosine first."
+ }
+}

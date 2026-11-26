@@ -71,6 +71,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
 - **MoI Weight & Memory Streaming CDN**: `19.5 KB` shards, ~3 ms attach.
 - **Two `.moipatch` files at once**: no interference seen (weak test, no shared matrix).
+- **LoRA weight scan** (8 Predibase Mistral-7B LoRAs, CPU): energy in the last third, eff. rank 1.4-3 of 8; some lens poles read the task (jigsaw yes/no); shared A init fakes input overlap: compare B.
 - **Router false hits**: negative; no arm is a safe cache for "same problem, new numbers".
 - **Reasoning-to-MoI Projective Distillation**: routing is invariant, projective generation is negative.
 - **Pocket MoE Ceiling** / **Pocket MoE Controls**: 4B -> 0.8B; WSI ahead of random layers at ~1.7 MB (`91.7%` vs `80.6%`, CI includes 0); at 27 MB one unrouted LoRA wins.
