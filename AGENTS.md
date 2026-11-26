@@ -57,6 +57,9 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Sensor token in real vLLM**: a spare vocab row read as a raw logit leaves outputs identical (`64/64`), matches fp32 (corr `0.99997`) and keeps the fp32 threshold (`100%` agreement). A free in-engine probe channel.
 - **Damage map**: the loop patch hurts legitimate repetition (names, Chinese, prose).
 - **Rescue from the inside** (saved ids, no generation): the state at the cut does not predict which loops the blind patch rescues (all AUC CIs include 0.5); loops any restart fixes come later.
+- **Multiple futures per cut** (8+8 per cut, sensor on): the rescue is real (`+22` pts, 110 cuts better / 5 worse); one sample is a noisy label (34% luck); the sensor flags hard cuts, not which future fails (within-cut AUC ~0.5).
+- **Cut state vs clean rescue rates** (CPU): with 8-sample labels the cut state predicts difficulty (sensor vs restart rate rho `-0.41`) but not the patch's gain (all CIs incl. 0); gain peaks on borderline loops (`+46` pts).
+- **Never-rescued cuts**: 48/54 are loop-bound (74% of futures loop again, 11% finish wrong); 15/54 are solved by an always-on arm from token 0. The ceiling is loop depth at the cut, not model skill.
 - **Negative**: **Perpendicular loop direction**, **Copy heads**, **Copy-protected localization**, **Onset precursor** (no early warning).
 - **Base-draft speculative** and **Speculative decoding** (`mtp`): at most `1.15x`, slower on full batches. Dropped.
 
@@ -75,6 +78,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Looped Transformer X-Ray (`Ouro-2.6B` -> `Thinking`, `48L×4=192` steps)**: 4-cycle sawtooth norm, DLA peaks pass 3 (`step 139/L43`), early Fisher (`0.064`); `Thinking` wipes `toxic 100%->0%`, MLP-dominated (`65.5%`), Tome-2 laws hold.
 - **Hybrid Looped + mHC X-Ray (`SenseNova-Loop-9B`, `32L->56` steps)**: flat mid-loop plateau (`cos 0.993`), DLA only in unlooped tail (`step 53/L29`), extreme prologue Fisher (`0.00094`); `37.5%` over-ref, `100%` framed-toxic, `0%` syc/loops.
 - **Atlas-Guided Loopification (`Qwen2.5-3B-Instruct`, zero training)**: `L20–25 × 2` (`42` steps) beats base (`ARC 87.5->90%`, `GSM8K 20->25%`, `NLL +0.07`); prologue `L0–5 × 2` (`ARC 50%`, `GSM 0%`) & DLA tail `L30–35 × 2` (`fact 0%`) collapse.
+- **Atlas Loopification + LoRA (`Qwen2.5-3B`, MATH-500)**: negative; `L20–25×2` ZS `49.5%` vs base `61.5%`; `loop_shared/pass2` (`27.5/26.0%`) < `lora_flat` (`34.0%`, `-6.5/-8.0`); terse gold SFT cuts len 4×.
 - **Large & Diverse Modal X-Ray Batch (5 models, 9B–32B)**: Nemotron-9B Mamba-2 (norm `2469`, Fisher `3e-5`), Qwen3-30B-A3B MoE (`cos 0.986`), OLMo-2-32B PostNorm (`massive 104x`), GLM-4-32B (`aniso 0.015`), Inkling-2-Mini MoE+Looped (`24->48`, DLA in-loop `step 35/L11`).
 
 **Memory, routing, distillation, compression**
