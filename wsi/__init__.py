@@ -39,6 +39,18 @@ from .compare import (
     transplant_compositional_and_chain,
     transplant_connected_chain,
 )
+from .coproc import (
+    FORMAT_COPROC,
+    CoProcessorExecutor,
+    MoICoProcessor,
+    compute_weights_sha256,
+    extract_hanoi_n_from_prompt,
+    extract_maze_from_prompt,
+    fit_coproc_router,
+    route_and_generate,
+    verify_hanoi_moves,
+    verify_maze_solution,
+)
 from .delta_xray import (
     DELTA_XRAY_DETAIL_SCHEMA_VERSION,
     DELTA_XRAY_SCHEMA_VERSION,
@@ -61,6 +73,37 @@ from .fisher import (
     profile_column_fisher,
 )
 from .indexer import build_index
+from .looped_reader import (
+    CANONICAL_ROLES,
+    LoopedCircuitSpec,
+    SparseMatrix,
+    analyze_looped_circuit,
+    classify_looped_circuit,
+    load_looped_weights,
+)
+from .additive_loop import (
+    FORMAT_ADDITIVE_LOOP,
+    AdditiveLoopConfig,
+    AdditiveLoopedMoI,
+)
+from .loopres import (
+    FORMAT_LOOPRES,
+    LoopResConfig,
+    LoopResModule,
+    default_core_span,
+)
+from .lora_audit import (
+    LORA_AUDIT_SCHEMA_VERSION,
+    ResidualDirection,
+    audit_lora,
+    audit_weight_diff_vocab,
+    extract_dense_diff_residual_directions,
+    extract_lora_residual_directions,
+    extract_matrix_residual_directions,
+    format_lora_audit_report,
+    load_unembedding_and_tokenizer,
+    score_residual_directions_against_vocab,
+)
 from .moipatch import Edit, MoIPatch, PatchHandle, RoutedPatchHandle, audit_moipatch
 from .query import WeightSpaceIndex, load_index
 from .router_cal import (
@@ -225,7 +268,40 @@ __all__ = [
     "consolidate_3tome_atlas",
     "format_atlas_diagnosis",
     "load_atlas",
+    "load_looped_weights",
     "match_xray_neighbors",
     "validate_no_holdout_leakage",
+    "CANONICAL_ROLES",
+    "CoProcessorExecutor",
+    "FORMAT_COPROC",
+    "LoopedCircuitSpec",
+    "MoICoProcessor",
+    "SparseMatrix",
+    "analyze_looped_circuit",
+    "classify_looped_circuit",
+    "compute_weights_sha256",
+    "extract_hanoi_n_from_prompt",
+    "extract_maze_from_prompt",
+    "fit_coproc_router",
+    "route_and_generate",
+    "verify_hanoi_moves",
+    "verify_maze_solution",
+    "FORMAT_ADDITIVE_LOOP",
+    "AdditiveLoopConfig",
+    "AdditiveLoopedMoI",
+    "FORMAT_LOOPRES",
+    "LoopResConfig",
+    "LoopResModule",
+    "default_core_span",
+    "LORA_AUDIT_SCHEMA_VERSION",
+    "ResidualDirection",
+    "audit_lora",
+    "audit_weight_diff_vocab",
+    "extract_dense_diff_residual_directions",
+    "extract_lora_residual_directions",
+    "extract_matrix_residual_directions",
+    "format_lora_audit_report",
+    "load_unembedding_and_tokenizer",
+    "score_residual_directions_against_vocab",
 ]
 __version__ = "0.1.0"

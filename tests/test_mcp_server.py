@@ -51,8 +51,9 @@ def test_mcp_exposes_build_and_screen_tools():
         "wsi_bake_moipatch",
         "wsi_audit_moipatch",
         "wsi_calibrate_safety_router",
+        "wsi_audit_lora",
     }.issubset(names)
-    assert len(names) == 22
+    assert len(names) == 23
 
 
 def test_mcp_build_moipatch_and_screen_candidates_end_to_end(tmp_path, monkeypatch):
@@ -697,3 +698,58 @@ def test_mcp_audit_and_calibrate_safety_router(tmp_path, monkeypatch):
     assert "invariance_metrics" in cal_rep
     loaded = MoIPatch.load(cal_out)
     assert loaded.router is not None and loaded.router.get("veto_dir") is not None
+
+
+def test_mcp_audit_lora_end_to_end(tmp_path):
+    from tokenizers import Tokenizer, models, pre_tokenizers
+    from transformers import PreTrainedTokenizerFast
+
+    words = ["<pad>", "<eos>", "<unk>", "cake", "baking"] + [f"w{i}" for i in range(120)]
+    tk = Tokenizer(models.WordLevel({w: i for i, w in enumerate(words)}, unk_token="<unk>"))
+    tk.pre_tokenizer = pre_tokenizers.Whitespace()
+    tok = PreTrainedTokenizerFast(tokenizer_object=tk, pad_token="<pad>", eos_token="<eos>", unk_token="<unk>")
+
+    D, I = 32, 64
+    torch.manual_seed(0)
+    U = torch.zeros(len(words), D, dtype=torch.float32)
+    U[:, 4:] = torch.randn(len(words), D - 4) * 0.25
+    U[words.index("cake"), 0] = 1.0
+    U[words.index("baking"), 1] = 1.0
+
+    ckpt = tmp_path / "mcp_base_ckpt"
+    ckpt.mkdir()
+    tok.save_pretrained(str(ckpt))
+    save_file({"lm_head.weight": U}, str(ckpt / "model.safetensors"))
+
+    adapter_dir = tmp_path / "mcp_lora_cake"
+    adapter_dir.mkdir()
+    B = torch.zeros(D, 2, dtype=torch.float32)
+    B[0, 0] = 3.0
+    A = torch.zeros(2, I, dtype=torch.float32)
+    A[0, :] = 1.0 / (I ** 0.5)
+    save_file(
+        {
+            "base_model.model.layers.0.mlp.down_proj.lora_B.weight": B,
+            "base_model.model.layers.0.mlp.down_proj.lora_A.weight": A,
+        },
+        str(adapter_dir / "adapter_model.safetensors"),
+    )
+
+    resp = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 50,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_audit_lora",
+            "arguments": {
+                "base_model_dir": str(ckpt),
+                "adapter_path": str(adapter_dir),
+                "top_k": 5,
+                "device": "cpu",
+            },
+        },
+    })
+    assert resp["result"]["isError"] is False, resp["result"]["content"][0]["text"]
+    rep = json.loads(resp["result"]["content"][0]["text"])
+    assert rep["top_tokens"][0]["token"] == "cake"
+    assert rep["summary"]["n_writer_directions"] >= 1

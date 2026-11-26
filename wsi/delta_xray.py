@@ -845,6 +845,19 @@ def compute_weight_and_spectral_diff(
     n_matched = 0
     n_changed = 0
     n_shape_mismatch = 0
+    vocab_diff_dirs: list[Any] = []
+    conv1d_weight_names: set[str] = set()
+    extract_matrix_dirs_fn = None
+    score_vocab_fn = None
+    if return_detail:
+        from .lora_audit import extract_matrix_residual_directions as _extract_mat_dirs
+        from .lora_audit import score_residual_directions_against_vocab as _score_vocab_dirs
+
+        extract_matrix_dirs_fn = _extract_mat_dirs
+        score_vocab_fn = _score_vocab_dirs
+        for mod_n, mod in struct_before.backbone.named_modules():
+            if type(mod).__name__.endswith("Conv1D") and isinstance(getattr(mod, "weight", None), torch.Tensor):
+                conv1d_weight_names.add(f"{mod_n}.weight" if mod_n else "weight")
 
     try:
         for k in src_b.keys():
@@ -909,6 +922,18 @@ def compute_weight_and_spectral_diff(
                             }
                             for rv, tid in zip(vals.cpu().tolist(), tids.cpu().tolist())
                         ]
+
+            if return_detail and extract_matrix_dirs_fn is not None and wb.dim() == 2 and d_sq > 1e-12:
+                if role not in ("norms", "embed_head", "moe_router"):
+                    vocab_diff_dirs.extend(
+                        extract_matrix_dirs_fn(
+                            dW,
+                            param_name=k,
+                            hidden_size=struct_before.hidden_size,
+                            top_sv=4,
+                            is_conv1d=(k in conv1d_weight_names),
+                        )
+                    )
 
             del wb, wa, dW
 
@@ -1268,6 +1293,10 @@ def compute_weight_and_spectral_diff(
         mlp_sem_candidates.sort(key=lambda t: t[0], reverse=True)
         mix_sem_candidates.sort(key=lambda t: t[0], reverse=True)
 
+        vocab_diff_audit = None
+        if u_eff is not None and vocab_diff_dirs and score_vocab_fn is not None:
+            vocab_diff_audit = score_vocab_fn(vocab_diff_dirs, u_eff, tok, top_k=20, device=dev)
+
         weight_spectral_detail = {
             "global_submatrix_breakdown": global_submat,
             "per_layer": per_layer_detail,
@@ -1279,6 +1308,7 @@ def compute_weight_and_spectral_diff(
                 "top_mlp_writer_layers": [item for _, item in mlp_sem_candidates[:5]],
                 "top_mixer_writer_layers": [item for _, item in mix_sem_candidates[:5]],
                 "top_embed_head_tokens": top_embed_tokens,
+                "vocab_diff_audit": vocab_diff_audit,
             },
         }
         return weight_diff, spectral_diff, weight_spectral_detail

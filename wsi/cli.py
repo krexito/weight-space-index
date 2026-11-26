@@ -130,6 +130,22 @@ def main(argv: list[str] | None = None) -> int:
     p_diff.add_argument("base_dir", help="Path to base model directory")
     p_diff.add_argument("target_dir", help="Path to fine-tuned or edited model directory")
 
+    # wsi audit-lora
+    p_al = sub.add_parser(
+        "audit-lora",
+        help="Translate a LoRA adapter into top vocabulary tokens with zero forward passes (sum sigma^2 * z^4)",
+    )
+    p_al.add_argument("base_model", help="Path to base HuggingFace checkpoint directory (loads only unembedding + tokenizer)")
+    p_al.add_argument("adapter_path", help="Path to LoRA adapter directory or adapter_model.safetensors/.bin")
+    p_al.add_argument("--top-k", type=int, default=20, help="Number of top tokens to return (default: 20)")
+    p_al.add_argument("--top-sv", type=int, default=4, help="Top singular directions per matrix (default: 4)")
+    p_al.add_argument("--no-final-norm", action="store_true", help="Disable final RMSNorm scaling on unembedding rows")
+    p_al.add_argument("--scale", type=float, default=None, help="Override LoRA scale factor (default: from adapter_config.json)")
+    p_al.add_argument("--z-floor", type=float, default=None, help="Override Gaussian-bulk z-score floor (default: adaptive ~4.0)")
+    p_al.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"], help="Device for QR-SVD & scoring")
+    p_al.add_argument("--json", action="store_true", help="Output JSON instead of formatted summary")
+    p_al.add_argument("-o", "--out", default=None, help="Optional path to write full JSON audit report")
+
     # wsi align
     p_align = sub.add_parser("align", help="Align semantic circuits across two different models/architectures")
     p_align.add_argument("model_a", help="Path to first model directory")
@@ -483,6 +499,27 @@ def main(argv: list[str] | None = None) -> int:
             "layers_indexed": len(data["layers"]),
             "tokens_indexed": len(data["inverted_tokens"]),
         }, indent=2))
+        return 0
+
+    if args.cmd == "audit-lora":
+        from .lora_audit import audit_lora, format_lora_audit_report
+
+        res = audit_lora(
+            args.base_model,
+            args.adapter_path,
+            top_k=args.top_k,
+            top_sv=args.top_sv,
+            apply_final_norm=not args.no_final_norm,
+            lora_scale=args.scale,
+            z_floor=args.z_floor if args.z_floor is not None else "auto",
+            device=args.device,
+        )
+        txt = json.dumps(res, indent=2, ensure_ascii=False)
+        if args.out:
+            out_p = Path(args.out)
+            out_p.parent.mkdir(parents=True, exist_ok=True)
+            out_p.write_text(txt, encoding="utf-8")
+        print(txt if args.json else format_lora_audit_report(res))
         return 0
 
     if args.cmd == "diff":

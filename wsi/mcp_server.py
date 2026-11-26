@@ -597,6 +597,23 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             "required": ["model_dir", "patch_path", "toxic_prompts", "benign_refused_prompts", "control_prompts"],
         },
     },
+    {
+        "name": "wsi_audit_lora",
+        "description": "Translate a LoRA adapter (`adapter_model.safetensors`/`.bin`) into ranked vocabulary tokens (`sum sigma^2 * z^4`) across all matrices without running forward passes or loading transformer block shards from the base model.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "base_model_dir": {"type": "string", "description": "Path to base HuggingFace checkpoint directory (loads only lm_head/embeddings + tokenizer)"},
+                "adapter_path": {"type": "string", "description": "Path to LoRA adapter directory or adapter_model.safetensors/.bin file"},
+                "top_k": {"type": "integer", "default": 20},
+                "top_sv": {"type": "integer", "default": 4},
+                "apply_final_norm": {"type": "boolean", "default": True},
+                "lora_scale": {"type": "number", "description": "Optional explicit override for LoRA alpha/r scaling"},
+                "device": {"type": "string", "default": "cpu", "enum": ["cpu", "cuda", "auto"]},
+            },
+            "required": ["base_model_dir", "adapter_path"],
+        },
+    },
 ]
 
 
@@ -1332,6 +1349,18 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return _audit_moipatch_tool(args)
     if name == "wsi_calibrate_safety_router":
         return _calibrate_safety_router_tool(args)
+    if name == "wsi_audit_lora":
+        from .lora_audit import audit_lora
+
+        return audit_lora(
+            args["base_model_dir"],
+            args["adapter_path"],
+            top_k=int(args.get("top_k", 20)),
+            top_sv=int(args.get("top_sv", 4)),
+            apply_final_norm=bool(args.get("apply_final_norm", True)),
+            lora_scale=float(args["lora_scale"]) if args.get("lora_scale") is not None else None,
+            device=str(args.get("device", "cpu")),
+        )
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
 
 
