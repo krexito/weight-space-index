@@ -39,18 +39,21 @@ from .compare import (
     transplant_compositional_and_chain,
     transplant_connected_chain,
 )
-from .coproc import (
-    FORMAT_COPROC,
-    CoProcessorExecutor,
-    MoICoProcessor,
-    compute_weights_sha256,
-    extract_hanoi_n_from_prompt,
-    extract_maze_from_prompt,
-    fit_coproc_router,
-    route_and_generate,
-    verify_hanoi_moves,
-    verify_maze_solution,
-)
+try:
+    from .coproc import (
+        FORMAT_COPROC,
+        CoProcessorExecutor,
+        MoICoProcessor,
+        compute_weights_sha256,
+        extract_hanoi_n_from_prompt,
+        extract_maze_from_prompt,
+        fit_coproc_router,
+        route_and_generate,
+        verify_hanoi_moves,
+        verify_maze_solution,
+    )
+except ImportError:
+    pass
 from .delta_xray import (
     DELTA_XRAY_DETAIL_SCHEMA_VERSION,
     DELTA_XRAY_SCHEMA_VERSION,
@@ -82,25 +85,34 @@ from .gguf_loader import (
     map_gguf_name_to_hf,
 )
 from .indexer import build_index
-from .looped_reader import (
-    CANONICAL_ROLES,
-    LoopedCircuitSpec,
-    SparseMatrix,
-    analyze_looped_circuit,
-    classify_looped_circuit,
-    load_looped_weights,
-)
-from .additive_loop import (
-    FORMAT_ADDITIVE_LOOP,
-    AdditiveLoopConfig,
-    AdditiveLoopedMoI,
-)
-from .loopres import (
-    FORMAT_LOOPRES,
-    LoopResConfig,
-    LoopResModule,
-    default_core_span,
-)
+try:
+    from .looped_reader import (
+        CANONICAL_ROLES,
+        LoopedCircuitSpec,
+        SparseMatrix,
+        analyze_looped_circuit,
+        classify_looped_circuit,
+        load_looped_weights,
+    )
+except ImportError:
+    pass
+try:
+    from .additive_loop import (
+        FORMAT_ADDITIVE_LOOP,
+        AdditiveLoopConfig,
+        AdditiveLoopedMoI,
+    )
+except ImportError:
+    pass
+try:
+    from .loopres import (
+        FORMAT_LOOPRES,
+        LoopResConfig,
+        LoopResModule,
+        default_core_span,
+    )
+except ImportError:
+    pass
 from .lora_audit import (
     LORA_AUDIT_SCHEMA_VERSION,
     ResidualDirection,
