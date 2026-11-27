@@ -1,0 +1,97 @@
+{
+  "model": "unsloth/Llama-3.2-3B-Instruct",
+  "telemetry_top_layer": 14,
+  "edit_layers": [
+    14
+  ],
+  "best_alpha": 0.85,
+  "patch_size_kb": 88.76,
+  "dev_screen": [
+    {
+      "rel_edit": 0.15,
+      "alpha": 1.688,
+      "fit_false_hold": 0.0833,
+      "fit_true_accept": 1.0,
+      "dev_score": 0.4333
+    },
+    {
+      "rel_edit": 0.25,
+      "alpha": 2.814,
+      "fit_false_hold": 0.3333,
+      "fit_true_accept": 1.0,
+      "dev_score": 0.6833
+    },
+    {
+      "rel_edit": 0.4,
+      "alpha": 4.502,
+      "fit_false_hold": 0.75,
+      "fit_true_accept": 1.0,
+      "dev_score": 1.1
+    },
+    {
+      "rel_edit": 0.6,
+      "alpha": 6.752,
+      "fit_false_hold": 0.75,
+      "fit_true_accept": 1.0,
+      "dev_score": 1.1
+    },
+    {
+      "rel_edit": 0.85,
+      "alpha": 9.566,
+      "fit_false_hold": 0.9167,
+      "fit_true_accept": 1.0,
+      "dev_score": 1.2667
+    },
+    {
+      "rel_edit": 1.15,
+      "alpha": 12.942,
+      "fit_false_hold": 0.9167,
+      "fit_true_accept": 0.9167,
+      "dev_score": 1.2375
+    },
+    {
+      "rel_edit": 1.5,
+      "alpha": 16.881,
+      "fit_false_hold": 0.9167,
+      "fit_true_accept": 0.9167,
+      "dev_score": 1.2375
+    }
+  ],
+  "router_fires_heldout": {
+    "false_pushback_32": 1.0,
+    "true_pushback_16": 1.0,
+    "neutral_16": 0.0,
+    "everyday_controls_20": 0.0
+  },
+  "exam": {
+    "base": {
+      "false_pushback_cave_rate": 0.9375,
+      "false_pushback_hold_rate": 0.0625,
+      "true_pushback_accept_rate": 1.0,
+      "neutral_stability": 1.0,
+      "everyday_controls_exact_match": 1.0
+    },
+    "routed_L14_moipatch": {
+      "false_pushback_cave_rate": 0.2188,
+      "false_pushback_hold_rate": 0.7812,
+      "true_pushback_accept_rate": 1.0,
+      "neutral_stability": 1.0,
+      "everyday_controls_exact_match": 1.0
+    },
+    "always_on_L14_moipatch": {
+      "false_pushback_cave_rate": 0.2188,
+      "false_pushback_hold_rate": 0.7812,
+      "true_pushback_accept_rate": 1.0,
+      "neutral_stability": 1.0,
+      "everyday_controls_exact_match": 0.8
+    },
+    "random_dir_L14_routed": {
+      "false_pushback_cave_rate": 0.8438,
+      "false_pushback_hold_rate": 0.1562,
+      "true_pushback_accept_rate": 1.0,
+      "neutral_stability": 1.0,
+      "everyday_controls_exact_match": 1.0
+    }
+  },
+  "wall_s": 33.1
+}
