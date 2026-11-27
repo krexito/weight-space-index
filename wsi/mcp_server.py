@@ -614,6 +614,75 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             "required": ["base_model_dir", "adapter_path"],
         },
     },
+    {
+        "name": "wsi_diagnose_surgery_sites",
+        "description": "Run live surgical telemetry (~1s, zero generation) to rank candidate edit layers and scale-matched alphas. Measures Causal Gain, Hydra Self-Repair (`1 - hydra_retention`), Logit-Lens Birth/Death margins, and Collision Radar against optional protected direction banks.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Local checkpoint directory or HuggingFace repo ID"},
+                "pos_prompts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Prompts representing the desired target state (e.g. healthy/comply)",
+                },
+                "neg_prompts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Prompts representing the failure state to push away from (e.g. over-refusal or loop)",
+                },
+                "eval_prompts": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional prompts to probe causal gain and Hydra self-repair on (defaults to neg_prompts)",
+                },
+                "target_tokens": {
+                    "type": "array",
+                    "description": "Desired opening token strings (e.g. ['Sure','Here']) or integer token IDs",
+                },
+                "foil_tokens": {
+                    "type": "array",
+                    "description": "Undesired opening token strings (e.g. ['I','Sorry']) or integer token IDs",
+                },
+                "protected_banks": {
+                    "type": "object",
+                    "description": "Optional dict mapping protected concept name (e.g. 'harm_veto', 'fact_readout', 'copy_legit') to {pos_prompts: [...], neg_prompts: [...]}",
+                },
+                "chat": {"type": "boolean", "default": True},
+                "rel_eps": {"type": "number", "default": 0.05},
+                "target_rel_edit": {"type": "number", "default": 0.08},
+                "collision_penalty": {"type": "number", "default": 0.5},
+                "top_k": {"type": "integer", "default": 5},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir", "pos_prompts", "neg_prompts", "target_tokens", "foil_tokens"],
+        },
+    },
+    {
+        "name": "wsi_probe_margin_shift",
+        "description": "Measure continuous logit decision-margin shift, flip rate, and fragility between paired base and perturbed prompts (e.g. raw toxic vs adversarial framing) in a single forward pass.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "model_dir": {"type": "string", "description": "Local checkpoint directory or HuggingFace repo ID"},
+                "base_prompts": {"type": "array", "items": {"type": "string"}},
+                "perturbed_prompts": {"type": "array", "items": {"type": "string"}},
+                "target_tokens": {
+                    "type": "array",
+                    "description": "Desired token strings or integer token IDs",
+                },
+                "foil_tokens": {
+                    "type": "array",
+                    "description": "Undesired token strings or integer token IDs",
+                },
+                "chat": {"type": "boolean", "default": True},
+                "dtype": {"type": "string", "default": "auto", "enum": ["auto", "bfloat16", "float16", "float32"]},
+                "device_map": {"type": "string", "default": "auto"},
+            },
+            "required": ["model_dir", "base_prompts", "perturbed_prompts", "target_tokens", "foil_tokens"],
+        },
+    },
 ]
 
 
@@ -1229,6 +1298,114 @@ def _calibrate_safety_router_tool(args: dict[str, Any]) -> dict[str, Any]:
             torch.cuda.empty_cache()
 
 
+def _resolve_token_ids_for_telemetry(tok: Any, items: list[Any]) -> list[int]:
+    ids: list[int] = []
+    for x in items:
+        if isinstance(x, int):
+            ids.append(int(x))
+        elif isinstance(x, str) and x.isdigit():
+            ids.append(int(x))
+        else:
+            enc = tok.encode(str(x), add_special_tokens=False)
+            if enc:
+                ids.append(int(enc[0]))
+    if not ids:
+        raise ValueError(f"Could not resolve any token IDs from {items!r}")
+    return sorted(set(ids))
+
+
+def _diagnose_surgery_sites_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+    import torch
+    from .surgery_telemetry import diagnose_surgery_sites, extract_contrastive_directions
+
+    model = _load_model_for_screen(
+        args["model_dir"],
+        dtype_name=str(args.get("dtype", "auto")),
+        device_map=str(args.get("device_map", "auto")),
+    )
+    try:
+        tok = _load_tokenizer_for_screen(args["model_dir"])
+        use_chat = bool(args.get("chat", True))
+
+        def _fmt(ps: list[Any]) -> list[str]:
+            return [_apply_cli_chat(tok, str(p), True) if use_chat else str(p) for p in ps]
+
+        pos_prompts = _fmt(args["pos_prompts"])
+        neg_prompts = _fmt(args["neg_prompts"])
+        eval_prompts = _fmt(args["eval_prompts"]) if args.get("eval_prompts") else neg_prompts
+        target_ids = _resolve_token_ids_for_telemetry(tok, args["target_tokens"])
+        foil_ids = _resolve_token_ids_for_telemetry(tok, args["foil_tokens"])
+
+        edit_dirs = extract_contrastive_directions(model, tok, pos_prompts, neg_prompts)
+        protected_by_layer: dict[int, dict[str, Any]] | None = None
+        if args.get("protected_banks"):
+            protected_by_layer = {li: {} for li in edit_dirs}
+            for bank_name, spec in args["protected_banks"].items():
+                b_dirs = extract_contrastive_directions(
+                    model,
+                    tok,
+                    _fmt(spec["pos_prompts"]),
+                    _fmt(spec["neg_prompts"]),
+                )
+                for li, vec in b_dirs.items():
+                    if li in protected_by_layer:
+                        protected_by_layer[li][str(bank_name)] = vec
+
+        return diagnose_surgery_sites(
+            model,
+            tok,
+            eval_prompts,
+            edit_dirs,
+            target_token_ids=target_ids,
+            foil_token_ids=foil_ids,
+            protected_banks_by_layer=protected_by_layer,
+            rel_eps=float(args.get("rel_eps", 0.05)),
+            target_rel_edit=float(args.get("target_rel_edit", 0.08)),
+            collision_penalty=float(args.get("collision_penalty", 0.5)),
+            top_k=int(args.get("top_k", 5)),
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
+def _probe_margin_shift_tool(args: dict[str, Any]) -> dict[str, Any]:
+    import gc
+    import torch
+    from .surgery_telemetry import probe_margin_shift
+
+    model = _load_model_for_screen(
+        args["model_dir"],
+        dtype_name=str(args.get("dtype", "auto")),
+        device_map=str(args.get("device_map", "auto")),
+    )
+    try:
+        tok = _load_tokenizer_for_screen(args["model_dir"])
+        use_chat = bool(args.get("chat", True))
+
+        def _fmt(ps: list[Any]) -> list[str]:
+            return [_apply_cli_chat(tok, str(p), True) if use_chat else str(p) for p in ps]
+
+        target_ids = _resolve_token_ids_for_telemetry(tok, args["target_tokens"])
+        foil_ids = _resolve_token_ids_for_telemetry(tok, args["foil_tokens"])
+        return probe_margin_shift(
+            model,
+            tok,
+            _fmt(args["base_prompts"]),
+            _fmt(args["perturbed_prompts"]),
+            target_token_ids=target_ids,
+            foil_token_ids=foil_ids,
+        )
+    finally:
+        del model
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+
 def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """Dispatch an MCP tool call to `WeightSpaceIndex`."""
     if name == "wsi_overview":
@@ -1361,6 +1538,10 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
             lora_scale=float(args["lora_scale"]) if args.get("lora_scale") is not None else None,
             device=str(args.get("device", "cpu")),
         )
+    if name == "wsi_diagnose_surgery_sites":
+        return _diagnose_surgery_sites_tool(args)
+    if name == "wsi_probe_margin_shift":
+        return _probe_margin_shift_tool(args)
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
 
 

@@ -52,8 +52,10 @@ def test_mcp_exposes_build_and_screen_tools():
         "wsi_audit_moipatch",
         "wsi_calibrate_safety_router",
         "wsi_audit_lora",
+        "wsi_diagnose_surgery_sites",
+        "wsi_probe_margin_shift",
     }.issubset(names)
-    assert len(names) == 23
+    assert len(names) == 25
 
 
 def test_mcp_build_moipatch_and_screen_candidates_end_to_end(tmp_path, monkeypatch):
@@ -753,3 +755,79 @@ def test_mcp_audit_lora_end_to_end(tmp_path):
     rep = json.loads(resp["result"]["content"][0]["text"])
     assert rep["top_tokens"][0]["token"] == "cake"
     assert rep["summary"]["n_writer_directions"] >= 1
+
+
+def test_mcp_surgery_telemetry_tools_end_to_end(monkeypatch):
+    from transformers import Qwen2Config, Qwen2ForCausalLM
+
+    class _DummyTok:
+        pad_token_id = 0
+        eos_token_id = 0
+        padding_side = "left"
+
+        def encode(self, text, add_special_tokens=False):
+            return [(sum(ord(c) for c in text) % 60) + 1]
+
+        def __call__(self, texts, return_tensors="pt", padding=True):
+            rows = [[(sum(ord(c) for c in w) % 60) + 1 for w in t.split()] or [1] for t in texts]
+            ml = max(len(r) for r in rows)
+            pad = [[0] * (ml - len(r)) + r for r in rows]
+            mask = [[0] * (ml - len(r)) + [1] * len(r) for r in rows]
+            return {"input_ids": torch.tensor(pad, dtype=torch.long), "attention_mask": torch.tensor(mask, dtype=torch.long)}
+
+    torch.manual_seed(0)
+    cfg = Qwen2Config(
+        vocab_size=64, hidden_size=32, intermediate_size=64,
+        num_hidden_layers=3, num_attention_heads=4, num_key_value_heads=2, tie_word_embeddings=False,
+    )
+    model = Qwen2ForCausalLM(cfg).eval()
+    tok = _DummyTok()
+    monkeypatch.setattr(mcp, "_load_model_for_screen", lambda *_a, **_kw: model)
+    monkeypatch.setattr(mcp, "_load_tokenizer_for_screen", lambda *_a, **_kw: tok)
+
+    r1 = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 60,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_diagnose_surgery_sites",
+            "arguments": {
+                "model_dir": "dummy",
+                "pos_prompts": ["alpha beta", "gamma delta"],
+                "neg_prompts": ["zeta eta", "theta iota"],
+                "target_tokens": [5, "Sure"],
+                "foil_tokens": [7, "Sorry"],
+                "protected_banks": {
+                    "harm_veto": {"pos_prompts": ["bad one"], "neg_prompts": ["good one"]},
+                },
+                "chat": False,
+                "top_k": 2,
+            },
+        },
+    })
+    assert r1["result"]["isError"] is False, r1["result"]["content"][0]["text"]
+    out1 = json.loads(r1["result"]["content"][0]["text"])
+    assert out1["schema"] == "wsi_surgery_telemetry_v1"
+    assert len(out1["top_sites"]) == 2
+    assert "effective_gain" in out1["top_sites"][0]
+
+    r2 = mcp.handle_rpc_message({
+        "jsonrpc": "2.0",
+        "id": 61,
+        "method": "tools/call",
+        "params": {
+            "name": "wsi_probe_margin_shift",
+            "arguments": {
+                "model_dir": "dummy",
+                "base_prompts": ["alpha beta", "gamma delta"],
+                "perturbed_prompts": ["alpha beta framed", "gamma delta framed"],
+                "target_tokens": [5],
+                "foil_tokens": [7],
+                "chat": False,
+            },
+        },
+    })
+    assert r2["result"]["isError"] is False, r2["result"]["content"][0]["text"]
+    out2 = json.loads(r2["result"]["content"][0]["text"])
+    assert out2["n_pairs"] == 2
+    assert "margin_shift_mean" in out2
