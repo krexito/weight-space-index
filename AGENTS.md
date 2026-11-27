@@ -92,6 +92,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Native-Memory Hybrid MoE X-Ray (`MemT-1.0-Nano`, `35.1B/3B`, Modal H200)**: zero-pathology (`0%` overref/syc/loops, `100%` raw+framed toxic, `cos_ref_veto 0.964`), router ent `0.925`, Fisher `0.077`, `L12` massive `441.6x`.
 - **Dense Hybrid DeltaNet X-Ray (`Qwen3.8-27B`, `64L`, Modal A100-80GB)**: uniform MLP (`erank 0.93`), tail `q_sens 0.67`, `block_fisher 0.004`, `L58` massive `283x`, `0%` overref/syc/loops, `75/100%` raw/framed toxic, `87.5%` facts.
 - **GGUF X-Ray Loader & Quant Ladder (`wsi/gguf_loader.py`, `Qwen2.5-3B` `Q4_K_M->Q2_K`)**: `L2` massive `533x` invariant, but `Q2_K` wipes toxic (`100->0%`) & explodes sycophancy `8x` (`11.1->90%`); `Q4_K_M` already loses framed toxic (`0%`).
+- **Colab L4 6-Model Batch (`0.65 CU`)**: Llama-3.2-3B (`BF16/IQ4_XS/Q2_K`, `L1 467x` invariant, `fisher 0.72->0.30`), Gemma-2-2B (`L17 475x`), R1-Distill-1.5B (`L11 299x`, `0%` tox), Mistral-7B-v0.3 (`L1 979x`, `0%` tox).
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
