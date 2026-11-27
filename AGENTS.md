@@ -121,6 +121,8 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Dense Strata Quant (`Qwen2.5-3B`, `A100`)**: `S3_K` (`H64+BlockLDL+64flip`, `3.19b`) rescues RTN (`PPL 554->11.8`, `GSM8K 0->70%`); raw knapsack hurts (`57%`); `+0B Scale-QAT` adds `+4 pts` (`61%`).
 - **MoE Strata Quant (`OLMoE-1B-7B`, `A100`)**: `S3+S2` (`2.85b`) cuts RTN PPL (`51.9->18.8`); `+0B Scale-QAT` rescues raw knapsack to beat uniform on PPL (`17.1` vs `18.8`) & KL (`0.64` vs `0.68`); MMLU `24.5%`.
 - **X-Ray Quant Predictor (CPU)**: `build_quant_sensitivity_map` tracks Inkling `SQ-10` (`rho +0.65`, `2/4` top-5) & knapsack (`+0.82` dense, `+0.68` OLMoE); raw PreNorm `tr(dW H dW^T)` grows `~140x` across depth.
+- **High-Rank Strata Cartridges (`MATH-500`, `4B->0.8B`)**: `r=8` (`35.5%`) beats `r=32/64` (`29.5/28.0%`, overfit 195 traces); `S2_K` saves `7.2x` (`11.4 MB` `30.5%`, `+4` vs `RTN-2b`), `0/371` non-math MMLU fires.
+- **Strata 3-Bit Base + Patch (`Qwen2.5-3B`, `A100`)**: `S3_K+Scale-QAT` (`1.05 GB`, `+0B`) hits `76.5%` GSM8K-200 (`-5` vs BF16); 213-trace LoRA overfits (`71.5%`); `S2_K` (`1.95 MB`) ties FP16 & L18 router `0%` MMLU.
 
 ## 3. Planned Next Experiment (Queued — Do Not Run Yet)
 

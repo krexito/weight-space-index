@@ -2838,6 +2838,10 @@ def scan_model_xray(
             "wsi_commit": wsi_commit,
         },
     }
+    from .strata_quant import build_quant_sensitivity_map
+
+    qmap = build_quant_sensitivity_map(card)
+    card["anatomy"]["fisher_profile"]["q_sens_8"] = [round(float(x), 2) for x in qmap["layer_scores_8"]]
     return _sanitize(card)
 
 
