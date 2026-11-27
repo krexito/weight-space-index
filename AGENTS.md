@@ -94,6 +94,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **GGUF X-Ray Loader & Quant Ladder (`wsi/gguf_loader.py`, `Qwen2.5-3B` `Q4_K_M->Q2_K`)**: `L2` massive `533x` invariant, but `Q2_K` wipes toxic (`100->0%`) & explodes sycophancy `8x` (`11.1->90%`); `Q4_K_M` already loses framed toxic (`0%`).
 - **Colab L4 6-Model Batch (`0.65 CU`)**: Llama-3.2-3B (`BF16/IQ4_XS/Q2_K`, `L1 467x` invariant, `fisher 0.72->0.30`), Gemma-2-2B (`L17 475x`), R1-Distill-1.5B (`L11 299x`, `0%` tox), Mistral-7B-v0.3 (`L1 979x`, `0%` tox).
 - **Abliterated, `IQ1_S` & 1-Bit/Ternary X-Rays (7 models, Colab T4)**: Qwen3-4B ablit keeps `auc_veto=1.0` (`-25` fact); Gemma `IQ1_S` keeps `L17 440x` (`fisher 5x` drop); Bonsai 1b/1.58b `erank 0.94–0.95`, `181–280x`; `LFM2.5` `DLA 51%` / `fisher 0.029`.
+- **Looped MoE `GSQ-RCO` GGUF X-Ray (`Inkling-2-Mini IQ2_S`, `2.75b`, Modal H100)**: pure-NumPy `Q2_0(42)` + 8-thread dequant; `fact 87.5%` & `L17` massive (`90.1x` vs `93.3x`) & `DLA step 35/L11` & router ent (`0.732`) all preserved (`nll 1.27->1.54`).
 - **Closed-Form WSP Safety Routers** (LFM3-1.7B, Colab L4): negative vs shipped L24 linear; `wsp_crossfit_auto` raises safety (`99.4%` tox, `100%` JBB) but cuts OR-Bench recovery `76.9->30.8%` (`-42 pts`); `+t0` helps.
 
 **Memory, routing, distillation, compression**

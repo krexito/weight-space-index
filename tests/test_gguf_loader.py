@@ -102,6 +102,13 @@ def test_q8_0_and_q4_0_dequantize_roundtrip() -> None:
     rec4 = dequantize_gguf_bytes(q4, 2, (1, 32), dtype=torch.float32).numpy()
     assert np.allclose(rec4, 1.0)
 
+    # Q2_0 (type 42) synthetic block: 64 elems = fp16 scale(2.0) + 16 bytes of 0b11_10_01_00 = 0xE4
+    # 00->-1, 01->0, 10->+1, 11->+2 multiplied by scale 2.0 => [-2, 0, 2, 4] repeated 16x
+    q2 = np.frombuffer(np.float16(2.0).tobytes() + bytes([0xE4] * 16), dtype=np.uint8)
+    rec2 = dequantize_gguf_bytes(q2, 42, (1, 64), dtype=torch.float32).numpy()
+    expected2 = np.tile(np.array([-2.0, 0.0, 2.0, 4.0], dtype=np.float32), 16).reshape(1, 64)
+    assert np.allclose(rec2, expected2)
+
 
 def test_synthetic_gguf_load_into_qwen2(tmp_path: Path) -> None:
     cfg = Qwen2Config(

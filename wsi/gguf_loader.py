@@ -61,6 +61,10 @@ GGML_TYPE_INFO: dict[int, tuple[str, float]] = {
     34: ("TQ1_0", 1.69),
     35: ("TQ2_0", 2.06),
     39: ("MXFP4", 4.25),
+    40: ("NVFP4", 4.5),
+    41: ("Q1_0", 1.125),
+    42: ("Q2_0", 2.25),
+    43: ("F8_E4M3", 8.0),
 }
 
 _GGUF_SCALAR_SIZES: dict[int, int] = {
@@ -286,6 +290,30 @@ def dequantize_gguf_bytes(
         u16 = np.frombuffer(raw.tobytes(), dtype=np.uint16).reshape(torch_shape)
         return torch.from_numpy(u16.copy()).view(torch.bfloat16).to(dtype=dtype)
 
+    # Native pure-NumPy paths for brand-new GGML types (Q2_0=42, Q1_0=41) not yet in PyPI `gguf`
+    if ggml_type == 42:  # Q2_0: QK2_0=64 elements per block = 2-byte fp16 scale + 16 packed uint8 (2-bit: 00=-1,01=0,10=+1,11=+2)
+        b = raw.view(np.uint8)
+        n_blocks = b.size // 18
+        blocks = b.reshape(n_blocks, 18)
+        scales = blocks[:, :2].copy().view(np.float16).astype(np.float32)  # (n_blocks, 1)
+        qs = blocks[:, 2:]  # (n_blocks, 16)
+        q0 = (qs & 0x03).astype(np.int8) - 1
+        q1 = ((qs >> 2) & 0x03).astype(np.int8) - 1
+        q2 = ((qs >> 4) & 0x03).astype(np.int8) - 1
+        q3 = ((qs >> 6) & 0x03).astype(np.int8) - 1
+        # Interleave j = 4*byte_index + {0,1,2,3}
+        unpacked = np.stack([q0, q1, q2, q3], axis=-1).reshape(n_blocks, 64).astype(np.float32)
+        arr = (scales * unpacked).reshape(torch_shape)
+        return torch.from_numpy(arr).to(dtype=dtype)
+    if ggml_type == 41:  # Q1_0: QK1_0=128 elements per block = 2-byte fp16 scale + 16 packed uint8 (1-bit: 0=-1, 1=+1)
+        b = raw.view(np.uint8)
+        n_blocks = b.size // 18
+        blocks = b.reshape(n_blocks, 18)
+        scales = blocks[:, :2].copy().view(np.float16).astype(np.float32)
+        bits = np.unpackbits(blocks[:, 2:], axis=1, bitorder="little").astype(np.float32)
+        arr = (scales * (bits * 2.0 - 1.0)).reshape(torch_shape)
+        return torch.from_numpy(arr).to(dtype=dtype)
+
     # Prefer official `gguf.quants.dequantize` when installed (supports Q2_K..Q8_0, IQ1..IQ4, MXFP4, TQ*)
     try:
         import gguf  # type: ignore
@@ -333,18 +361,18 @@ _BLK_RE = re.compile(r"^blk\.(\d+)\.(.+)$")
 
 # Standard GGUF suffix -> candidate HF submodule suffixes (checked against model state_dict keys)
 _GGUF_BLOCK_SUFFIX_CANDIDATES: dict[str, tuple[str, ...]] = {
-    "attn_norm.weight": ("input_layernorm.weight", "operator_norm.weight"),
+    "attn_norm.weight": ("input_layernorm.weight", "operator_norm.weight", "attn_norm.weight"),
     "attn_norm.bias": ("input_layernorm.bias",),
-    "ffn_norm.weight": ("post_attention_layernorm.weight", "ffn_norm.weight"),
+    "ffn_norm.weight": ("post_attention_layernorm.weight", "ffn_norm.weight", "mlp_norm.weight"),
     "ffn_norm.bias": ("post_attention_layernorm.bias",),
     "post_attention_norm.weight": ("post_attention_layernorm.weight",),
-    "attn_q.weight": ("self_attn.q_proj.weight", "attn.q_proj.weight"),
+    "attn_q.weight": ("self_attn.q_proj.weight", "self_attn.q_proj.linear.weight", "attn.q_proj.weight", "attn.wq_du.weight"),
     "attn_q.bias": ("self_attn.q_proj.bias", "attn.q_proj.bias"),
-    "attn_k.weight": ("self_attn.k_proj.weight", "attn.k_proj.weight"),
+    "attn_k.weight": ("self_attn.k_proj.weight", "self_attn.k_proj.linear.weight", "attn.k_proj.weight", "attn.wk_dv.weight"),
     "attn_k.bias": ("self_attn.k_proj.bias", "attn.k_proj.bias"),
-    "attn_v.weight": ("self_attn.v_proj.weight", "attn.v_proj.weight"),
+    "attn_v.weight": ("self_attn.v_proj.weight", "self_attn.v_proj.linear.weight", "attn.v_proj.weight", "attn.wv_dv.weight"),
     "attn_v.bias": ("self_attn.v_proj.bias", "attn.v_proj.bias"),
-    "attn_output.weight": ("self_attn.o_proj.weight", "attn.o_proj.weight"),
+    "attn_output.weight": ("self_attn.o_proj.weight", "self_attn.o_proj.linear.weight", "attn.o_proj.weight", "attn.wo_ud.weight"),
     "attn_output.bias": ("self_attn.o_proj.bias", "attn.o_proj.bias"),
     "attn_q_norm.weight": ("self_attn.q_norm.weight", "self_attn.q_layernorm.weight"),
     "attn_k_norm.weight": ("self_attn.k_norm.weight", "self_attn.k_layernorm.weight"),
@@ -361,23 +389,69 @@ _GGUF_BLOCK_SUFFIX_CANDIDATES: dict[str, tuple[str, ...]] = {
     "ssm_alpha.weight": ("linear_attn.in_proj_a.weight",),
     "ssm_beta.weight": ("linear_attn.in_proj_b.weight",),
     "attn_qkv.weight": ("linear_attn.in_proj_qkv.weight", "self_attn.qkv_proj.weight"),
-    "attn_gate.weight": ("linear_attn.in_proj_z.weight",),
+    "attn_gate.weight": ("linear_attn.in_proj_z.weight", "self_attn.o_proj.gate_proj.weight", "attn.gate_attn.weight"),
+    # Inkling-2-Mini looped MoE tensors (`transformers` Inkling2Loop + raw `model.llm.*`)
+    "attn_k_conv.weight": ("self_attn.k_proj.sconv.conv1d.weight", "self_attn.k_proj.sconv.static_weight", "attn.k_sconv.weight"),
+    "attn_v_conv.weight": ("self_attn.v_proj.sconv.conv1d.weight", "self_attn.v_proj.sconv.static_weight", "attn.v_sconv.weight"),
+    "attn_k_conv_proj.weight": ("self_attn.k_proj.sconv.weight_proj.weight",),
+    "attn_v_conv_proj.weight": ("self_attn.v_proj.sconv.weight_proj.weight",),
+    "attn_q_inp_norm.weight": ("q_input_layernorm.weight",),
+    "attn_k_inp_norm.weight": ("k_input_layernorm.weight",),
+    "attn_v_inp_norm.weight": ("v_input_layernorm.weight",),
+    "attn_post_conv.weight": ("post_attention_convolution.conv1d.weight", "attn_sconv.weight"),
+    "ffn_post_conv.weight": ("post_mlp_convolution.conv1d.weight", "mlp_sconv.weight"),
+    "attn_q_clip.weight": ("self_attn.q_proj.norm.scale", "self_attn.q_proj.scale", "attn.q_l2_clip.scale"),
+    "attn_rel.weight": ("self_attn.relative_position_bias.linear.weight", "attn.wr_du.weight"),
+    "attn_rel_bias.weight": ("self_attn.relative_position_bias.proj", "attn.rel_logits_proj.proj"),
+    "attn_rel_clip.weight": ("self_attn.relative_position_bias.norm.scale", "self_attn.relative_position_bias.scale", "attn.rel_l2_clip.scale"),
+    "attn_sink_proj.weight": ("self_attn.sink_proj.weight", "attn.attn_sink_proj.weight"),
+    "exp_probs_b.bias": ("mlp.gate.e_score_correction_bias", "mlp.gate.bias"),
+    "ffn_down_exps.weight": ("mlp.experts.down_proj", "mlp.experts.w2_weight"),
+    "ffn_gate_up_exps.weight": ("mlp.experts.gate_up_proj", "mlp.experts.w13_weight"),
+    "ffn_res_query.weight": ("mlp_input.query",),
+    "attn_res_query.weight": ("attention_input.query",),
+    "loop_ffn_ctrl_down.weight": ("mlp_message_gate.down_proj.weight",),
+    "loop_ffn_ctrl_forget.weight": ("mlp_message_gate.forget_gate_proj.weight",),
+    "loop_ffn_ctrl_gain.weight": ("mlp_message_gate.message_gate_proj.weight",),
+    "loop_q_ctrl_down.weight": ("q_message_gate.down_proj.weight",),
+    "loop_q_ctrl_forget.weight": ("q_message_gate.forget_gate_proj.weight",),
+    "loop_q_ctrl_gain.weight": ("q_message_gate.message_gate_proj.weight",),
+    "loop_k_ctrl_down.weight": ("k_message_gate.down_proj.weight",),
+    "loop_k_ctrl_forget.weight": ("k_message_gate.forget_gate_proj.weight",),
+    "loop_k_ctrl_gain.weight": ("k_message_gate.message_gate_proj.weight",),
+    "loop_v_ctrl_down.weight": ("v_message_gate.down_proj.weight",),
+    "loop_v_ctrl_forget.weight": ("v_message_gate.forget_gate_proj.weight",),
+    "loop_v_ctrl_gain.weight": ("v_message_gate.message_gate_proj.weight",),
+    "loop_msg_query.weight": ("message_input.query", "attention_input.query"),
 }
 
 _GGUF_GLOBAL_CANDIDATES: dict[str, tuple[str, ...]] = {
     "token_embd.weight": (
         "model.embed_tokens.weight",
         "model.language_model.embed_tokens.weight",
+        "model.llm.embed.weight",
         "transformer.wte.weight",
+    ),
+    "token_embd_norm.weight": (
+        "model.embed_tokens.embed_norm.weight",
+        "model.language_model.embed_tokens.embed_norm.weight",
+        "model.llm.embed_norm.weight",
     ),
     "output_norm.weight": (
         "model.norm.weight",
         "model.language_model.norm.weight",
+        "model.llm.norm.weight",
         "transformer.ln_f.weight",
     ),
     "output.weight": (
         "lm_head.weight",
+        "model.llm.unembed.weight",
         "model.embed_tokens.weight",
+    ),
+    "output_res_query.weight": (
+        "model.final_input.query",
+        "model.language_model.final_input.query",
+        "model.llm.attn_res.output_query",
     ),
 }
 
@@ -394,8 +468,18 @@ def map_gguf_name_to_hf(gguf_name: str, hf_keys: set[str]) -> str | None:
     if not m:
         return None
     layer_idx, suffix = m.group(1), m.group(2)
+    # Inkling-2-Mini attention-residual query vectors
+    if suffix == "ffn_res_query.weight":
+        cand = f"model.llm.attn_res.mlp_queries.{layer_idx}"
+        if cand in hf_keys:
+            return cand
+    if suffix == "attn_res_query.weight":
+        cand = f"model.llm.attn_res.attn_queries.{int(layer_idx) - 1}"
+        if cand in hf_keys:
+            return cand
+
     cands = _GGUF_BLOCK_SUFFIX_CANDIDATES.get(suffix, ())
-    for prefix in ("model.layers", "model.language_model.layers", "transformer.h"):
+    for prefix in ("model.layers", "model.language_model.layers", "model.llm.layers", "transformer.h"):
         for cand in cands:
             key = f"{prefix}.{layer_idx}.{cand}"
             if key in hf_keys:
@@ -418,6 +502,8 @@ def _read_gguf_tensor_raw(
         7: (32, 24),    # Q5_1
         8: (32, 34),    # Q8_0
         30: (1, 2),     # BF16
+        41: (128, 18),  # Q1_0
+        42: (64, 18),   # Q2_0
     }
     if info.ggml_type in block_specs:
         bs, nbytes_per_block = block_specs[info.ggml_type]
@@ -469,27 +555,68 @@ def load_gguf_into_model(
     unmapped: list[str] = []
     shape_mismatches: list[tuple[str, tuple[int, ...], tuple[int, ...]]] = []
 
-    with open(gguf_path, "rb") as f:
-        for info in summary.tensors:
-            hf_key = map_gguf_name_to_hf(info.name, hf_keys)
-            if hf_key is None:
-                unmapped.append(info.name)
-                continue
-            target = param_map[hf_key]
+    # Pre-match tensor names so we can dequantize in parallel across CPU cores
+    tasks: list[tuple[GGUFTensorInfo, str]] = []
+    for info in summary.tensors:
+        hf_key = map_gguf_name_to_hf(info.name, hf_keys)
+        if hf_key is None:
+            unmapped.append(info.name)
+            continue
+        tasks.append((info, hf_key))
+
+    def _decode_one(item: tuple[GGUFTensorInfo, str]) -> tuple[str, torch.Tensor]:
+        info, hf_key = item
+        with open(gguf_path, "rb") as f:
             raw = _read_gguf_tensor_raw(f, summary.data_offset, info)
-            tensor = dequantize_gguf_bytes(raw, info.ggml_type, info.torch_shape, dtype=dtype)
+        tensor = dequantize_gguf_bytes(raw, info.ggml_type, info.torch_shape, dtype=dtype)
+        return hf_key, tensor
+
+    from concurrent.futures import ThreadPoolExecutor
+
+    max_workers = min(8, os.cpu_count() or 1, max(1, len(tasks)))
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        for hf_key, tensor in pool.map(_decode_one, tasks):
+            target = param_map[hf_key]
             if tuple(tensor.shape) != tuple(target.shape):
-                # Some GGUF 1D/conv weights store squeezed dims (e.g. conv1d [4, D] vs [D, 1, 4])
-                if tensor.numel() == target.numel():
+                # Vocab-padded embedding / lm_head in GGUF (e.g. 201024 vs 200058)
+                if (
+                    tensor.ndim == 2
+                    and target.ndim == 2
+                    and tensor.shape[1] == target.shape[1]
+                    and tensor.shape[0] > target.shape[0]
+                ):
+                    tensor = tensor[: target.shape[0]].contiguous()
+                # 2D transpose mismatch (e.g. static_weight [1024, 4] -> [4, 1024], rel_logits_proj [1024, 16] -> [16, 1024])
+                elif (
+                    tensor.ndim == 2
+                    and target.ndim == 2
+                    and tensor.shape[0] == target.shape[1]
+                    and tensor.shape[1] == target.shape[0]
+                ):
+                    tensor = tensor.T.contiguous()
+                # Some GGUF 1D/conv weights store squeezed dims (e.g. conv1d [D, 4] or [4, D] vs [D, 1, 4])
+                elif tensor.numel() == target.numel():
                     if tensor.ndim == 2 and target.ndim == 3 and target.shape[1] == 1:
-                        tensor = tensor.T.unsqueeze(1).contiguous()
+                        if tensor.shape[0] == target.shape[0]:
+                            tensor = tensor.unsqueeze(1).contiguous()
+                        else:
+                            tensor = tensor.T.unsqueeze(1).contiguous()
                     else:
                         tensor = tensor.reshape(target.shape)
                 else:
                     shape_mismatches.append((hf_key, tuple(tensor.shape), tuple(target.shape)))
                     continue
-            with torch.no_grad():
-                target.copy_(tensor.to(device=target.device, dtype=target.dtype))
+            if target.device.type == "meta":
+                parent_path, _, leaf = hf_key.rpartition(".")
+                parent = model.get_submodule(parent_path) if parent_path else model
+                mat = tensor.to(device=device, dtype=target.dtype)
+                if isinstance(target, nn.Parameter):
+                    setattr(parent, leaf, nn.Parameter(mat, requires_grad=target.requires_grad))
+                else:
+                    parent.register_buffer(leaf, mat)
+            else:
+                with torch.no_grad():
+                    target.copy_(tensor.to(device=target.device, dtype=target.dtype))
             loaded.append(hf_key)
 
     missing = sorted(required_keys - set(loaded))
@@ -499,8 +626,24 @@ def load_gguf_into_model(
             f"shape_mismatches={len(shape_mismatches)}"
         )
 
-    if device != "cpu":
-        model.to(device=device, dtype=dtype)
+    # Materialize any remaining meta tensors (e.g. unused vision tower) so model has zero meta tensors
+    for pname, p in list(model.named_parameters()):
+        if p.device.type == "meta":
+            parent_path, _, leaf = pname.rpartition(".")
+            parent = model.get_submodule(parent_path) if parent_path else model
+            setattr(
+                parent,
+                leaf,
+                nn.Parameter(torch.zeros(p.shape, dtype=p.dtype, device=device), requires_grad=p.requires_grad),
+            )
+    for bname, b in list(model.named_buffers()):
+        if b.device.type == "meta":
+            parent_path, _, leaf = bname.rpartition(".")
+            parent = model.get_submodule(parent_path) if parent_path else model
+            parent.register_buffer(leaf, torch.zeros(b.shape, dtype=b.dtype, device=device))
+
+    if device != "cpu" and any(p.device.type == "cpu" for p in model.parameters()):
+        model.to(device=device)
 
     return {
         "gguf": summary.to_compact_dict(),
