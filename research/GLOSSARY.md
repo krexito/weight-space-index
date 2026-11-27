@@ -15,6 +15,8 @@ Guía práctica en español con los **términos canónicos en inglés** (para us
 | **Bake / Hotswap** | **Bake**: fusionar el parche permanentemente en los pesos del modelo. **Hotswap**: montar/desmontar `.moipatch` en caliente sin reiniciar el servidor. | "Servimos 3 parches por hotswap en ~3 ms." |
 | **Self-Gate / Veto Router** | Un router lineal de 1–2 vectores que lee el estado residual en una capa temprana y decide si **activar** o **vetar** (bloquear) el parche. | "El veto router bloquea el parche cuando detecta daño real." |
 | **Sensor Token** | Una fila libre del vocabulario (`lm_head`) reutilizada como sonda lineal gratuita dentro de vLLM para leer una dirección interna como un logit más. | "El sensor token detecta loops dentro de vLLM con costo cero." |
+| **Logit Lens / Vocab Projection (`decompile_edit_intent`, `audit_lora`)** | Agarrar un vector interno (o un cambio de pesos `ΔW` / LoRA) y multiplicarlo por `lm_head` para **traducirlo a los tokens/palabras** que empuja o suprime. | "Con Logit Lens decompilamos el LoRA y vimos qué palabras estaba potenciando." |
+| **Token-ID Recompute (`token_trace`)** | En vez de guardar gigabytes de activaciones intermedias, guardar solo los **IDs de los tokens** (`6,300×` más chico) y reconstruir las activaciones exactas haciendo 1 forward en `fp32`. | "Guardamos las trazas como token IDs y recomputamos en fp32 sin pérdida." |
 | **Pocket MoE / Cartridge** | Pequeños adaptadores LoRA especializados (`r=2..16`, `1–10 MB`) detrás de un router por dominio para agregar skills sin olvido catastrófico. | "Cada cartridge pesa 2.5 MB y dispara 0/200 veces en MMLU." |
 | **LoopRes** | Módulo residual ligero (`~47 KB`) que permite repetir un bloque de capas `T` veces (`T=2..3`) sobre un cartridge para ganar profundidad de cómputo en tiempo de inferencia. | "LoopRes `T=2` subió `+4.5 pts` en MATH-500 sobre LoRA `1x`." |
 
@@ -96,3 +98,5 @@ Guía práctica en español con los **términos canónicos en inglés** (para us
 - *"Cuando el modelo te da la razón aunque tú estés equivocado"* → **Sycophancy (`cave_rate`)**
 - *"Cuando un quant a 2 bits borra el rechazo sin querer"* → **Accidental Abliteration under Extreme Quantization**
 - *"Comparar BF16 vs Q4 vs Q2 vs IQ1 del mismo modelo"* → **Quantization X-Ray Ladder**
+- *"Traducir un vector/parche/LoRA a qué palabras empuja usando `lm_head`"* → **Logit Lens / Vocab Projection** (`decompile_edit_intent`)
+- *"Guardar solo los token IDs y reconstruir las activaciones exactas después"* → **Token-ID Recompute** (`token_trace`)
