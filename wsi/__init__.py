@@ -137,6 +137,15 @@ from .router_cal import (
     fit_invariant_direction,
 )
 from .serve import PatchRegistry, bake_moipatch, create_hotswap_server, serve_moipatch
+from .surgery_telemetry import (
+    SURGERY_TELEMETRY_SCHEMA,
+    collision_radar,
+    diagnose_surgery_sites,
+    extract_contrastive_directions,
+    orthogonalize_against_bank,
+    probe_causal_gain_and_hydra,
+    trace_birth_death,
+)
 from .spec_eval import (
     SuffixDraftIndex,
     capture_base_drafts,
@@ -371,5 +380,12 @@ __all__ = [
     "load_gguf_into_model",
     "load_gguf_model",
     "map_gguf_name_to_hf",
+    "SURGERY_TELEMETRY_SCHEMA",
+    "collision_radar",
+    "diagnose_surgery_sites",
+    "extract_contrastive_directions",
+    "orthogonalize_against_bank",
+    "probe_causal_gain_and_hydra",
+    "trace_birth_death",
 ]
 __version__ = "0.1.0"

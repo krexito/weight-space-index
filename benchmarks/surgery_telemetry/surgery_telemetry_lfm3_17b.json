@@ -1,0 +1,809 @@
+{
+  "schema": "wsi_surgery_telemetry_v1",
+  "birth_death": {
+    "n_layers": 24,
+    "n_prompts": 2,
+    "margin_by_layer": [
+      0.001,
+      -0.0046,
+      0.0108,
+      0.0082,
+      -0.0011,
+      0.0056,
+      0.0184,
+      -0.0264,
+      -0.0029,
+      -0.0016,
+      0.0063,
+      -0.0294,
+      0.0914,
+      0.1074,
+      0.0271,
+      0.0239,
+      0.0601,
+      0.1621,
+      0.4175,
+      0.9609,
+      1.314,
+      1.8291,
+      2.3125,
+      2.5625
+    ],
+    "entropy_by_layer": [
+      11.7596,
+      11.7597,
+      11.7597,
+      11.7596,
+      11.7595,
+      11.7594,
+      11.7593,
+      11.7591,
+      11.7589,
+      11.7586,
+      11.7585,
+      11.7582,
+      11.7574,
+      11.7567,
+      11.7562,
+      11.7554,
+      11.7545,
+      11.7523,
+      11.7503,
+      11.7468,
+      11.7433,
+      11.7315,
+      11.7071,
+      11.686
+    ],
+    "resid_norm_by_layer": [
+      0.7788,
+      0.705,
+      0.8265,
+      0.9511,
+      1.1361,
+      1.4261,
+      1.7,
+      1.9912,
+      2.207,
+      2.4257,
+      2.6558,
+      2.9081,
+      3.3957,
+      3.9525,
+      4.2953,
+      4.8384,
+      5.3105,
+      6.3398,
+      7.2153,
+      8.3373,
+      9.3087,
+      11.1393,
+      12.408,
+      13.1105
+    ],
+    "birth_layer": 0,
+    "peak_layer": 23,
+    "peak_margin": 2.5625,
+    "death_layer": null,
+    "final_margin": 2.5625,
+    "final_margin_std": 0.0391,
+    "margin_fragility": 0.0
+  },
+  "causal_probe": {
+    "n_layers": 24,
+    "rel_eps": 0.05,
+    "target_rel_edit": 0.08,
+    "base_final_margin": 2.5625,
+    "per_layer": {
+      "0": {
+        "resid_norm": 0.7788,
+        "suggested_alpha": 0.0623,
+        "causal_gain": 8.9788,
+        "hydra_retention": -0.125,
+        "self_repair_ratio": 1.0,
+        "margin_leverage": -0.1562
+      },
+      "1": {
+        "resid_norm": 0.705,
+        "suggested_alpha": 0.0564,
+        "causal_gain": 10.5221,
+        "hydra_retention": 0.4867,
+        "self_repair_ratio": 0.5133,
+        "margin_leverage": -0.1562
+      },
+      "2": {
+        "resid_norm": 0.8265,
+        "suggested_alpha": 0.0661,
+        "causal_gain": 11.776,
+        "hydra_retention": 0.0148,
+        "self_repair_ratio": 0.9852,
+        "margin_leverage": -0.3125
+      },
+      "3": {
+        "resid_norm": 0.9511,
+        "suggested_alpha": 0.0761,
+        "causal_gain": 11.5917,
+        "hydra_retention": 0.139,
+        "self_repair_ratio": 0.861,
+        "margin_leverage": -0.0781
+      },
+      "4": {
+        "resid_norm": 1.1361,
+        "suggested_alpha": 0.0909,
+        "causal_gain": 11.1395,
+        "hydra_retention": 0.4958,
+        "self_repair_ratio": 0.5042,
+        "margin_leverage": 0.0
+      },
+      "5": {
+        "resid_norm": 1.4261,
+        "suggested_alpha": 0.1141,
+        "causal_gain": 8.4581,
+        "hydra_retention": 0.3423,
+        "self_repair_ratio": 0.6577,
+        "margin_leverage": 0.0781
+      },
+      "6": {
+        "resid_norm": 1.7,
+        "suggested_alpha": 0.136,
+        "causal_gain": 7.0513,
+        "hydra_retention": 0.4658,
+        "self_repair_ratio": 0.5342,
+        "margin_leverage": 0.0781
+      },
+      "7": {
+        "resid_norm": 1.9912,
+        "suggested_alpha": 0.1593,
+        "causal_gain": 6.1425,
+        "hydra_retention": 0.3152,
+        "self_repair_ratio": 0.6848,
+        "margin_leverage": -0.0781
+      },
+      "8": {
+        "resid_norm": 2.207,
+        "suggested_alpha": 0.1766,
+        "causal_gain": 6.4278,
+        "hydra_retention": 0.9397,
+        "self_repair_ratio": 0.0603,
+        "margin_leverage": -0.0781
+      },
+      "9": {
+        "resid_norm": 2.4257,
+        "suggested_alpha": 0.1941,
+        "causal_gain": 6.532,
+        "hydra_retention": 1.4825,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.2344
+      },
+      "10": {
+        "resid_norm": 2.6558,
+        "suggested_alpha": 0.2125,
+        "causal_gain": 6.1424,
+        "hydra_retention": 1.6405,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": -0.1562
+      },
+      "11": {
+        "resid_norm": 2.9081,
+        "suggested_alpha": 0.2326,
+        "causal_gain": 5.5026,
+        "hydra_retention": 1.7204,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.0
+      },
+      "12": {
+        "resid_norm": 3.3957,
+        "suggested_alpha": 0.2717,
+        "causal_gain": 5.243,
+        "hydra_retention": 1.8509,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": -0.0781
+      },
+      "13": {
+        "resid_norm": 3.9525,
+        "suggested_alpha": 0.3162,
+        "causal_gain": 4.7203,
+        "hydra_retention": 1.9358,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": -0.1562
+      },
+      "14": {
+        "resid_norm": 4.2953,
+        "suggested_alpha": 0.3436,
+        "causal_gain": 4.4344,
+        "hydra_retention": 2.0858,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.1562
+      },
+      "15": {
+        "resid_norm": 4.8384,
+        "suggested_alpha": 0.3871,
+        "causal_gain": 3.7232,
+        "hydra_retention": 1.8735,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.0781
+      },
+      "16": {
+        "resid_norm": 5.3105,
+        "suggested_alpha": 0.4248,
+        "causal_gain": 3.1808,
+        "hydra_retention": 1.6884,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.2344
+      },
+      "17": {
+        "resid_norm": 6.3398,
+        "suggested_alpha": 0.5072,
+        "causal_gain": 2.5525,
+        "hydra_retention": 1.4401,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.1562
+      },
+      "18": {
+        "resid_norm": 7.2153,
+        "suggested_alpha": 0.5772,
+        "causal_gain": 2.2695,
+        "hydra_retention": 1.3764,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.3125
+      },
+      "19": {
+        "resid_norm": 8.3373,
+        "suggested_alpha": 0.667,
+        "causal_gain": 1.8964,
+        "hydra_retention": 1.2872,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.4688
+      },
+      "20": {
+        "resid_norm": 9.3087,
+        "suggested_alpha": 0.7447,
+        "causal_gain": 1.567,
+        "hydra_retention": 1.1686,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": 0.1562
+      },
+      "21": {
+        "resid_norm": 11.1393,
+        "suggested_alpha": 0.8911,
+        "causal_gain": 1.2102,
+        "hydra_retention": 1.0452,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": -0.5469
+      },
+      "22": {
+        "resid_norm": 12.408,
+        "suggested_alpha": 0.9926,
+        "causal_gain": 1.124,
+        "hydra_retention": 1.0356,
+        "self_repair_ratio": 0.0,
+        "margin_leverage": -0.5469
+      },
+      "23": {
+        "resid_norm": 13.1105,
+        "suggested_alpha": 1.0488,
+        "causal_gain": 1.0005,
+        "hydra_retention": 0.9999,
+        "self_repair_ratio": 0.0001,
+        "margin_leverage": -0.4688
+      }
+    }
+  },
+  "top_sites": [
+    {
+      "layer": 19,
+      "surgery_score": 0.3898,
+      "resid_norm": 8.3373,
+      "suggested_alpha": 0.667,
+      "causal_gain": 1.8964,
+      "hydra_retention": 1.2872,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.4688,
+      "max_collision_cos": 0.5459,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.546)"
+      ]
+    },
+    {
+      "layer": 18,
+      "surgery_score": 0.2673,
+      "resid_norm": 7.2153,
+      "suggested_alpha": 0.5772,
+      "causal_gain": 2.2695,
+      "hydra_retention": 1.3764,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.3125,
+      "max_collision_cos": 0.5601,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.560)"
+      ]
+    },
+    {
+      "layer": 16,
+      "surgery_score": 0.2259,
+      "resid_norm": 5.3105,
+      "suggested_alpha": 0.4248,
+      "causal_gain": 3.1808,
+      "hydra_retention": 1.6884,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.2344,
+      "max_collision_cos": 0.566,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.566)"
+      ]
+    },
+    {
+      "layer": 9,
+      "surgery_score": 0.1949,
+      "resid_norm": 2.4257,
+      "suggested_alpha": 0.1941,
+      "causal_gain": 6.532,
+      "hydra_retention": 1.4825,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.2344,
+      "max_collision_cos": 0.6604,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.660)"
+      ]
+    },
+    {
+      "layer": 14,
+      "surgery_score": 0.1642,
+      "resid_norm": 4.2953,
+      "suggested_alpha": 0.3436,
+      "causal_gain": 4.4344,
+      "hydra_retention": 2.0858,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.1562,
+      "max_collision_cos": 0.5982,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.598)"
+      ]
+    },
+    {
+      "layer": 17,
+      "surgery_score": 0.1353,
+      "resid_norm": 6.3398,
+      "suggested_alpha": 0.5072,
+      "causal_gain": 2.5525,
+      "hydra_retention": 1.4401,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.1562,
+      "max_collision_cos": 0.58,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.580)"
+      ]
+    },
+    {
+      "layer": 20,
+      "surgery_score": 0.1233,
+      "resid_norm": 9.3087,
+      "suggested_alpha": 0.7447,
+      "causal_gain": 1.567,
+      "hydra_retention": 1.1686,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.1562,
+      "max_collision_cos": 0.544,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.544)"
+      ]
+    },
+    {
+      "layer": 15,
+      "surgery_score": 0.0803,
+      "resid_norm": 4.8384,
+      "suggested_alpha": 0.3871,
+      "causal_gain": 3.7232,
+      "hydra_retention": 1.8735,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.0781,
+      "max_collision_cos": 0.5683,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.568)"
+      ]
+    }
+  ],
+  "all_sites": [
+    {
+      "layer": 19,
+      "surgery_score": 0.3898,
+      "resid_norm": 8.3373,
+      "suggested_alpha": 0.667,
+      "causal_gain": 1.8964,
+      "hydra_retention": 1.2872,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.4688,
+      "max_collision_cos": 0.5459,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.546)"
+      ]
+    },
+    {
+      "layer": 18,
+      "surgery_score": 0.2673,
+      "resid_norm": 7.2153,
+      "suggested_alpha": 0.5772,
+      "causal_gain": 2.2695,
+      "hydra_retention": 1.3764,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.3125,
+      "max_collision_cos": 0.5601,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.560)"
+      ]
+    },
+    {
+      "layer": 16,
+      "surgery_score": 0.2259,
+      "resid_norm": 5.3105,
+      "suggested_alpha": 0.4248,
+      "causal_gain": 3.1808,
+      "hydra_retention": 1.6884,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.2344,
+      "max_collision_cos": 0.566,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.566)"
+      ]
+    },
+    {
+      "layer": 9,
+      "surgery_score": 0.1949,
+      "resid_norm": 2.4257,
+      "suggested_alpha": 0.1941,
+      "causal_gain": 6.532,
+      "hydra_retention": 1.4825,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.2344,
+      "max_collision_cos": 0.6604,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.660)"
+      ]
+    },
+    {
+      "layer": 14,
+      "surgery_score": 0.1642,
+      "resid_norm": 4.2953,
+      "suggested_alpha": 0.3436,
+      "causal_gain": 4.4344,
+      "hydra_retention": 2.0858,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.1562,
+      "max_collision_cos": 0.5982,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.598)"
+      ]
+    },
+    {
+      "layer": 17,
+      "surgery_score": 0.1353,
+      "resid_norm": 6.3398,
+      "suggested_alpha": 0.5072,
+      "causal_gain": 2.5525,
+      "hydra_retention": 1.4401,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.1562,
+      "max_collision_cos": 0.58,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.580)"
+      ]
+    },
+    {
+      "layer": 20,
+      "surgery_score": 0.1233,
+      "resid_norm": 9.3087,
+      "suggested_alpha": 0.7447,
+      "causal_gain": 1.567,
+      "hydra_retention": 1.1686,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.1562,
+      "max_collision_cos": 0.544,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.544)"
+      ]
+    },
+    {
+      "layer": 15,
+      "surgery_score": 0.0803,
+      "resid_norm": 4.8384,
+      "suggested_alpha": 0.3871,
+      "causal_gain": 3.7232,
+      "hydra_retention": 1.8735,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.0781,
+      "max_collision_cos": 0.5683,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.568)"
+      ]
+    },
+    {
+      "layer": 6,
+      "surgery_score": 0.039,
+      "resid_norm": 1.7,
+      "suggested_alpha": 0.136,
+      "causal_gain": 7.0513,
+      "hydra_retention": 0.4658,
+      "self_repair_ratio": 0.5342,
+      "margin_leverage": 0.0781,
+      "max_collision_cos": 0.6364,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.636)"
+      ]
+    },
+    {
+      "layer": 5,
+      "surgery_score": 0.0364,
+      "resid_norm": 1.4261,
+      "suggested_alpha": 0.1141,
+      "causal_gain": 8.4581,
+      "hydra_retention": 0.3423,
+      "self_repair_ratio": 0.6577,
+      "margin_leverage": 0.0781,
+      "max_collision_cos": 0.6129,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.613)"
+      ]
+    },
+    {
+      "layer": 4,
+      "surgery_score": 0.0,
+      "resid_norm": 1.1361,
+      "suggested_alpha": 0.0909,
+      "causal_gain": 11.1395,
+      "hydra_retention": 0.4958,
+      "self_repair_ratio": 0.5042,
+      "margin_leverage": 0.0,
+      "max_collision_cos": 0.5622,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.562)"
+      ]
+    },
+    {
+      "layer": 11,
+      "surgery_score": 0.0,
+      "resid_norm": 2.9081,
+      "suggested_alpha": 0.2326,
+      "causal_gain": 5.5026,
+      "hydra_retention": 1.7204,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": 0.0,
+      "max_collision_cos": 0.6339,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.634)"
+      ]
+    },
+    {
+      "layer": 3,
+      "surgery_score": -0.0295,
+      "resid_norm": 0.9511,
+      "suggested_alpha": 0.0761,
+      "causal_gain": 11.5917,
+      "hydra_retention": 0.139,
+      "self_repair_ratio": 0.861,
+      "margin_leverage": -0.0781,
+      "max_collision_cos": 0.6721,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.672)"
+      ]
+    },
+    {
+      "layer": 7,
+      "surgery_score": -0.035,
+      "resid_norm": 1.9912,
+      "suggested_alpha": 0.1593,
+      "causal_gain": 6.1425,
+      "hydra_retention": 0.3152,
+      "self_repair_ratio": 0.6848,
+      "margin_leverage": -0.0781,
+      "max_collision_cos": 0.6351,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.635)"
+      ]
+    },
+    {
+      "layer": 8,
+      "surgery_score": -0.0514,
+      "resid_norm": 2.207,
+      "suggested_alpha": 0.1766,
+      "causal_gain": 6.4278,
+      "hydra_retention": 0.9397,
+      "self_repair_ratio": 0.0603,
+      "margin_leverage": -0.0781,
+      "max_collision_cos": 0.6432,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.643)"
+      ]
+    },
+    {
+      "layer": 1,
+      "surgery_score": -0.0692,
+      "resid_norm": 0.705,
+      "suggested_alpha": 0.0564,
+      "causal_gain": 10.5221,
+      "hydra_retention": 0.4867,
+      "self_repair_ratio": 0.5133,
+      "margin_leverage": -0.1562,
+      "max_collision_cos": 0.8072,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.807)"
+      ]
+    },
+    {
+      "layer": 0,
+      "surgery_score": -0.0714,
+      "resid_norm": 0.7788,
+      "suggested_alpha": 0.0623,
+      "causal_gain": 8.9788,
+      "hydra_retention": -0.125,
+      "self_repair_ratio": 1.0,
+      "margin_leverage": -0.1562,
+      "max_collision_cos": 0.1707,
+      "collision_warnings": []
+    },
+    {
+      "layer": 12,
+      "surgery_score": -0.0755,
+      "resid_norm": 3.3957,
+      "suggested_alpha": 0.2717,
+      "causal_gain": 5.243,
+      "hydra_retention": 1.8509,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": -0.0781,
+      "max_collision_cos": 0.6431,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.643)"
+      ]
+    },
+    {
+      "layer": 2,
+      "surgery_score": -0.1059,
+      "resid_norm": 0.8265,
+      "suggested_alpha": 0.0661,
+      "causal_gain": 11.776,
+      "hydra_retention": 0.0148,
+      "self_repair_ratio": 0.9852,
+      "margin_leverage": -0.3125,
+      "max_collision_cos": 0.6641,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.664)"
+      ]
+    },
+    {
+      "layer": 10,
+      "surgery_score": -0.1392,
+      "resid_norm": 2.6558,
+      "suggested_alpha": 0.2125,
+      "causal_gain": 6.1424,
+      "hydra_retention": 1.6405,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": -0.1562,
+      "max_collision_cos": 0.6502,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.650)"
+      ]
+    },
+    {
+      "layer": 13,
+      "surgery_score": -0.1555,
+      "resid_norm": 3.9525,
+      "suggested_alpha": 0.3162,
+      "causal_gain": 4.7203,
+      "hydra_retention": 1.9358,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": -0.1562,
+      "max_collision_cos": 0.644,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.644)"
+      ]
+    },
+    {
+      "layer": 23,
+      "surgery_score": -0.3548,
+      "resid_norm": 13.1105,
+      "suggested_alpha": 1.0488,
+      "causal_gain": 1.0005,
+      "hydra_retention": 0.9999,
+      "self_repair_ratio": 0.0001,
+      "margin_leverage": -0.4688,
+      "max_collision_cos": 0.4861,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.486)"
+      ]
+    },
+    {
+      "layer": 21,
+      "surgery_score": -0.4146,
+      "resid_norm": 11.1393,
+      "suggested_alpha": 0.8911,
+      "causal_gain": 1.2102,
+      "hydra_retention": 1.0452,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": -0.5469,
+      "max_collision_cos": 0.5172,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.517)"
+      ]
+    },
+    {
+      "layer": 22,
+      "surgery_score": -0.4234,
+      "resid_norm": 12.408,
+      "suggested_alpha": 0.9926,
+      "causal_gain": 1.124,
+      "hydra_retention": 1.0356,
+      "self_repair_ratio": 0.0,
+      "margin_leverage": -0.5469,
+      "max_collision_cos": 0.4786,
+      "collision_warnings": [
+        "fact_readout (|cos|=0.479)"
+      ]
+    }
+  ],
+  "wall_s": 0.76,
+  "ground_truth_validation": {
+    "gt_max_recovered_by_layer": {
+      "8": 0.6977,
+      "11": 0.7054,
+      "14": 0.6822,
+      "18": 0.6744,
+      "22": 0.5271
+    },
+    "correlations": {
+      "surgery_score": {
+        "spearman_rho": 0.1,
+        "p": 0.8729,
+        "values": {
+          "8": -0.0514,
+          "11": 0.0,
+          "14": 0.1642,
+          "18": 0.2673,
+          "22": -0.4234
+        }
+      },
+      "margin_leverage": {
+        "spearman_rho": 0.1,
+        "p": 0.8729,
+        "values": {
+          "8": -0.0781,
+          "11": 0.0,
+          "14": 0.1562,
+          "18": 0.3125,
+          "22": -0.5469
+        }
+      },
+      "causal_gain": {
+        "spearman_rho": 0.9,
+        "p": 0.0374,
+        "values": {
+          "8": 6.4278,
+          "11": 5.5026,
+          "14": 4.4344,
+          "18": 2.2695,
+          "22": 1.124
+        }
+      },
+      "hydra_retention": {
+        "spearman_rho": 0.2,
+        "p": 0.7471,
+        "values": {
+          "8": 0.9397,
+          "11": 1.7204,
+          "14": 2.0858,
+          "18": 1.3764,
+          "22": 1.0356
+        }
+      },
+      "self_repair_ratio": {
+        "spearman_rho": 0.3536,
+        "p": 0.5594,
+        "values": {
+          "8": 0.0603,
+          "11": 0.0,
+          "14": 0.0,
+          "18": 0.0,
+          "22": 0.0
+        }
+      }
+    }
+  }
+}
