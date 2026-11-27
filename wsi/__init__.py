@@ -144,6 +144,7 @@ from .surgery_telemetry import (
     extract_contrastive_directions,
     orthogonalize_against_bank,
     probe_causal_gain_and_hydra,
+    probe_margin_shift,
     trace_birth_death,
 )
 from .spec_eval import (
@@ -386,6 +387,7 @@ __all__ = [
     "extract_contrastive_directions",
     "orthogonalize_against_bank",
     "probe_causal_gain_and_hydra",
+    "probe_margin_shift",
     "trace_birth_death",
 ]
 __version__ = "0.1.0"

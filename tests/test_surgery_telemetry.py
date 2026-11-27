@@ -11,6 +11,7 @@ from wsi.surgery_telemetry import (
     extract_contrastive_directions,
     orthogonalize_against_bank,
     probe_causal_gain_and_hydra,
+    probe_margin_shift,
     trace_birth_death,
 )
 
@@ -133,3 +134,15 @@ def test_diagnose_surgery_sites_end_to_end() -> None:
     by_layer = {r["layer"]: r for r in report["all_sites"]}
     assert by_layer[3]["max_collision_cos"] > 0.99
     assert len(by_layer[3]["collision_warnings"]) == 1
+
+    ms = probe_margin_shift(
+        model,
+        tok,
+        ["alpha beta gamma", "delta epsilon"],
+        ["alpha beta gamma extra", "delta epsilon extra"],
+        target_token_ids=[5, 6],
+        foil_token_ids=[7, 8],
+        device="cpu",
+    )
+    assert ms["n_pairs"] == 2
+    assert 0.0 <= ms["flip_rate_from_positive"] <= 1.0

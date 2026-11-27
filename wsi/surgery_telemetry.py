@@ -244,6 +244,65 @@ def trace_birth_death(
     }
 
 
+def probe_margin_shift(
+    model: nn.Module,
+    tok: Any,
+    base_prompts: Sequence[str],
+    perturbed_prompts: Sequence[str],
+    *,
+    target_token_ids: Sequence[int],
+    foil_token_ids: Sequence[int],
+    device: str | torch.device | None = None,
+) -> dict[str, Any]:
+    """Measure continuous decision-margin shift and flip rate under perturbation (e.g. adversarial framing).
+
+    Compares final-layer margin `max(logit[target]) - max(logit[foil])` between paired
+    `base_prompts` and `perturbed_prompts`, catching brittle 100%-rate behaviors whose
+    margin collapses under framing or noise.
+    """
+    if len(base_prompts) != len(perturbed_prompts) or len(base_prompts) == 0:
+        raise ValueError("base_prompts and perturbed_prompts must be non-empty and equal length.")
+
+    dev = _resolve_device(model, device)
+    model.eval()
+    final_norm, lm_head = _get_final_norm_and_lm_head(model)
+    tgt_idx = torch.tensor(list(target_token_ids), dtype=torch.long, device=dev)
+    foil_idx = torch.tensor(list(foil_token_ids), dtype=torch.long, device=dev)
+
+    def _final_margins(ps: Sequence[str]) -> np.ndarray:
+        enc = _tokenize_batch(tok, ps, dev)
+        h_final = _capture_last_token_hidden_states(model, enc)[-1]
+        with torch.no_grad():
+            logits = _project_to_logits(h_final, final_norm, lm_head)
+            m = (
+                logits.index_select(-1, tgt_idx).max(dim=-1).values
+                - logits.index_select(-1, foil_idx).max(dim=-1).values
+            )
+        return m.cpu().numpy()
+
+    m_base = _final_margins(base_prompts)
+    m_pert = _final_margins(perturbed_prompts)
+    delta = m_pert - m_base
+    base_pos = m_base > 0.0
+    pert_pos = m_pert > 0.0
+    n_base_pos = int(np.sum(base_pos))
+    flipped = int(np.sum(base_pos & (~pert_pos)))
+    flip_rate = float(flipped / n_base_pos) if n_base_pos > 0 else 0.0
+
+    return {
+        "n_pairs": len(base_prompts),
+        "base_margin_mean": round(float(np.mean(m_base)), 4),
+        "perturbed_margin_mean": round(float(np.mean(m_pert)), 4),
+        "margin_shift_mean": round(float(np.mean(delta)), 4),
+        "margin_shift_std": round(float(np.std(delta)), 4),
+        "base_positive_rate": round(float(np.mean(base_pos)), 4),
+        "perturbed_positive_rate": round(float(np.mean(pert_pos)), 4),
+        "flip_rate_from_positive": round(flip_rate, 4),
+        "base_fragile_frac": round(float(np.mean(np.abs(m_base) < 1.0)), 4),
+        "perturbed_fragile_frac": round(float(np.mean(np.abs(m_pert) < 1.0)), 4),
+    }
+
+
 def probe_causal_gain_and_hydra(
     model: nn.Module,
     tok: Any,
