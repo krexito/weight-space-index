@@ -1,0 +1,345 @@
+{
+ "schema": "wsi_delta_xray_v1",
+ "probe_pack_sha256": "828ad4f43c642c80",
+ "pair": {
+  "pair_id": "olmo2_7b_dpo_to_rlvr",
+  "before_repo": "allenai/OLMo-2-1124-7B-DPO",
+  "after_repo": "allenai/OLMo-2-1124-7B-Instruct",
+  "transition_type": "rlvr",
+  "family": "olmo2_7b",
+  "arch_family": "dense_mha",
+  "n_layers": 32,
+  "params_b": 7.299
+ },
+ "weight_diff": {
+  "depth_bins": [
+   0.0,
+   0.143,
+   0.286,
+   0.429,
+   0.571,
+   0.714,
+   0.857,
+   1.0
+  ],
+  "total_rel_fro": 0.00033,
+  "n_matched_params": 355,
+  "n_changed_params": 352,
+  "n_shape_mismatch_params": 0,
+  "depth_centroid": 0.501,
+  "top3_changed_layers": [
+   {
+    "layer": 0,
+    "depth": 0.0,
+    "rel_fro": 0.00067
+   },
+   {
+    "layer": 8,
+    "depth": 0.258,
+    "rel_fro": 0.00063
+   },
+   {
+    "layer": 31,
+    "depth": 1.0,
+    "rel_fro": 0.00063
+   }
+  ],
+  "role_energy_share": {
+   "mlp_out": 0.215,
+   "mlp_in": 0.411,
+   "attn_out": 0.088,
+   "attn_qkv": 0.246,
+   "norms": 0.0,
+   "embed_head": 0.041
+  },
+  "role_rel_fro": {
+   "mlp_out": 0.00062,
+   "mlp_in": 0.00058,
+   "attn_out": 0.00066,
+   "attn_qkv": 0.00071,
+   "norms": 0.0,
+   "embed_head": 8e-05
+  },
+  "layer_rel_fro_8": [
+   0.00067,
+   0.0006,
+   0.00063,
+   0.00061,
+   0.0006,
+   0.00058,
+   0.0006,
+   0.00063
+  ],
+  "layer_energy_share_8": [
+   0.031,
+   0.03,
+   0.033,
+   0.034,
+   0.031,
+   0.03,
+   0.03,
+   0.033
+  ],
+  "mlp_rel_fro_8": [
+   0.00061,
+   0.00059,
+   0.00061,
+   0.00062,
+   0.00058,
+   0.00058,
+   0.00059,
+   0.00063
+  ],
+  "mixer_rel_fro_8": [
+   0.0009,
+   0.00069,
+   0.00073,
+   0.00071,
+   0.0007,
+   0.00067,
+   0.0007,
+   0.00071
+  ],
+  "norm_rel_fro_8": [
+   1e-05,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0,
+   0.0
+  ]
+ },
+ "spectral_diff": {
+  "mlp_out": {
+   "n_mats": 32,
+   "erank_ratio_mean": 0.927,
+   "erank_ratio_8": [
+    0.925,
+    0.927,
+    0.922,
+    0.922,
+    0.928,
+    0.932,
+    0.933,
+    0.913
+   ],
+   "energy_r1_mean": 0.019,
+   "energy_r8_mean": 0.044,
+   "energy_r32_mean": 0.076,
+   "energy_r64_mean": 0.104,
+   "rank80_median": 2126.0,
+   "rank90_median": 2793.0,
+   "col_gini_mean": 0.04,
+   "col_gini_8": [
+    0.031,
+    0.034,
+    0.042,
+    0.04,
+    0.037,
+    0.039,
+    0.041,
+    0.071
+   ],
+   "cos_with_base_mean": -0.00051,
+   "top_delta_amp_ratio_mean": 1.0,
+   "base_top32_overlap_mean": 0.013,
+   "base_top32_overlap_vs_chance": 1.635
+  },
+  "mixer_out": {
+   "n_mats": 32,
+   "erank_ratio_mean": 0.77,
+   "erank_ratio_8": [
+    0.742,
+    0.767,
+    0.763,
+    0.766,
+    0.772,
+    0.778,
+    0.775,
+    0.773
+   ],
+   "energy_r1_mean": 0.038,
+   "energy_r8_mean": 0.088,
+   "energy_r32_mean": 0.142,
+   "energy_r64_mean": 0.183,
+   "rank80_median": 1393.5,
+   "rank90_median": 1925.5,
+   "col_gini_mean": 0.058,
+   "col_gini_8": [
+    0.079,
+    0.057,
+    0.059,
+    0.051,
+    0.049,
+    0.057,
+    0.064,
+    0.061
+   ],
+   "cos_with_base_mean": -0.00051,
+   "top_delta_amp_ratio_mean": 1.0,
+   "base_top32_overlap_mean": 0.011,
+   "base_top32_overlap_vs_chance": 1.42
+  }
+ },
+ "domain_shifts": {
+  "prose": {
+   "n_tokens": 487,
+   "nll_before": 3.843,
+   "nll_after": 3.875,
+   "delta_nll": 0.033,
+   "kl_top64": 0.00137,
+   "top1_agree": 0.977
+  },
+  "code": {
+   "n_tokens": 693,
+   "nll_before": 1.35,
+   "nll_after": 1.388,
+   "delta_nll": 0.038,
+   "kl_top64": 0.00196,
+   "top1_agree": 0.991
+  },
+  "math": {
+   "n_tokens": 527,
+   "nll_before": 1.568,
+   "nll_after": 1.628,
+   "delta_nll": 0.061,
+   "kl_top64": 0.00312,
+   "top1_agree": 0.981
+  },
+  "other": {
+   "n_tokens": 857,
+   "nll_before": 3.153,
+   "nll_after": 3.172,
+   "delta_nll": 0.02,
+   "kl_top64": 0.00218,
+   "top1_agree": 0.978
+  }
+ },
+ "attribution": {
+  "status": "skipped"
+ },
+ "xray_delta": {
+  "before_has_chat": true,
+  "after_has_chat": true,
+  "anatomy_deltas": {
+   "cal_nll": {
+    "before": 2.471,
+    "after": 2.506,
+    "delta": 0.035
+   },
+   "unembed_anisotropy_cos": {
+    "before": 0.463,
+    "after": 0.463,
+    "delta": 0.0
+   },
+   "massive_act_max": {
+    "before": 83.529,
+    "after": 83.479,
+    "delta": -0.05
+   },
+   "mlp_energy90_mean": {
+    "before": 0.688,
+    "after": 0.688,
+    "delta": -0.00062
+   },
+   "fisher_late_early_ratio": {
+    "before": 0.972,
+    "after": 0.937,
+    "delta": -0.035
+   },
+   "block_fisher_late_early_ratio": {
+    "before": 0.2,
+    "after": 0.195,
+    "delta": -0.005
+   },
+   "fisher_col_gini_mean": {
+    "before": 0.621,
+    "after": 0.623,
+    "delta": 0.0025
+   },
+   "fact_dla_first_quarter": {
+    "before": 0.017,
+    "after": 0.017,
+    "delta": 0.0
+   }
+  },
+  "pathology_deltas": {
+   "base_overref_rate": {
+    "before": 0.344,
+    "after": 0.344,
+    "delta": 0.0
+   },
+   "base_toxic_ref_rate": {
+    "before": 0.906,
+    "after": 0.938,
+    "delta": 0.032
+   },
+   "opening_entropy_norm": {
+    "before": 0.921,
+    "after": 0.928,
+    "delta": 0.007
+   },
+   "ctrl_opening_entropy_norm": {
+    "before": 1.0,
+    "after": 1.0,
+    "delta": 0.0
+   },
+   "auc_refusal_peak": {
+    "before": 0.946,
+    "after": 0.931,
+    "delta": -0.015
+   },
+   "auc_veto_peak": {
+    "before": 0.991,
+    "after": 0.948,
+    "delta": -0.043
+   },
+   "veto_framing_shift_to_std": {
+    "before": 0.402,
+    "after": 0.421,
+    "delta": 0.019
+   },
+   "turn1_acc": {
+    "before": 0.688,
+    "after": 0.708,
+    "delta": 0.02
+   },
+   "cave_rate_false_pushback": {
+    "before": 1.0,
+    "after": 1.0,
+    "delta": 0.0
+   },
+   "cos_syc_refusal": {
+    "before": 0.134,
+    "after": 0.071,
+    "delta": -0.063
+   },
+   "forced_rep_nll_slope": {
+    "before": 0.856,
+    "after": 0.852,
+    "delta": -0.004
+   },
+   "cos_rep_vs_copy": {
+    "before": 0.778,
+    "after": 0.778,
+    "delta": 0.0
+   },
+   "greedy_rep16_rate": {
+    "before": 0.0,
+    "after": 0.0,
+    "delta": 0.0
+   },
+   "sampled_rep16_rate": {
+    "before": 0.0,
+    "after": 0.0,
+    "delta": 0.0
+   }
+  }
+ },
+ "scan_meta": {
+  "wall_s": 147.8,
+  "wsi_commit": "fb60b62"
+ }
+}

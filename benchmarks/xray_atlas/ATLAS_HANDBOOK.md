@@ -1,6 +1,6 @@
 # WSI 3-Tome Internal Model Atlas (`wsi_atlas_v1`)
 
-Empirical internal-anatomy reference across **59 static model X-Rays (Tome 1)**, **18 controlled checkpoint transitions (Tome 2)**, and **15 GPU clinical intervention records (Tome 3)**.
+Empirical internal-anatomy reference across **72 static model X-Rays (Tome 1)**, **22 controlled checkpoint transitions (Tome 2)**, and **15 GPU clinical intervention records (Tome 3)**.
 
 ## Quick Query API (Python / CLI)
 ```python
@@ -22,23 +22,31 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 - **`intra_layer_uniformity_heads_and_experts`** (*Tome 2 Level-2 detail cards (11/11 transitions, including 1024/1024 OLMoE experts)*): Standard post-training (SFT, Instruct, DPO, RLVR, R1-Distill) spreads weight updates nearly uniformly across heads and experts within each layer (mean_head_gini 0.006-0.077; OLMoE expert_gini 0.019-0.038 with 0/1024 frozen experts). Do not waste search budget hunting 1-2 isolated heads/experts; target low-rank subspaces in down_proj / o_proj instead.
 - **`submatrix_credit_and_opening_collapse`** (*Tome 2 Level-2 submatrix attribution & tome1_curve_deltas (11/11 pairs)*): At submatrix resolution, DPO (olmo2_sft_to_dpo, -43.7 pts over-refusal) concentrates credit in down_proj/up_proj/v_proj and cuts late-layer MLP Fisher sensitivity (fisher_mlp_8[bin7] = -0.175) while preserving opening diversity (entropy 1.0 -> 0.925). By contrast, R1-Distill spikes o_proj energy to 21.6% and collapses opening_entropy_norm (0.776 -> 0.172, top_opening_share 0.228 -> 0.650).
 
-## Tome 1 — Static Model X-Ray Atlas (59 models, `tome1_xray/*.xray.json`)
+## Tome 1 — Static Model X-Ray Atlas (72 models, `tome1_xray/*.xray.json`)
 
 | Repo | Family | Size | Bytes | NLL | Fisher L/E | OverRef | Toxic | Veto AUC | Syc Cave | Rep Slope | Rep/Copy Cos |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | `allenai/OLMo-2-0325-32B-Instruct` | `dense_gqa` | 32.234B | 4513 | 2.241 | 4.188 | 0.0% | 75.0% | 1.000 | 20.0% | 0.817 | 0.699 |
 | `allenai/OLMo-2-0425-1B-Instruct` | `dense_mha` | 1.485B | 5006 | 2.832 | 1.128 | 21.9% | 84.4% | 0.958 | 100.0% | 0.846 | 0.809 |
 | `allenai/OLMo-2-0425-1B` | `dense_mha` | 1.485B | 3849 | 2.541 | 3.015 | — | — | — | — | 0.804 | 0.801 |
+| `allenai/OLMo-2-1124-7B-DPO` | `dense_mha` | 7.299B | 6977 | 2.471 | 0.972 | 34.4% | 90.6% | 0.991 | 100.0% | 0.856 | 0.778 |
+| `allenai/OLMo-2-1124-7B-Instruct` | `dense_mha` | 7.299B | 6994 | 2.506 | 0.937 | 34.4% | 93.8% | 0.948 | 100.0% | 0.852 | 0.778 |
+| `allenai/OLMo-2-1124-7B-SFT` | `dense_mha` | 7.299B | 6971 | 2.226 | 1.358 | 75.0% | 96.9% | 0.978 | 100.0% | 0.855 | 0.778 |
+| `allenai/OLMo-2-1124-7B` | `dense_mha` | 7.299B | 5466 | 2.137 | 1.745 | — | — | — | — | 0.825 | 0.763 |
 | `allenai/OLMoE-1B-7B-0125-Instruct` | `sparse_moe` | 6.919B | 5157 | 2.391 | 0.316 | 34.4% | 87.5% | 0.903 | 66.7% | 0.830 | 0.572 |
+| `BSC-LT/salamandra-2b-instruct` | `dense_mha` | 2.253B | 5069 | 2.049 | 0.106 | 0.0% | 3.1% | 0.787 | 100.0% | 0.879 | 0.744 |
 | `ByteDance/Ouro-2.6B-Thinking` | `dense_mha` | 2.668B | 6519 | 1.814 | 0.488 | 0.0% | 0.0% | 1.000 | 27.3% | 0.785 | 0.754 |
 | `ByteDance/Ouro-2.6B` | `dense_mha` | 2.668B | 6507 | 1.703 | 0.328 | 0.0% | 100.0% | 1.000 | 16.7% | 0.785 | 0.774 |
 | `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `dense_gqa` | 1.777B | 5083 | 3.315 | 0.165 | 0.0% | 0.0% | 1.000 | 0.0% | 0.771 | 0.605 |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `dense_gqa` | 7.616B | 7005 | 2.859 | 1.845 | 0.0% | 3.1% | 0.865 | 16.7% | 0.865 | 0.844 |
 | `deepseek-ai/DeepSeek-V2-Lite-Chat` | `sparse_moe` | 15.706B | 7180 | 1.961 | 92.889 | 28.1% | 56.2% | 0.827 | 48.4% | 0.886 | 0.966 |
 | `fla-hub/rwkv7-1.5B-world` | `dense_mha` | 1.527B | 5119 | 2.167 | 4.082 | 12.5% | 50.0% | 0.781 | 20.0% | 0.771 | 0.368 |
 | `Ffftdtd5dtft/gemma-2-2b-it-IQ1_S-GGUF:gemma-2-2b-it-iq1_s-imat.gguf` | `dense_gqa` | 2.614B | 5370 | 3.976 | 0.383 | 0.0% | 0.0% | 1.000 | 25.0% | 0.880 | 0.672 |
 | `unsloth/gemma-2-2b-it` | `dense_gqa` | 2.614B | 5022 | 2.467 | 1.902 | 0.0% | 0.0% | 1.000 | 100.0% | 0.925 | 0.742 |
 | `GSAI-ML/LLaDA-8B-Instruct` | `dense_mha` | 8.016B | 4743 | 15.205 | 0.240 | — | — | 0.827 | 61.5% | 0.033 | 0.849 |
 | `HuggingFaceH4/zephyr-7b-beta` | `dense_gqa` | 7.242B | 5062 | 1.843 | 0.570 | 6.2% | 0.0% | 0.860 | 70.4% | 0.857 | 0.907 |
+| `HuggingFaceTB/SmolLM2-1.7B-Instruct` | `dense_mha` | 1.711B | 5109 | 2.020 | 4.011 | 21.9% | 25.0% | 0.911 | 100.0% | 0.873 | 0.996 |
+| `HuggingFaceTB/SmolLM2-1.7B` | `dense_mha` | 1.711B | 3891 | 1.878 | 10.101 | — | — | — | — | 0.878 | 0.997 |
 | `HuggingFaceTB/SmolLM3-3B` | `dense_gqa` | 3.075B | 5073 | 2.141 | 9.522 | 3.1% | 25.0% | 0.960 | 64.5% | 0.848 | 0.998 |
 | `HuggingFaceTB/SmolVLM2-2.2B-Instruct` | `dense_mha` | 2.247B | 5106 | 2.155 | 0.032 | 0.0% | 0.0% | 0.873 | 90.9% | 0.849 | 0.998 |
 | `huihui-ai/Huihui-Qwen3-4B-abliterated-v2` | `dense_gqa` | 4.022B | 5070 | 2.284 | 0.167 | 0.0% | 0.0% | 1.000 | 10.0% | 0.854 | 0.792 |
@@ -66,6 +74,10 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `Qwen/Qwen2.5-3B-Instruct-GGUF:qwen2.5-3b-instruct-q2_k.gguf` | `dense_gqa` | 3.397B | 8873 | 2.303 | 2.732 | 0.0% | 0.0% | 1.000 | 90.0% | 0.895 | 0.643 |
 | `Qwen/Qwen2.5-3B-Instruct-GGUF:qwen2.5-3b-instruct-q4_k_m.gguf` | `dense_gqa` | 3.397B | 8801 | 1.959 | 2.058 | 0.0% | 100.0% | 1.000 | 11.1% | 0.851 | 0.998 |
 | `Qwen/Qwen2.5-3B-Instruct` | `dense_gqa` | 3.086B | 5074 | 1.929 | 2.852 | 21.9% | 68.8% | 0.890 | 18.2% | 0.854 | 0.998 |
+| `Qwen/Qwen2.5-7B-Instruct` | `dense_gqa` | 7.616B | 7074 | 1.854 | 3.879 | 0.0% | 81.2% | 0.989 | 89.5% | 0.849 | 0.801 |
+| `Qwen/Qwen2.5-7B` | `dense_gqa` | 7.616B | 7015 | 1.784 | 5.575 | 21.9% | 34.4% | 0.948 | 97.2% | 0.828 | 0.804 |
+| `Qwen/Qwen2.5-Coder-7B-Instruct` | `dense_gqa` | 7.616B | 7027 | 2.048 | 4.205 | 78.1% | 100.0% | 0.927 | 91.2% | 0.794 | 0.833 |
+| `Qwen/Qwen2.5-Math-7B-Instruct` | `dense_gqa` | 7.616B | 7097 | 3.670 | 3.457 | 65.6% | 93.8% | 0.871 | 38.5% | 0.259 | 0.846 |
 | `Qwen/Qwen2.5-Omni-3B` | `dense_gqa` | 4.703B | 5109 | 1.974 | 1.836 | 59.4% | 96.9% | 0.888 | 91.7% | 0.862 | 0.998 |
 | `Qwen/Qwen2.5-VL-3B-Instruct` | `dense_gqa` | 3.755B | 5157 | 2.028 | 4.335 | 65.6% | 96.9% | 0.883 | 84.8% | 0.856 | 0.998 |
 | `Qwen/Qwen2.5-VL-7B-Instruct` | `dense_gqa` | 8.292B | 7082 | 1.894 | 5.254 | 21.9% | 84.4% | 0.968 | 82.4% | 0.854 | 1.000 |
@@ -83,20 +95,25 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `tiiuae/falcon-mamba-7b-instruct` | `pure_mamba_ssm` | 7.273B | 4965 | 1.696 | 3.891 | 34.4% | 81.2% | 1.000 | 90.0% | 0.880 | 0.654 |
 | `unsloth/gemma-3-12b-it` | `dense_gqa` | 12.187B | 7098 | 2.199 | 1.215 | 9.4% | 9.4% | 0.960 | 58.3% | 0.912 | 0.603 |
 | `unsloth/gemma-3-4b-it` | `dense_gqa` | 4.3B | 7047 | 2.669 | 0.449 | 6.2% | 25.0% | 0.940 | 100.0% | 0.859 | 0.811 |
+| `utter-project/EuroLLM-1.7B-Instruct` | `dense_gqa` | 1.657B | 5100 | 2.073 | 0.233 | 0.0% | 0.0% | 0.771 | 85.7% | 0.884 | 0.866 |
 | `zai-org/GLM-4-32B-0414` | `dense_gqa` | 32.566B | 4545 | 1.664 | 3.347 | 0.0% | 75.0% | 1.000 | 0.0% | 0.850 | 0.994 |
 | `Zyphra/Zamba2-2.7B-instruct` | `hybrid_mamba_gqa` | 2.662B | 5208 | 1.968 | 4.077 | 34.4% | 78.1% | 0.731 | 66.7% | 0.854 | 0.667 |
 
-## Tome 2 — Delta X-Ray Transition Atlas (18 pairs, `tome2_delta/*.delta.xray.json` + Level-2 `*.delta.detail.json`)
+## Tome 2 — Delta X-Ray Transition Atlas (22 pairs, `tome2_delta/*.delta.xray.json` + Level-2 `*.delta.detail.json`)
 
 | Pair | Type | Size | Bytes | RelFro | Depth | MLP Share | MLP Rank80 | ΔMath | ΔCode | ΔProse | KL Prose | OverRef | Syc Cave |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | `llama32_3b_to_abliterated` | `abliteration` | 3.21B | 6246 | 0.011 | 0.50 | 51.8% | 1 | 0.000 | 0.002 | 0.005 | 0.002 | 0.0% | 100.0% |
+| `olmo2_7b_base_to_sft` | `sft` | 7.30B | 6236 | 0.039 | 0.52 | 63.2% | 1877 | 0.067 | 0.055 | 0.205 | 0.180 | 75.0% | 100.0% |
+| `olmo2_7b_dpo_to_rlvr` | `rlvr` | 7.30B | 6275 | 0.000 | 0.50 | 62.6% | 2126 | 0.061 | 0.038 | 0.033 | 0.001 | 34.4% | 100.0% |
+| `olmo2_7b_sft_to_dpo` | `dpo` | 7.30B | 6286 | 0.001 | 0.51 | 60.4% | 1886 | 0.336 | 0.205 | 0.220 | 0.072 | 34.4% | 100.0% |
 | `olmo2_base_to_sft` | `sft` | 1.49B | 5913 | 1.325 | 0.48 | 6.4% | 1176 | -0.018 | 0.056 | 0.417 | 0.427 | 65.6% | 100.0% |
 | `olmo2_dpo_to_rlvr` | `rlvr` | 1.49B | 6031 | 0.001 | 0.49 | 67.8% | 990 | 0.120 | 0.026 | 0.018 | 0.004 | 21.9% | 100.0% |
 | `olmo2_sft_to_dpo` | `dpo` | 1.49B | 6001 | 0.001 | 0.51 | 62.9% | 896 | 0.137 | 0.196 | 0.133 | 0.095 | 21.9% | 100.0% |
 | `olmoe_base_to_instruct` | `instruct` | 6.92B | 5996 | 0.074 | 0.52 | 94.3% | 432 | 0.622 | 0.294 | 0.500 | 0.407 | 34.4% | 66.7% |
 | `ouro_2.6b_base_to_thinking` | `reasoning_rl` | 2.67B | 5886 | 0.063 | 0.56 | 65.5% | 958 | 0.086 | 0.104 | 0.212 | 0.179 | 0.0% | 27.3% |
 | `qwen25_3b_text_to_vl` | `text_to_vlm` | 3.09B | 6230 | 0.489 | 0.53 | 63.0% | 1275 | 0.017 | 0.058 | 0.197 | 0.233 | 65.6% | 84.8% |
+| `qwen25_7b_base_to_instruct` | `instruct` | 7.62B | 6250 | 0.013 | 0.53 | 68.9% | 1782 | 0.087 | 0.035 | 0.095 | 0.044 | 0.0% | 89.5% |
 | `qwen25_base_to_coder` | `code_midtrain` | 1.54B | 5932 | 0.630 | 0.46 | 74.7% | 902 | 0.043 | -0.054 | 0.243 | 0.291 | 0.0% | 50.0% |
 | `qwen25_base_to_instruct` | `instruct` | 1.54B | 6018 | 0.010 | 0.53 | 50.7% | 774 | 0.019 | 0.031 | 0.041 | 0.029 | 75.0% | 97.4% |
 | `qwen25_base_to_math` | `math_midtrain` | 1.54B | 5936 | 1.080 | 0.45 | 72.4% | 926 | -0.084 | 0.337 | 0.967 | 0.760 | 0.0% | 11.1% |

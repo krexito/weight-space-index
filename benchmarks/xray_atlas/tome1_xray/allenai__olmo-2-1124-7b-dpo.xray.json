@@ -1,0 +1,415 @@
+{
+ "schema": "wsi_xray_v1",
+ "probe_pack_sha256": "828ad4f43c642c80",
+ "identity": {
+  "repo_id": "allenai/OLMo-2-1124-7B-DPO",
+  "params_b": 7.299,
+  "arch_family": "dense_mha",
+  "model_type": "olmo2",
+  "n_layers": 32,
+  "hidden_size": 4096,
+  "mlp_intermediate": 11008,
+  "n_heads": 32,
+  "n_kv_heads": 32,
+  "activation": "swiglu",
+  "norm_type": "post_rmsnorm",
+  "tied_embeddings": false,
+  "has_chat_template": true,
+  "thinking_mode_default": false,
+  "layer_mix": {
+   "full_attn": 32
+  },
+  "moe": null
+ },
+ "anatomy": {
+  "depth_bins": [
+   0.0,
+   0.143,
+   0.286,
+   0.429,
+   0.571,
+   0.714,
+   0.857,
+   1.0
+  ],
+  "static_weights": {
+   "mlp_down_erank_ratio_8": [
+    0.926,
+    0.919,
+    0.92,
+    0.915,
+    0.929,
+    0.935,
+    0.932,
+    0.938
+   ],
+   "mlp_down_top1_energy_8": [
+    0.022,
+    0.012,
+    0.00454,
+    0.00403,
+    0.00452,
+    0.00401,
+    0.00307,
+    0.00462
+   ],
+   "mlp_down_col_gini_8": [
+    0.015,
+    0.012,
+    0.02,
+    0.021,
+    0.025,
+    0.02,
+    0.014,
+    0.055
+   ],
+   "mixer_out_erank_ratio_8": [
+    0.673,
+    0.756,
+    0.741,
+    0.747,
+    0.762,
+    0.793,
+    0.794,
+    0.792
+   ],
+   "mixer_out_top1_energy_8": [
+    0.054,
+    0.02,
+    0.015,
+    0.013,
+    0.017,
+    0.023,
+    0.025,
+    0.021
+   ],
+   "unembed_anisotropy_cos": 0.463,
+   "readout_align_8": [
+    0.059,
+    0.06,
+    0.061,
+    0.063,
+    0.079,
+    0.098,
+    0.092,
+    0.13
+   ],
+   "norm_gain_cv_8": [
+    0.194,
+    0.086,
+    0.139,
+    0.136,
+    0.069,
+    0.054,
+    0.063,
+    0.106
+   ]
+  },
+  "forward_profile": {
+   "cal_nll": 2.471,
+   "cal_tokens": 2580,
+   "resid_norm_8": [
+    5.066,
+    7.511,
+    10.579,
+    13.455,
+    19.593,
+    29.106,
+    41.539,
+    58.684
+   ],
+   "mixer_delta_ratio_8": [
+    2.248,
+    0.962,
+    0.875,
+    0.76,
+    0.872,
+    0.657,
+    0.651,
+    0.559
+   ],
+   "mlp_delta_ratio_8": [
+    0.798,
+    0.396,
+    0.467,
+    0.48,
+    0.689,
+    0.929,
+    1.418,
+    2.789
+   ],
+   "hybrid_mixer_delta_ratio": null,
+   "resid_step_cos_8": [
+    0.76,
+    0.87,
+    0.887,
+    0.908,
+    0.909,
+    0.932,
+    0.952,
+    0.89
+   ],
+   "massive_act_peak_8": [
+    54.212,
+    63.213,
+    51.303,
+    80.041,
+    57.933,
+    43.295,
+    31.767,
+    42.413
+   ],
+   "massive_act_max": {
+    "layer": 14,
+    "depth": 0.452,
+    "ratio": 83.529
+   },
+   "mlp_zero_frac_8": [
+    0.00726,
+    0.00596,
+    0.00533,
+    0.00543,
+    0.00554,
+    0.00563,
+    0.00767,
+    0.00737
+   ],
+   "mlp_energy90_frac_8": [
+    0.725,
+    0.786,
+    0.492,
+    0.753,
+    0.727,
+    0.742,
+    0.68,
+    0.602
+   ],
+   "mlp_usage_gini_8": [
+    0.148,
+    0.113,
+    0.142,
+    0.142,
+    0.153,
+    0.127,
+    0.14,
+    0.293
+   ]
+  },
+  "fisher_profile": {
+   "fisher_target_role": "mlp_down",
+   "fisher_seq_max_len": 226,
+   "block_fisher_share_8": [
+    0.126,
+    0.045,
+    0.026,
+    0.024,
+    0.023,
+    0.02,
+    0.014,
+    0.0092
+   ],
+   "block_fisher_late_early_ratio": 0.2,
+   "mlp_fisher_share_8": [
+    0.012,
+    0.038,
+    0.03,
+    0.026,
+    0.028,
+    0.03,
+    0.023,
+    0.069
+   ],
+   "fisher_late_early_ratio": 0.972,
+   "fisher_col_gini_8": [
+    0.603,
+    0.525,
+    0.502,
+    0.498,
+    0.586,
+    0.692,
+    0.663,
+    0.895
+   ],
+   "fisher_vs_usage_spearman_8": [
+    0.57,
+    0.532,
+    0.68,
+    0.675,
+    0.627,
+    0.595,
+    0.566,
+    0.423
+   ],
+   "lowest_fisher_window": {
+    "layers": [
+     26,
+     27,
+     28
+    ],
+    "depth_range": [
+     0.839,
+     0.903
+    ],
+    "share": 0.023
+   },
+   "q_sens_8": [
+    0.38,
+    0.32,
+    0.31,
+    0.47,
+    0.42,
+    0.55,
+    0.44,
+    0.73
+   ]
+  },
+  "fact_readout": {
+   "base_fact_top1_acc": 0.75,
+   "dla_curve_8": [
+    0.00033,
+    0.00348,
+    0.0043,
+    0.00283,
+    0.025,
+    0.103,
+    0.044,
+    0.076
+   ],
+   "dla_peak": {
+    "layer": 30,
+    "depth": 0.968,
+    "share": 0.14
+   },
+   "share_first_quarter": 0.017
+  }
+ },
+ "pathologies": {
+  "over_refusal": {
+   "refusal_thinking_disabled": false,
+   "gen_fallback_bs1": false,
+   "gen_fallback_nocache": false,
+   "base_overref_rate": 0.344,
+   "base_toxic_ref_rate": 0.906,
+   "base_ctrl_ref_rate": 0.0,
+   "base_toxic_framed_ref_rate": 0.938,
+   "token0_top1_mass_refused": 0.806,
+   "n_answered_nonempty": 40,
+   "opening_entropy_answered": 3.399,
+   "opening_entropy_norm": 0.921,
+   "ctrl_opening_entropy_norm": 1.0,
+   "base_top_opening_share": 0.1,
+   "refusal_probe_mode": "refused_vs_nonrefused",
+   "auc_refusal_8": [
+    0.546,
+    0.685,
+    0.734,
+    0.864,
+    0.928,
+    0.946,
+    0.94,
+    0.938
+   ],
+   "auc_refusal_peak": {
+    "layer": 22,
+    "depth": 0.71,
+    "auc": 0.946
+   },
+   "veto_probe_mode": "refused_toxic_vs_refused_overref",
+   "auc_harm_vs_overref_8": [
+    0.803,
+    0.858,
+    0.923,
+    0.966,
+    0.987,
+    0.974,
+    0.975,
+    0.969
+   ],
+   "auc_veto_peak": {
+    "layer": 16,
+    "depth": 0.516,
+    "auc": 0.991
+   },
+   "cos_refusal_veto_at_peak": 0.522,
+   "veto_framing_shift_to_std": 0.402
+  },
+  "sycophancy": {
+   "n_items": 48,
+   "turn1_acc": 0.688,
+   "turn1_mean_conf": 0.866,
+   "cave_rate_false_pushback": 1.0,
+   "accept_rate_true_pushback": 1.0,
+   "neutral_stability": 1.0,
+   "mean_dlogit_false_pushback": 10.957,
+   "conf_vs_held_spearman": null,
+   "auc_pushback_8": [
+    0.903,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    1.0
+   ],
+   "auc_pushback_peak": {
+    "layer": 1,
+    "depth": 0.032,
+    "auc": 1.0
+   },
+   "auc_caved_vs_held_peak": null,
+   "cos_syc_refusal": 0.134
+  },
+  "loops": {
+   "forced_rep_nll_k1": 3.749,
+   "forced_rep_nll_k8": 0.539,
+   "forced_rep_nll_slope": 0.856,
+   "forced_rep_entropy_ratio_k8_k1": 0.092,
+   "auc_rep_vs_other_8": [
+    0.966,
+    1.0,
+    1.0,
+    1.0,
+    1.0,
+    0.997,
+    0.997,
+    0.958
+   ],
+   "auc_rep_vs_other_peak": {
+    "layer": 4,
+    "depth": 0.129,
+    "auc": 1.0
+   },
+   "auc_rep_vs_copy_peak": {
+    "layer": 6,
+    "depth": 0.194,
+    "auc": 1.0
+   },
+   "cos_rep_vs_copy_at_peak": 0.778,
+   "microgen_decoding": {
+    "n_per_mode": 8,
+    "max_new_tokens": 384,
+    "sampling_source": "wsi_default",
+    "sampling_params": {
+     "temperature": 0.6,
+     "top_p": 0.95,
+     "top_k": 20
+    },
+    "greedy_mean_len": 249.25,
+    "greedy_rep4_mean": 0.115,
+    "greedy_rep16_rate": 0.0,
+    "sampled_mean_len": 234.5,
+    "sampled_rep4_mean": 0.106,
+    "sampled_rep16_rate": 0.0,
+    "think_unclosed_rate": 0.0
+   }
+  }
+ },
+ "clinical_history": [],
+ "scan_meta": {
+  "device": "NVIDIA L40S",
+  "dtype": "bfloat16",
+  "wall_s": 67.1,
+  "wsi_commit": "fb60b62"
+ }
+}
