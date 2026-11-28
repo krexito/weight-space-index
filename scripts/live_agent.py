@@ -16,6 +16,7 @@ import argparse
 import json
 import os
 import queue
+import shlex
 import subprocess
 import sys
 import threading
@@ -116,6 +117,163 @@ class Repl:
             self.p = None
 
 
+class McpBridge:
+    """Persistent stdio JSON-RPC 2.0 client for `python -m wsi mcp`, isolated via `as_user` & `tool_env`."""
+
+    def __init__(self, workdir: Path, env: dict, run_as: str | None):
+        self.workdir, self.env, self.run_as = workdir, env, run_as
+        self.p = None
+        self.q: queue.Queue = queue.Queue()
+        self._req_id = 0
+        self.tools_schema: list[dict] = []
+        self.tool_names: set[str] = set()
+
+    @staticmethod
+    def _read(p, q) -> None:
+        for line in p.stdout:
+            q.put(line)
+        q.put(None)
+
+    def _rpc(self, method: str, params: dict | None, timeout: float) -> dict:
+        self._req_id += 1
+        req_id = self._req_id
+        msg: dict = {"jsonrpc": "2.0", "id": req_id, "method": method}
+        if params is not None:
+            msg["params"] = params
+        self.p.stdin.write(json.dumps(msg) + "\n")
+        self.p.stdin.flush()
+        t_end = time.time() + timeout
+        stray: list[str] = []
+        while True:
+            try:
+                line = self.q.get(timeout=max(0.1, t_end - time.time()))
+            except queue.Empty:
+                self.kill()
+                raise TimeoutError(f"MCP timeout after {timeout:.0f} s on {method}")
+            if line is None:
+                self.p = None
+                raise RuntimeError("MCP server exited unexpectedly:\n" + "".join(stray))
+            try:
+                rep = json.loads(line)
+            except json.JSONDecodeError:
+                stray.append(line)
+                continue
+            if rep.get("id") == req_id:
+                return rep
+
+    def start(self, timeout: float = 60.0) -> None:
+        self.p = subprocess.Popen(
+            as_user([sys.executable, "-u", "-m", "wsi", "mcp"], self.run_as),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=self.workdir,
+            env=self.env,
+            bufsize=1,
+        )
+        self.q = queue.Queue()
+        threading.Thread(target=self._read, args=(self.p, self.q), daemon=True).start()
+        self._rpc("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "live_agent", "version": "0.1"}}, timeout)
+        self.p.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+        self.p.stdin.flush()
+        listed = self._rpc("tools/list", {}, timeout)
+        mcp_tools = (listed.get("result") or {}).get("tools") or []
+        self.tools_schema = [
+            {
+                "type": "function",
+                "function": {
+                    "name": t["name"],
+                    "description": t.get("description", ""),
+                    "parameters": t.get("inputSchema", {"type": "object", "properties": {}}),
+                },
+            }
+            for t in mcp_tools
+        ]
+        self.tool_names = {t["name"] for t in mcp_tools}
+
+    def call(self, name: str, arguments: dict, timeout: float = 300.0) -> str:
+        if self.p is None or self.p.poll() is not None:
+            self.start()
+        try:
+            rep = self._rpc("tools/call", {"name": name, "arguments": arguments}, timeout)
+        except Exception as e:
+            return f"MCP ERROR: {e}"
+        if "error" in rep:
+            return f"MCP JSON-RPC ERROR: {rep['error']}"
+        res = rep.get("result") or {}
+        parts = [c.get("text", "") for c in (res.get("content") or []) if c.get("type") == "text"]
+        text = "\n".join(parts)
+        return ("MCP TOOL ERROR:\n" + text) if res.get("isError") else text
+
+    def kill(self) -> None:
+        if self.p is not None:
+            self.p.kill()
+            self.p = None
+
+
+VERIFY_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "verify_patch",
+        "description": "Run the fast deterministic dev verifier on a .moipatch inside the work folder.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "patch_path": {"type": "string", "description": "Relative path to .moipatch inside workdir (e.g. out/patch.moipatch)"},
+                "full": {"type": "boolean", "description": "Run on full dev split instead of fast subset (default false)"},
+            },
+            "required": ["patch_path"],
+        },
+    },
+}
+
+
+def run_verifier(
+    cmd_template: str,
+    workdir: Path,
+    env: dict,
+    run_as: str | None,
+    patch_path: str,
+    full: bool,
+    timeout: float,
+) -> str:
+    if not patch_path or "\x00" in patch_path:
+        return "ERROR: invalid patch_path"
+    wd_res = workdir.resolve()
+    resolved = (wd_res / patch_path).resolve()
+    try:
+        resolved.relative_to(wd_res)
+    except ValueError:
+        return f"ERROR: patch_path escapes workdir: {patch_path}"
+    if not resolved.is_file():
+        return f"ERROR: patch file not found: {patch_path}"
+
+    raw_tokens = shlex.split(cmd_template, posix=(os.name != "nt"))
+    argv: list[str] = []
+    has_full_flag = False
+    for tok in raw_tokens:
+        if os.name == "nt" and len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in ('"', "'"):
+            tok = tok[1:-1]
+        if tok == "{extra}":
+            if full:
+                argv.append("--full")
+                has_full_flag = True
+            continue
+        argv.append(tok.replace("{patch}", str(resolved)))
+    if full and not has_full_flag:
+        argv.append("--full")
+
+    t0 = time.time()
+    try:
+        r = subprocess.run(
+            as_user(argv, run_as), cwd=wd_res, env=env, capture_output=True, text=True, timeout=timeout
+        )
+        return f"exit {r.returncode} ({time.time() - t0:.1f} s)\n{r.stdout}{r.stderr}"
+    except subprocess.TimeoutExpired as e:
+        return f"TIMEOUT after {timeout:.0f} s\n{e.stdout or ''}{e.stderr or ''}"
+
+
 def run_bash(command: str, workdir: Path, env: dict, run_as: str | None, timeout: float, shell: str = "bash") -> str:
     t0 = time.time()
     try:
@@ -159,6 +317,8 @@ def main(argv=None) -> None:
     ap.add_argument("--run-as", default=None, help="Linux user that runs the tools (Colab: a non-root user)")
     ap.add_argument("--temperature", type=float, default=0.3)
     ap.add_argument("--shell", default="bash")
+    ap.add_argument("--enable-wsi-mcp", action="store_true", help="Expose the 22 WSI MCP tools via `python -m wsi mcp`")
+    ap.add_argument("--verifier-cmd", default=None, help="Command template containing `{patch}` for `verify_patch` tool")
     a = ap.parse_args(argv)
 
     key = os.environ.get(a.key_env)
@@ -167,14 +327,31 @@ def main(argv=None) -> None:
     workdir = Path(a.workdir).resolve()
     env = tool_env([a.key_env])
     repl = Repl(workdir, env, a.run_as)
+    mcp = McpBridge(workdir, env, a.run_as) if a.enable_wsi_mcp else None
+    tools_list = list(TOOLS)
+    if mcp is not None:
+        mcp.start()
+        tools_list.extend(mcp.tools_schema)
+    if a.verifier_cmd:
+        tools_list.append(VERIFY_TOOL)
+
     deadline = time.time() + a.time_limit_min * 60
+    extra_notes = []
+    if mcp is not None:
+        extra_notes.append(f"You also have {len(mcp.tools_schema)} WSI MCP tools (`wsi_*`) connected.")
+    if a.verifier_cmd:
+        extra_notes.append("You have a deterministic dev verifier tool `verify_patch` to test candidate `.moipatch` files.")
     system = ("You are an autonomous engineer working alone on a GPU machine. Work only through the tools. Be "
               "efficient: plan, run experiments, read their results, and iterate. Nobody will answer questions. "
               f"You have {a.time_limit_min:.0f} minutes and {a.max_turns} tool turns in total. Each user message "
-              "after a tool result reports the time left.")
+              "after a tool result reports the time left."
+              + (" " + " ".join(extra_notes) if extra_notes else ""))
     msgs = [{"role": "system", "content": system}, {"role": "user", "content": Path(a.task).read_text(encoding="utf-8")}]
     log = open(a.log, "a", encoding="utf-8")
     usage = {"prompt_tokens": 0, "completion_tokens": 0, "cost": 0.0}
+    tool_counts: dict[str, int] = {}
+    mcp_calls = 0
+    verify_calls = 0
     t0, turns, nudges, end, final = time.time(), 0, 0, None, None
     warned = False
 
@@ -190,7 +367,7 @@ def main(argv=None) -> None:
             if turns >= a.max_turns:
                 end = "turn_limit"
                 break
-            body = {"model": a.model, "messages": msgs, "tools": TOOLS, "temperature": a.temperature,
+            body = {"model": a.model, "messages": msgs, "tools": tools_list, "temperature": a.temperature,
                     "usage": {"include": True}}
             out = chat(a.base_url, key, body)
             u = out.get("usage") or {}
@@ -213,6 +390,7 @@ def main(argv=None) -> None:
             for c in calls:
                 turns += 1
                 name = c["function"]["name"]
+                tool_counts[name] = tool_counts.get(name, 0) + 1
                 try:
                     args = json.loads(c["function"].get("arguments") or "{}")
                 except json.JSONDecodeError as e:
@@ -224,12 +402,22 @@ def main(argv=None) -> None:
                                        min(float(args.get("timeout_s") or 600), left), a.shell)
                     elif name == "python":
                         res = repl.run(args.get("code", ""), min(float(args.get("timeout_s") or 900), left))
+                    elif name == "verify_patch" and a.verifier_cmd:
+                        verify_calls += 1
+                        res = run_verifier(
+                            a.verifier_cmd, workdir, env, a.run_as,
+                            str(args.get("patch_path", "")), bool(args.get("full", False)),
+                            min(600.0, left),
+                        )
+                    elif mcp is not None and name in mcp.tool_names:
+                        mcp_calls += 1
+                        res = mcp.call(name, args, timeout=min(600.0, left))
                     elif name == "finish":
                         end, final = "finish", args.get("summary", "")
                         res = "Finished."
                     else:
                         res = f"Unknown tool {name}"
-                shown = name if name == "finish" else f"{name}: {clip(args.get('command') or args.get('code') or '', 300)}"
+                shown = name if name == "finish" else f"{name}: {clip(args.get('command') or args.get('code') or json.dumps(args), 300)}"
                 print(f"[{(time.time() - t0) / 60:.1f} min, turn {turns}] {shown}\n  -> {clip(res, 500)}", flush=True)
                 write({"type": "tool", "name": name, "args": args, "result": clip(res, 20000)})
                 msgs.append({"role": "tool", "tool_call_id": c["id"], "content": clip(res)})
@@ -242,8 +430,11 @@ def main(argv=None) -> None:
                 msgs.append({"role": "user", "content": note})
     finally:
         repl.kill()
+        if mcp is not None:
+            mcp.kill()
         summ = {"model": a.model, "end": end, "turns": turns, "wall_min": round((time.time() - t0) / 60, 2),
-                **usage, "cost": round(usage["cost"], 4), "final_summary": final}
+                **usage, "cost": round(usage["cost"], 4), "tool_counts": tool_counts,
+                "mcp_calls": mcp_calls, "verify_calls": verify_calls, "final_summary": final}
         Path(a.summary).write_text(json.dumps(summ, indent=1, ensure_ascii=False), encoding="utf-8")
         write({"type": "end", **summ})
         log.close()

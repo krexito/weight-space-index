@@ -514,7 +514,7 @@ def test_discover_compact_circuit() -> None:
                 "wsi_trace_direction_graph",
                 "wsi_peel_causal_circuit",
             }.issubset(t_names)
-            assert len(t_names) == 22  # the full list is pinned in tests/test_mcp_server.py
+            assert len(t_names) == 26  # the full list is pinned in tests/test_mcp_server.py
 
             mcp_dc = handle_rpc_message({
                 "jsonrpc": "2.0", "id": 11, "method": "tools/call",

@@ -25,7 +25,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from .capture import _is_linear, find_blocks, find_mlps, trace_all
+from .capture import (
+    _is_excluded_backbone_path,
+    _is_float_weight,
+    _is_linear,
+    _is_routed_expert_path,
+    find_blocks,
+    find_mlps,
+    trace_all,
+)
+from .moipatch import _expected_block_passes
 
 _E2M1_POS = (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0)
 _POW3 = (1, 3, 9, 27, 81)
@@ -289,6 +298,11 @@ def _layer_idx_from_name(name: str) -> int | None:
     return int(m.group(1)) if m else None
 
 
+_ATTN_OUT_SUFFIXES = (".o_proj", ".out_proj", ".c_proj", ".wo", ".w_o", ".wo_ud", ".proj_out")
+_CONV_PATH_TOKENS = (".conv.", ".short_conv.", ".post_attn_conv.")
+_CONV_OUT_SUFFIXES = (".proj", ".out", ".linear", ".w_out")
+
+
 def _infer_attn_heads(model: nn.Module, out_proj_name: str, d_in: int) -> int:
     mods = dict(model.named_modules())
     parent_name = out_proj_name.rsplit(".", 1)[0] if "." in out_proj_name else ""
@@ -302,7 +316,7 @@ def _infer_attn_heads(model: nn.Module, out_proj_name: str, d_in: int) -> int:
             hd = getattr(parent, hd_attr, None)
             if isinstance(hd, int) and hd > 0 and d_in % hd == 0:
                 return d_in // hd
-    if ".conv." in out_proj_name or ".short_conv." in out_proj_name or out_proj_name.startswith(("conv.", "short_conv.")):
+    if any(tok in out_proj_name for tok in _CONV_PATH_TOKENS) or out_proj_name.startswith(("conv.", "short_conv.", "post_attn_conv.")):
         return 1
     cfg = getattr(getattr(model, "config", None), "text_config", getattr(model, "config", None))
     if cfg is not None:
@@ -317,13 +331,41 @@ def _infer_attn_heads(model: nn.Module, out_proj_name: str, d_in: int) -> int:
     return 1
 
 
+def _infer_hidden_size(model: nn.Module, mlps: list | None = None, attns: dict | None = None) -> int:
+    mods = dict(model.named_modules())
+    if mlps:
+        d0 = mods[mlps[0].down]
+        return int(d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1])
+    cfg = getattr(getattr(model, "config", None), "text_config", getattr(model, "config", None))
+    if cfg is not None:
+        for attr in ("hidden_size", "d_model", "n_embd"):
+            v = getattr(cfg, attr, None)
+            if isinstance(v, int) and v > 0:
+                return int(v)
+    emb = model.get_input_embeddings() if hasattr(model, "get_input_embeddings") else None
+    if emb is not None and isinstance(getattr(emb, "weight", None), torch.Tensor) and emb.weight.dim() == 2:
+        return int(emb.weight.shape[1])
+    if attns:
+        first_m = next(iter(attns.values()))[0]
+        return int(first_m.weight.shape[0] if isinstance(first_m, nn.Linear) else first_m.weight.shape[1])
+    raise ValueError("Cannot infer hidden_size from model without dense MLPs, config.hidden_size, embeddings, or attn projections")
+
+
 def _find_attn_out_projs(model: nn.Module, hidden: int) -> dict[str, tuple[nn.Module, int]]:
     out = {}
     for n, m in model.named_modules():
-        if "mtp" in n or "visual" in n or not _is_linear(m):
+        if _is_excluded_backbone_path(n) or _is_routed_expert_path(n):
             continue
-        if n.endswith((".o_proj", ".out_proj", ".c_proj")) and ".mlp." not in n:
-            nh = _infer_attn_heads(model, n, m.weight.shape[1] if isinstance(m, nn.Linear) else m.weight.shape[0])
+        if not _is_linear(m) or not _is_float_weight(m):
+            continue
+        is_attn_suffix = n.endswith(_ATTN_OUT_SUFFIXES) and ".mlp." not in n and ".moe." not in n
+        is_conv_suffix = any(tok in n for tok in _CONV_PATH_TOKENS) and n.endswith(_CONV_OUT_SUFFIXES)
+        if is_attn_suffix or is_conv_suffix:
+            out_dim = int(m.weight.shape[0] if isinstance(m, nn.Linear) else m.weight.shape[1])
+            if hidden > 0 and out_dim != hidden:
+                continue
+            in_dim = int(m.weight.shape[1] if isinstance(m, nn.Linear) else m.weight.shape[0])
+            nh = _infer_attn_heads(model, n, in_dim)
             out[n] = (m, nh)
     return out
 
@@ -479,7 +521,17 @@ def _linearize_final_norm_span(
 
 
 def _find_final_norm_module(model: nn.Module) -> nn.Module | None:
-    for root in (getattr(model, "model", None), getattr(model, "transformer", None), model):
+    inner = getattr(model, "model", None)
+    lm = getattr(model, "language_model", None)
+    roots = (
+        getattr(inner, "language_model", None) if isinstance(inner, nn.Module) else None,
+        lm,
+        getattr(lm, "model", None) if isinstance(lm, nn.Module) else None,
+        inner,
+        getattr(model, "transformer", None),
+        model,
+    )
+    for root in roots:
         if not isinstance(root, nn.Module):
             continue
         for attr in ("norm", "embedding_norm", "ln_f", "final_layernorm", "norm_f"):
@@ -492,7 +544,7 @@ def _find_final_norm_module(model: nn.Module) -> nn.Module | None:
 def _writer_kind(mod_name: str, is_mlp: bool) -> str:
     if is_mlp:
         return "mlp"
-    if ".conv." in mod_name or ".short_conv." in mod_name or mod_name.startswith(("conv.", "short_conv.")):
+    if any(tok in mod_name for tok in _CONV_PATH_TOKENS) or mod_name.startswith(("conv.", "short_conv.", "post_attn_conv.")):
         return "conv"
     return "attn"
 
@@ -1117,8 +1169,7 @@ def capture_compact(
         li = _layer_idx_from_name(g.down)
         mlp_by_down[g.down] = li if li is not None else len(mlp_by_down)
 
-    d0 = mods[mlps[0].down]
-    hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
+    hidden = _infer_hidden_size(model, mlps)
     attns = _find_attn_out_projs(model, hidden)
     if dir_mode:
         tdir_cpu: torch.Tensor | None = _validate_target_dir(target_dir, hidden, normalize=False)  # type: ignore[arg-type]
@@ -1220,21 +1271,17 @@ def capture_compact(
 
         handles.append(m.register_forward_hook(mhook))
 
+    head_x_passes: dict[str, list[torch.Tensor]] = {}
     for aname, (am, nh) in attns.items():
         li = _layer_idx_from_name(aname)
 
         def ahook(mod, inp, out, aname=aname, li=li, nh=nh):
             x = inp[0].detach().reshape(-1, inp[0].shape[-1]).float()
+            head_x_passes.setdefault(aname, []).append(x.cpu())
             w = mod.weight.detach().to(x.device, dtype=torch.float32)
             wh = w.t().reshape(nh, -1, w.shape[0]) if isinstance(mod, nn.Linear) else w.reshape(nh, -1, w.shape[1])
             l2 = torch.einsum("thd,hdo->tho", x.reshape(x.shape[0], nh, -1), wh).norm(dim=2)
-            h_entry: dict[str, Any] = {"layer": li, "n_heads": nh, "l2": l2.to(torch.float16).cpu()}
-            if head_quant != "norm":
-                h_enc = _encode_resid(x, head_quant, group_size, hadamard_block)
-                h_entry["data"] = h_enc["data"]
-                h_entry["scales"] = h_enc["scales"]
-                h_entry["shape"] = h_enc["shape"]
-            head_out[aname] = h_entry
+            head_out[aname] = {"layer": li, "n_heads": nh, "l2": l2.to(torch.float16).cpu()}
 
         handles.append(am.register_forward_hook(ahook))
 
@@ -1248,6 +1295,7 @@ def capture_compact(
                 mlp_topk_out.clear()
                 mlp_meta_out.clear()
                 head_out.clear()
+                head_x_passes.clear()
                 if top_k_attn > 0:
                     try:
                         out = model(input_ids=ids.to(dev), use_cache=capture_cache)
@@ -1256,12 +1304,22 @@ def capture_compact(
                         mlp_topk_out.clear()
                         mlp_meta_out.clear()
                         head_out.clear()
+                        head_x_passes.clear()
                         out = model(input_ids=ids.to(dev), use_cache=False)
                 else:
                     out = model(input_ids=ids.to(dev), use_cache=False)
     finally:
         for h in handles:
             h.remove()
+
+    if head_quant != "norm":
+        for aname, xs in head_x_passes.items():
+            if aname in head_out and xs:
+                x_cat = torch.cat(xs, dim=0) if len(xs) > 1 else xs[0]
+                h_enc = _encode_resid(x_cat.to(dev), head_quant, group_size, hadamard_block)
+                head_out[aname]["data"] = h_enc["data"]
+                head_out[aname]["scales"] = h_enc["scales"]
+                head_out[aname]["shape"] = h_enc["shape"]
 
     attn_topk_out: dict[int, dict[str, torch.Tensor]] = {}
     if top_k_attn > 0 and out is not None:
@@ -1389,9 +1447,12 @@ def capture_compact(
             tok_targets: torch.Tensor | None = None,
             tok_contrasts: torch.Tensor | None = None,
         ) -> tuple[dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor], dict[str, torch.Tensor], float]:
-            st_h: dict[str, torch.Tensor] = {}
-            st_y: dict[str, torch.Tensor] = {}
-            st_g: dict[str, torch.Tensor] = {}
+            st_h_passes: dict[str, list[torch.Tensor]] = {}
+            st_y_passes: dict[str, list[torch.Tensor]] = {}
+            st_g_passes: dict[str, dict[int, torch.Tensor]] = {}
+            fwd_counts: dict[str, int] = {}
+            recomp_cursor: dict[str, int] = {}
+            state: dict[str, bool] = {"in_backward": False}
             emb_state: dict[str, torch.Tensor] = {}
             ghandles = []
 
@@ -1433,24 +1494,44 @@ def capture_compact(
                 mod = meta_m["mod"]
 
                 def _mod_hook(_m, inp, mod_out, mk=mk):
-                    if capture_acts and mk not in st_h:
-                        x_in = inp[0] if isinstance(inp, tuple) else inp
-                        st_h[mk] = (x_in[0] if x_in.dim() == 3 else x_in).detach().float().cpu()
                     t = mod_out[0] if isinstance(mod_out, tuple) else mod_out
-                    if capture_acts and mk not in st_y:
-                        st_y[mk] = (t[0] if t.dim() == 3 else t).detach().float().cpu()
-                    if torch.is_grad_enabled() and isinstance(t, torch.Tensor):
-                        need_replace = False
-                        if not t.requires_grad:
-                            t = t.detach().requires_grad_(True)
-                            need_replace = True
+                    if not state["in_backward"]:
+                        p_idx = fwd_counts.get(mk, 0)
+                        fwd_counts[mk] = p_idx + 1
+                        if capture_acts:
+                            x_in = inp[0] if isinstance(inp, tuple) else inp
+                            st_h_passes.setdefault(mk, []).append((x_in[0] if x_in.dim() == 3 else x_in).detach().float().cpu())
+                            if isinstance(t, torch.Tensor):
+                                st_y_passes.setdefault(mk, []).append((t[0] if t.dim() == 3 else t).detach().float().cpu())
+                        if torch.is_grad_enabled() and isinstance(t, torch.Tensor):
+                            need_replace = False
+                            if not t.requires_grad:
+                                t = t.detach().requires_grad_(True)
+                                need_replace = True
 
-                        def _save_g(grad, mk=mk):
-                            st_g[mk] = (grad[0] if grad.dim() == 3 else grad).detach().float().cpu()
+                            def _save_g(grad, mk=mk, p_idx=p_idx):
+                                st_g_passes.setdefault(mk, {})[p_idx] = (grad[0] if grad.dim() == 3 else grad).detach().float().cpu()
 
-                        t.register_hook(_save_g)
-                        if need_replace:
-                            return (t, *mod_out[1:]) if isinstance(mod_out, tuple) else t
+                            t.register_hook(_save_g)
+                            if need_replace:
+                                return (t, *mod_out[1:]) if isinstance(mod_out, tuple) else t
+                    else:
+                        p_idx = recomp_cursor.get(mk, max(0, fwd_counts.get(mk, 1) - 1))
+                        recomp_cursor[mk] = max(0, p_idx - 1)
+                        if torch.is_grad_enabled() and isinstance(t, torch.Tensor):
+                            need_replace = False
+                            if not t.requires_grad:
+                                t = t.detach().requires_grad_(True)
+                                need_replace = True
+
+                            def _save_g_recomp(grad, mk=mk, p_idx=p_idx):
+                                st_g_passes.setdefault(mk, {}).setdefault(
+                                    p_idx, (grad[0] if grad.dim() == 3 else grad).detach().float().cpu()
+                                )
+
+                            t.register_hook(_save_g_recomp)
+                            if need_replace:
+                                return (t, *mod_out[1:]) if isinstance(mod_out, tuple) else t
                     return mod_out
 
                 ghandles.append(mod.register_forward_hook(_mod_hook))
@@ -1474,7 +1555,13 @@ def capture_compact(
 
                                 target_hooks.append(blocks[0].register_forward_pre_hook(_t_pre_hook))
                             else:
-                                def _t_blk_hook(_m, _inp, blk_out):
+                                exp_passes = _expected_block_passes(model, dir_stop_blk)
+                                seen_stop = [0]
+
+                                def _t_blk_hook(_m, _inp, blk_out, exp_passes=exp_passes, seen_stop=seen_stop):
+                                    seen_stop[0] += 1
+                                    if seen_stop[0] < exp_passes:
+                                        return
                                     captured_h["saw_stop"] = True
                                     t = blk_out[0] if isinstance(blk_out, (tuple, list)) else blk_out
                                     if torch.is_grad_enabled() and isinstance(t, torch.Tensor) and t.requires_grad:
@@ -1508,11 +1595,11 @@ def capture_compact(
                         if "val" in captured_h:
                             h_t = captured_h["val"]
                         elif dir_use_final:
-                            if hs is None or len(hs) <= n_layers:
+                            if hs is None or len(hs) < n_layers + 1:
                                 raise RuntimeError(
                                     f"Model did not return hidden_states[{n_layers}] needed for target_layer={dir_layer_label}"
                                 )
-                            h_t = hs[n_layers]
+                            h_t = hs[-1]
                         elif dir_stop_blk == -1:
                             if hs is None or len(hs) == 0:
                                 raise RuntimeError("Model did not return hidden_states[0] for target_layer=0")
@@ -1536,6 +1623,7 @@ def capture_compact(
                         obj_val = float(dir_score_t.detach().item())
                         obj = sign * dir_score_t
                         if obj.requires_grad:
+                            state["in_backward"] = True
                             obj.backward()
                     elif objective == "logit_margin":
                         logits = _tail_logits(model, ids_dev, lo)[: hi - lo].float()
@@ -1555,6 +1643,7 @@ def capture_compact(
                         obj_val = float(margin.detach().item())
                         obj = sign * margin
                         if obj.requires_grad:
+                            state["in_backward"] = True
                             obj.backward()
                     else:
                         logits = _tail_logits(model, ids_dev, lo)[: hi - lo].float()
@@ -1562,6 +1651,7 @@ def capture_compact(
                         obj = sign * lp.mean()
                         obj_val = float(lp.mean().detach().item())
                         if obj.requires_grad:
+                            state["in_backward"] = True
                             obj.backward()
             finally:
                 for th in target_hooks:
@@ -1572,8 +1662,26 @@ def capture_compact(
                 if dev.type == "cuda":
                     torch.cuda.empty_cache()
 
-            for mk in grad_mods:
-                if mk in st_y and mk not in st_g:
+            st_h: dict[str, torch.Tensor] = {}
+            st_y: dict[str, torch.Tensor] = {}
+            st_g: dict[str, torch.Tensor] = {}
+            for mk, meta_m in grad_mods.items():
+                P = fwd_counts.get(mk, 0)
+                if P < 1:
+                    continue
+                if capture_acts and mk in st_h_passes and st_h_passes[mk]:
+                    st_h[mk] = torch.cat(st_h_passes[mk], dim=0) if len(st_h_passes[mk]) > 1 else st_h_passes[mk][0]
+                if capture_acts and mk in st_y_passes and st_y_passes[mk]:
+                    st_y[mk] = torch.cat(st_y_passes[mk], dim=0) if len(st_y_passes[mk]) > 1 else st_y_passes[mk][0]
+                mod_m = meta_m["mod"]
+                D_m = int(st_y[mk].shape[-1]) if mk in st_y else int(
+                    mod_m.weight.shape[0] if isinstance(mod_m, nn.Linear) else mod_m.weight.shape[1]
+                )
+                g_map = st_g_passes.get(mk, {})
+                if g_map:
+                    g_list = [g_map[p] if p in g_map else torch.zeros((T, D_m), dtype=torch.float32) for p in range(P)]
+                    st_g[mk] = torch.cat(g_list, dim=0) if len(g_list) > 1 else g_list[0]
+                elif mk in st_y:
                     st_g[mk] = torch.zeros_like(st_y[mk])
             tok_attr: dict[str, torch.Tensor] = {}
             if capture_acts and "x" in emb_state and "g" in emb_state:
@@ -1635,10 +1743,15 @@ def capture_compact(
                 ).float()
 
                 n_h_count = max(1, hi_h - lo_h)
-                y_h_mean = y_act[lo_h:hi_h].mean(dim=0, keepdim=True) if hi_h > lo_h else torch.zeros((1, D), dtype=torch.float32)
-                h_h_mean = h_act[lo_h:hi_h].mean(dim=0, keepdim=True) if hi_h > lo_h else torch.zeros((1, U), dtype=torch.float32)
-                y_centered = y_act - y_h_mean
-                h_centered = h_act - h_h_mean
+                P = int(y_act.shape[0] // T) if (T > 0 and y_act.shape[0] % T == 0) else 1
+                P = max(1, P)
+                y_p = y_act.reshape(P, T, D)
+                h_p = h_act.reshape(P, T, U)
+                g_t_p = g_t.reshape(P, T, D)
+                y_h_mean_p = y_p[:, lo_h:hi_h, :].mean(dim=1, keepdim=True) if hi_h > lo_h else torch.zeros((P, 1, D), dtype=torch.float32)
+                h_h_mean_p = h_p[:, lo_h:hi_h, :].mean(dim=1, keepdim=True) if hi_h > lo_h else torch.zeros((P, 1, U), dtype=torch.float32)
+                y_centered = (y_p - y_h_mean_p).reshape(P * T, D)
+                h_centered = (h_p - h_h_mean_p).reshape(P * T, U)
 
                 g_t_w = (g_t.to(device=w_dev, dtype=torch.float32) @ w_lin_f32).cpu()
                 neuron_supp_attr = (g_t_w * h_act).sum(dim=0).float()
@@ -1646,16 +1759,18 @@ def capture_compact(
                 if hi_h > lo_h:
                     g_h_w = (g_h.to(device=w_dev, dtype=torch.float32) @ w_lin_f32).cpu()
                     neuron_dnll_attr = (-(g_h_w * h_act).sum(dim=0).float())
-                    neuron_fisher_attr = (float(n_h_count) * ((g_h_w * h_act) ** 2).sum(dim=0)).float()
+                    per_tok_h = (g_h_w * h_act).reshape(P, T, U).sum(dim=0)
+                    neuron_fisher_attr = (float(n_h_count) * (per_tok_h * per_tok_h).sum(dim=0)).float()
                 else:
                     neuron_dnll_attr = torch.zeros(U, dtype=torch.float32)
                     neuron_fisher_attr = torch.zeros(U, dtype=torch.float32)
                 del w_lin_f32
 
                 y_sq_tok = (y_act * y_act).sum(dim=1, keepdim=True) / max(1, D)
-                y_healthy_rms_sq = float(y_sq_tok[lo_h:hi_h].mean().item()) if hi_h > lo_h else float(y_sq_tok.mean().item())
+                y_sq_p = y_sq_tok.reshape(P, T, 1)
+                y_healthy_rms_sq = float(y_sq_p[:, lo_h:hi_h, :].mean().item()) if hi_h > lo_h else float(y_sq_p.mean().item())
                 if hi_h > lo_h:
-                    g_h_scaled = g_h * y_sq_tok.clamp_min(0.0).sqrt()
+                    g_h_scaled_tok = (g_h.reshape(P, T, D) * y_sq_p.clamp_min(0.0).sqrt()).sum(dim=0)
 
                 # Restrict curvature eigendecomposition to the gradient-active subspace via thin SVD
                 # when T <= D (or GPU Gram eigh otherwise), avoiding D x D CPU eigendecompositions.
@@ -1691,7 +1806,7 @@ def capture_compact(
                     C_tc_sub = 0.5 * (gt_q.t() @ yc_q + yc_q.t() @ gt_q)
                     if hi_h > lo_h:
                         gh_q = g_h @ Q
-                        ghs_q = g_h_scaled @ Q
+                        ghs_q = g_h_scaled_tok @ Q
                         C_h_sub = 0.5 * (gh_q.t() @ y_q + y_q.t() @ gh_q)
                         fh_raw = float(n_h_count) * (ghs_q.t() @ ghs_q)
                         F_h_sub = 0.5 * (fh_raw + fh_raw.t())
@@ -1749,14 +1864,14 @@ def capture_compact(
                 pareto_eigvecs = torch.stack(p_vecs, dim=0) if p_vecs else torch.empty((0, D), dtype=torch.float32)
 
                 paired_diff = (
-                    (y_act[lo_t:hi_t].mean(dim=0) - y_act[lo_h:hi_h].mean(dim=0)).float()
+                    (y_p[:, lo_t:hi_t, :].mean(dim=1) - y_p[:, lo_h:hi_h, :].mean(dim=1)).sum(dim=0).float()
                     if (hi_h > lo_h and (not protect_mode or (lo_h, hi_h) != (lo_t, hi_t)))
-                    else y_act[lo_t:hi_t].mean(dim=0).float()
+                    else y_p[:, lo_t:hi_t, :].mean(dim=1).sum(dim=0).float()
                 )
                 u0 = c_target_centered_eigvecs[0] if center == "healthy" else c_target_eigvecs[0]
                 target_supp_top1 = float((c_target_centered_eigvals if center == "healthy" else c_target_eigvals)[0].item())
                 if healthy_cost == "fisher":
-                    healthy_dnll_top1 = float(n_h_count) * float(((g_h_scaled @ u0) ** 2).sum().item()) if hi_h > lo_h else 0.0
+                    healthy_dnll_top1 = float(n_h_count) * float(((g_h_scaled_tok @ u0) ** 2).sum().item()) if hi_h > lo_h else 0.0
                     pareto_top1 = target_supp_top1 / max(healthy_dnll_top1, 1e-8)
                 else:
                     healthy_dnll_top1 = float(-((g_h @ u0) * (y_act @ u0)).sum().item()) if hi_h > lo_h else 0.0
@@ -1766,6 +1881,7 @@ def capture_compact(
                 gs_entry: dict[str, Any] = {
                     "kind": meta_m["kind"],
                     "layer": meta_m["layer"],
+                    "n_passes": int(P),
                     "d_out": D,
                     "d_in": U,
                     "causal_attr": round(causal_attr, 6),
@@ -1791,8 +1907,12 @@ def capture_compact(
                     "pareto_top1": round(pareto_top1, 6),
                     "paired_diff_norm": round(float(paired_diff.norm().item()), 6),
                 }
+                if P > 1:
+                    gs_entry["pass_causal_attr"] = [
+                        round(float((g_t_p[p] * y_p[p]).sum().item()), 6) for p in range(P)
+                    ]
                 if dir_mode and tdir_cpu is not None:
-                    direct_attr = float((y_act[lo_t:hi_t].mean(dim=0) @ tdir_cpu).item())
+                    direct_attr = sum(float((y_p[p, lo_t:hi_t].mean(dim=0) @ tdir_cpu).item()) for p in range(P))
                     gs_entry["direct_attr"] = round(direct_attr, 6)
                     gs_entry["indirect_attr"] = round(causal_attr - direct_attr, 6)
                 nh_m = int(meta_m.get("n_heads", 0))
@@ -3046,7 +3166,7 @@ def _resolve_edit_modules(
 
     names: dict[str, list[nn.Module]] = {}
     for name, mod in model.named_modules():
-        if "mtp" in name or "visual" in name or getattr(mod, "weight", None) is None:
+        if _is_excluded_backbone_path(name) or _is_routed_expert_path(name) or getattr(mod, "weight", None) is None:
             continue
         try:
             names.setdefault(module_suffix(name), []).append(mod)
@@ -3138,32 +3258,72 @@ def gradient_screen_candidates(
     for p, _ in orig_req:
         p.requires_grad_(False)
 
-    def _run_grad_pass(seqs: list[torch.Tensor], spans: list[tuple[int, int]] | None, kind: str) -> dict[str, list[tuple[torch.Tensor, torch.Tensor]]]:
+    def _run_grad_pass(
+        seqs: list[torch.Tensor],
+        spans: list[tuple[int, int]] | None,
+        kind: str,
+    ) -> tuple[dict[str, list[tuple[torch.Tensor, torch.Tensor]]], list[int]]:
         pieces: dict[str, list[tuple[torch.Tensor, torch.Tensor]]] = {mk: [] for mk in resolved}
+        seq_lens: list[int] = []
         denom = max(1, n_t if kind == "target" else n_h)
         with torch.enable_grad():
             for i, ids in enumerate(seqs):
                 T = int(ids.shape[1])
                 if T < 2:
                     continue
+                seq_lens.append(T)
                 if kind == "target":
                     lo, hi = _resolve_target_span(T, spans[i] if (spans is not None and i < len(spans)) else None)
                 else:
                     lo, hi = 0, T - 1
 
-                st: dict[str, dict[str, Any]] = {"h": {}, "y": {}}
+                h_passes: dict[str, list[torch.Tensor]] = {}
+                g_passes: dict[str, dict[int, torch.Tensor]] = {}
+                y_shapes: dict[str, int] = {}
+                fwd_counts: dict[str, int] = {}
+                recomp_cursor: dict[str, int] = {}
+                state: dict[str, bool] = {"in_backward": False}
                 handles = []
                 for mk, mod in resolved.items():
                     def _hook(_m, inp, out, mk=mk):
-                        x_in = inp[0]
-                        st["h"][mk] = (x_in[0] if x_in.dim() == 3 else x_in).detach().float().cpu()
                         t = out[0] if isinstance(out, tuple) else out
-                        if not t.requires_grad:
-                            t = t.detach().requires_grad_(True)
+                        if not state["in_backward"]:
+                            p_idx = fwd_counts.get(mk, 0)
+                            fwd_counts[mk] = p_idx + 1
+                            x_in = inp[0] if isinstance(inp, tuple) else inp
+                            h_passes.setdefault(mk, []).append((x_in[0] if x_in.dim() == 3 else x_in).detach().float().cpu())
+                            if isinstance(t, torch.Tensor):
+                                y_shapes[mk] = int(t.shape[-1])
+                            if torch.is_grad_enabled() and isinstance(t, torch.Tensor):
+                                need_replace = False
+                                if not t.requires_grad:
+                                    t = t.detach().requires_grad_(True)
+                                    need_replace = True
+
+                                def _save_g(grad, mk=mk, p_idx=p_idx):
+                                    g_passes.setdefault(mk, {})[p_idx] = (grad[0] if grad.dim() == 3 else grad).detach().float().cpu()
+
+                                t.register_hook(_save_g)
+                                if need_replace:
+                                    return (t, *out[1:]) if isinstance(out, tuple) else t
                         else:
-                            t.retain_grad()
-                        st["y"][mk] = t
-                        return (t, *out[1:]) if isinstance(out, tuple) else t
+                            p_idx = recomp_cursor.get(mk, max(0, fwd_counts.get(mk, 1) - 1))
+                            recomp_cursor[mk] = max(0, p_idx - 1)
+                            if torch.is_grad_enabled() and isinstance(t, torch.Tensor):
+                                need_replace = False
+                                if not t.requires_grad:
+                                    t = t.detach().requires_grad_(True)
+                                    need_replace = True
+
+                                def _save_g_rec(grad, mk=mk, p_idx=p_idx):
+                                    g_passes.setdefault(mk, {}).setdefault(
+                                        p_idx, (grad[0] if grad.dim() == 3 else grad).detach().float().cpu()
+                                    )
+
+                                t.register_hook(_save_g_rec)
+                                if need_replace:
+                                    return (t, *out[1:]) if isinstance(out, tuple) else t
+                        return out
 
                     handles.append(mod.register_forward_hook(_hook))
 
@@ -3173,27 +3333,28 @@ def gradient_screen_candidates(
                     lp = F.log_softmax(logits, dim=-1).gather(1, ids[0, lo + 1 : hi + 1, None]).squeeze(1)
                     obj = (lp.sum() / denom) if kind == "target" else (-lp.sum() / denom)
                     if obj.requires_grad:
+                        state["in_backward"] = True
                         obj.backward()
-                    for mk in resolved:
-                        if mk in st["y"] and mk in st["h"]:
-                            ty = st["y"][mk]
-                            if ty.grad is not None:
-                                g = (ty.grad[0] if ty.grad.dim() == 3 else ty.grad).detach().float().cpu()
-                            else:
-                                y0 = ty.detach()[0] if ty.dim() == 3 else ty.detach()
-                                g = torch.zeros_like(y0, dtype=torch.float32, device="cpu")
-                            pieces[mk].append((g, st["h"][mk]))
+                    for mk, mod_r in resolved.items():
+                        P = fwd_counts.get(mk, 0)
+                        if P >= 1 and mk in h_passes:
+                            h_cat = torch.cat(h_passes[mk], dim=0) if len(h_passes[mk]) > 1 else h_passes[mk][0]
+                            D_m = y_shapes.get(mk, int(mod_r.weight.shape[0] if isinstance(mod_r, nn.Linear) else mod_r.weight.shape[1]))
+                            gm = g_passes.get(mk, {})
+                            g_list = [gm[p] if p in gm else torch.zeros((T, D_m), dtype=torch.float32) for p in range(P)]
+                            g_cat = torch.cat(g_list, dim=0) if len(g_list) > 1 else g_list[0]
+                            pieces[mk].append((g_cat, h_cat))
                 finally:
                     for h in handles:
                         h.remove()
-                    del st, logits, lp, obj
+                    del h_passes, g_passes, logits, lp, obj
                     if dev.type == "cuda":
                         torch.cuda.empty_cache()
-        return pieces
+        return pieces, seq_lens
 
     try:
-        tgt_pieces = _run_grad_pass(t_ids, target_spans, "target")
-        hlt_pieces = _run_grad_pass(h_ids, None, "healthy")
+        tgt_pieces, _ = _run_grad_pass(t_ids, target_spans, "target")
+        hlt_pieces, hlt_seq_lens = _run_grad_pass(h_ids, None, "healthy")
     finally:
         for p, req in orig_req:
             p.requires_grad_(req)
@@ -3213,7 +3374,11 @@ def gradient_screen_candidates(
         return tot
 
     @torch.no_grad()
-    def _fisher_order(patch: Any, pieces: dict[str, list[tuple[torch.Tensor, torch.Tensor]]]) -> float:
+    def _fisher_order(
+        patch: Any,
+        pieces: dict[str, list[tuple[torch.Tensor, torch.Tensor]]],
+        seq_lens: list[int],
+    ) -> float:
         denom_h = float(max(1, n_h))
         any_mod = next(iter(pieces), None)
         n_seqs_h = len(pieces[any_mod]) if any_mod is not None else 0
@@ -3221,6 +3386,7 @@ def gradient_screen_candidates(
             return 0.0
         tot_sq = 0.0
         for si in range(n_seqs_h):
+            T_seq = seq_lens[si] if si < len(seq_lens) else 0
             delta_tok: torch.Tensor | None = None
             for e in patch.edits:
                 u = e.u.detach().float().cpu()
@@ -3231,6 +3397,8 @@ def gradient_screen_candidates(
                     uw = uw * m
                 g_t, h_t = pieces[e.module][si]
                 term = (-float(e.alpha)) * ((g_t @ u) * (h_t @ uw))
+                if T_seq > 0 and term.shape[0] > T_seq and term.shape[0] % T_seq == 0:
+                    term = term.reshape(-1, T_seq).sum(dim=0)
                 delta_tok = term if delta_tok is None else (delta_tok + term)
             if delta_tok is not None:
                 tot_sq += denom_h * float((delta_tok * delta_tok).sum().item())
@@ -3240,7 +3408,7 @@ def gradient_screen_candidates(
     for name, patch in items:
         grad_supp = -_first_order(patch, tgt_pieces)
         if healthy_cost == "fisher":
-            grad_dnll = _fisher_order(patch, hlt_pieces)
+            grad_dnll = _fisher_order(patch, hlt_pieces, hlt_seq_lens)
             grad_pareto = grad_supp / max(grad_dnll, 1e-8)
         else:
             grad_dnll = _first_order(patch, hlt_pieces)
@@ -3305,7 +3473,7 @@ def diagnose_causal_traces(
         else:
             from .moipatch import module_suffix
             for name, mod in model_or_weights.named_modules():
-                if "mtp" in name or "visual" in name or getattr(mod, "weight", None) is None:
+                if _is_excluded_backbone_path(name) or _is_routed_expert_path(name) or getattr(mod, "weight", None) is None:
                     continue
                 try:
                     mk_s = module_suffix(name)
@@ -3430,7 +3598,7 @@ def diagnose_causal_traces(
                 cands.append(("causal", ev_c[:, -1].contiguous().float()))
 
         # Pre-extract Half-B per-token healthy gradients (and inputs if available) when healthy_cost == "fisher"
-        b_fisher_pieces: list[tuple[float, float, torch.Tensor, Any | None]] = []
+        b_fisher_pieces: list[tuple[float, float, int, torch.Tensor, Any | None]] = []
         if healthy_cost == "fisher":
             tot_h_b = max(1, sum(max(0, int(ct.meta.get("grad_n_healthy", 0))) for ct in half_b))
             w_mod = w_cpu_diag.get(mk)
@@ -3462,7 +3630,7 @@ def diagnose_causal_traces(
                 if h_in_b is None:
                     y_rms_sq = float(gs_b.get("y_healthy_rms_sq", max(float(gs_b.get("paired_diff_norm", 1.0)) ** 2 / max(1, int(gs_b.get("d_out", 1))), 1e-8)))
                     h_in_b = ("rms", max(y_rms_sq, 1e-8))
-                b_fisher_pieces.append((wh_b, float(nh_b), g_h_b, h_in_b))
+                b_fisher_pieces.append((wh_b, float(nh_b), int(ct.seq_len), g_h_b, h_in_b))
 
         def _eval_dnll_b(u_vec: torch.Tensor) -> float:
             if healthy_cost != "fisher":
@@ -3470,20 +3638,32 @@ def diagnose_causal_traces(
             if not b_fisher_pieces:
                 return float((u_vec @ F_h_B @ u_vec).item())
             tot_f = 0.0
-            for wh_b, nh_f, g_h_b, h_in_b in b_fisher_pieces:
+            for wh_b, nh_f, T_b, g_h_b, h_in_b in b_fisher_pieces:
                 g_proj = g_h_b @ u_vec
                 kind_in, pay = h_in_b
                 if kind_in == "mlp":
                     idx_m, x_m, w_m = pay
                     uw_m = u_vec @ w_m
                     y_proj = (x_m * uw_m[idx_m]).sum(dim=1)
-                    tot_f += wh_b * nh_f * float(((g_proj * y_proj) ** 2).sum().item())
+                    if g_proj.shape[0] != y_proj.shape[0] and T_b > 0 and g_proj.shape[0] % T_b == 0:
+                        g_proj = g_proj.reshape(-1, T_b).sum(dim=0)
+                    tok_term = g_proj * y_proj
+                    if T_b > 0 and tok_term.shape[0] > T_b and tok_term.shape[0] % T_b == 0:
+                        tok_term = tok_term.reshape(-1, T_b).sum(dim=0)
+                    tot_f += wh_b * nh_f * float((tok_term * tok_term).sum().item())
                 elif kind_in == "attn":
                     h_dense, w_m = pay
                     uw_m = u_vec @ w_m
                     y_proj = h_dense @ uw_m
-                    tot_f += wh_b * nh_f * float(((g_proj * y_proj) ** 2).sum().item())
+                    if g_proj.shape[0] != y_proj.shape[0] and T_b > 0 and g_proj.shape[0] % T_b == 0:
+                        g_proj = g_proj.reshape(-1, T_b).sum(dim=0)
+                    tok_term = g_proj * y_proj
+                    if T_b > 0 and tok_term.shape[0] > T_b and tok_term.shape[0] % T_b == 0:
+                        tok_term = tok_term.reshape(-1, T_b).sum(dim=0)
+                    tot_f += wh_b * nh_f * float((tok_term * tok_term).sum().item())
                 else:
+                    if T_b > 0 and g_proj.shape[0] > T_b and g_proj.shape[0] % T_b == 0:
+                        g_proj = g_proj.reshape(-1, T_b).sum(dim=0)
                     tot_f += wh_b * nh_f * float(pay) * float((g_proj * g_proj).sum().item())
             return tot_f
 
@@ -3642,6 +3822,7 @@ def screen_patches_from_traces(
             edit_specs.append((e, u, uw))
 
         for ti in range(len(traces)):
+            T_seq = int(traces[ti].seq_len)
             delta_h_tok: torch.Tensor | None = None
             for e, u, uw in edit_specs:
                 kind_in, h_obj = cached_inputs[(ti, e.module)]
@@ -3654,12 +3835,24 @@ def screen_patches_from_traces(
                 g_t = cached_gt[(ti, e.module)]
                 if g_t is not None and n_t_list[ti] > 0:
                     wt = n_t_list[ti] / tot_t
-                    grad_supp += wt * float(e.alpha) * float(((g_t @ u) * h_dot_uw).sum().item())
+                    g_t_use = (
+                        g_t.reshape(-1, T_seq, g_t.shape[-1]).sum(dim=0)
+                        if (g_t.shape[0] != h_dot_uw.shape[0] and T_seq > 0 and g_t.shape[0] % T_seq == 0)
+                        else g_t
+                    )
+                    grad_supp += wt * float(e.alpha) * float(((g_t_use @ u) * h_dot_uw).sum().item())
 
                 g_h = cached_gh[(ti, e.module)]
                 if g_h is not None and n_h_list[ti] > 0:
-                    term_h = (-float(e.alpha)) * ((g_h @ u) * h_dot_uw)
+                    g_h_use = (
+                        g_h.reshape(-1, T_seq, g_h.shape[-1]).sum(dim=0)
+                        if (g_h.shape[0] != h_dot_uw.shape[0] and T_seq > 0 and g_h.shape[0] % T_seq == 0)
+                        else g_h
+                    )
+                    term_h = (-float(e.alpha)) * ((g_h_use @ u) * h_dot_uw)
                     if healthy_cost == "fisher":
+                        if T_seq > 0 and term_h.shape[0] > T_seq and term_h.shape[0] % T_seq == 0:
+                            term_h = term_h.reshape(-1, T_seq).sum(dim=0)
                         delta_h_tok = term_h if delta_h_tok is None else (delta_h_tok + term_h)
                     else:
                         wh = n_h_list[ti] / tot_h
@@ -3999,16 +4192,7 @@ def attribute_direction_writers(
         li = _layer_idx_from_name(g.down)
         mlp_by_down[g.down] = li if li is not None else len(mlp_by_down)
 
-    if mlps:
-        d0 = mods[mlps[0].down]
-        hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
-    else:
-        cfg = getattr(getattr(model, "config", None), "text_config", getattr(model, "config", None))
-        h_cfg = getattr(cfg, "hidden_size", None)
-        if not isinstance(h_cfg, int) or h_cfg <= 0:
-            raise ValueError("Cannot infer hidden_size from model without MLPs or config.hidden_size")
-        hidden = h_cfg
-
+    hidden = _infer_hidden_size(model, mlps)
     attns = _find_attn_out_projs(model, hidden)
     tdir_cpu = _validate_target_dir(target_dir, hidden, normalize=normalize_dir)
     stop_blk, use_final_hidden = _resolve_direction_layer(n_layers, int(target_layer), layer_convention)
@@ -4055,6 +4239,7 @@ def attribute_direction_writers(
         sum_embed = 0.0
         sum_norm_bias = 0.0
         sum_y_dot: dict[str, float] = {mk: 0.0 for mk in writers}
+        sum_y_pass: dict[str, list[float]] = {}
         sum_bias_dot: dict[str, float] = {mk: 0.0 for mk in writers}
         sum_x_in: dict[str, torch.Tensor] = {}
         sum_neuron: dict[str, torch.Tensor] = {}
@@ -4066,10 +4251,10 @@ def attribute_direction_writers(
             t_len = int(s_ids.shape[1])
             lo, hi = _resolve_hidden_span(t_len, pos)
             cur: dict[str, Any] = {"embed": None, "target": None, "h_pre": None}
-            cur_x: dict[str, torch.Tensor] = {}
-            cur_y: dict[str, torch.Tensor] = {}
-            blk_in: dict[int, torch.Tensor] = {}
-            blk_out: dict[int, torch.Tensor] = {}
+            cur_x: dict[str, list[torch.Tensor]] = {}
+            cur_y: dict[str, list[torch.Tensor]] = {}
+            blk_in: dict[int, list[torch.Tensor]] = {}
+            blk_out: dict[int, list[torch.Tensor]] = {}
             hooks = []
 
             def _pre_blk0(_m, inp):
@@ -4088,23 +4273,23 @@ def attribute_direction_writers(
                 def _whook(_m, inp, out, mk=mk):
                     x_in = inp[0] if isinstance(inp, tuple) and inp else inp
                     y_out = out[0] if isinstance(out, (tuple, list)) else out
-                    if isinstance(x_in, torch.Tensor) and mk not in cur_x:
-                        cur_x[mk] = _span2d(x_in, lo, hi)
-                    if isinstance(y_out, torch.Tensor) and mk not in cur_y:
-                        cur_y[mk] = _span2d(y_out, lo, hi)
+                    if isinstance(x_in, torch.Tensor):
+                        cur_x.setdefault(mk, []).append(_span2d(x_in, lo, hi))
+                    if isinstance(y_out, torch.Tensor):
+                        cur_y.setdefault(mk, []).append(_span2d(y_out, lo, hi))
 
                 hooks.append(mod.register_forward_hook(_whook))
 
             for gl in gap_layers:
                 def _gpre(_m, inp, gl=gl):
                     h = inp[0] if isinstance(inp, tuple) and inp else inp
-                    if isinstance(h, torch.Tensor) and gl not in blk_in:
-                        blk_in[gl] = _span2d(h, lo, hi)
+                    if isinstance(h, torch.Tensor):
+                        blk_in.setdefault(gl, []).append(_span2d(h, lo, hi))
 
                 def _gpost(_m, _inp, out, gl=gl):
                     t = out[0] if isinstance(out, (tuple, list)) else out
-                    if isinstance(t, torch.Tensor) and gl not in blk_out:
-                        blk_out[gl] = _span2d(t, lo, hi)
+                    if isinstance(t, torch.Tensor):
+                        blk_out.setdefault(gl, []).append(_span2d(t, lo, hi))
 
                 hooks.append(blocks[gl].register_forward_pre_hook(_gpre))
                 hooks.append(blocks[gl].register_forward_hook(_gpost))
@@ -4126,7 +4311,13 @@ def attribute_direction_writers(
                     hooks.append(blocks[n_layers - 1].register_forward_hook(_last_blk))
 
             if not use_final_hidden and stop_blk >= 0:
-                def _stop_hook(_m, _inp, out):
+                exp_passes = _expected_block_passes(model, stop_blk)
+                seen_stop = [0]
+
+                def _stop_hook(_m, _inp, out, exp_passes=exp_passes, seen_stop=seen_stop):
+                    seen_stop[0] += 1
+                    if seen_stop[0] < exp_passes:
+                        return
                     t = out[0] if isinstance(out, (tuple, list)) else out
                     if isinstance(t, torch.Tensor):
                         cur["target"] = _span2d(t, lo, hi)
@@ -4147,11 +4338,11 @@ def attribute_direction_writers(
             if cur["target"] is None:
                 hs = getattr(out, "hidden_states", None) if out is not None else None
                 if use_final_hidden:
-                    if hs is None or len(hs) <= n_layers:
+                    if hs is None or len(hs) < n_layers + 1:
                         raise RuntimeError(
                             f"Model did not return hidden_states[{n_layers}] needed for target_layer={target_layer}"
                         )
-                    t_hs = hs[n_layers]
+                    t_hs = hs[-1]
                 elif stop_blk == -1:
                     if hs is None or len(hs) == 0:
                         raise RuntimeError("Model did not return hidden_states[0] for target_layer=0")
@@ -4184,27 +4375,38 @@ def attribute_direction_writers(
             sum_norm_bias += norm_bias_val
             y_dot_seq: dict[str, float] = {}
             for mk, meta_w in writers.items():
-                if mk in cur_y:
-                    y_dot_seq[mk] = float((cur_y[mk] * v_eff).sum(dim=-1).mean().item())
+                ys = cur_y.get(mk, ())
+                if ys:
+                    p_vals = [float((yp * v_eff).sum(dim=-1).mean().item()) for yp in ys]
+                    y_dot_seq[mk] = sum(p_vals)
                     sum_y_dot[mk] += y_dot_seq[mk]
+                    if len(p_vals) > 1:
+                        acc_p = sum_y_pass.setdefault(mk, [0.0] * len(p_vals))
+                        for pi, pv in enumerate(p_vals):
+                            if pi < len(acc_p):
+                                acc_p[pi] += pv
                 bv = meta_w["bias_vec"]
                 if bv is not None:
-                    sum_bias_dot[mk] += float((v_eff @ bv).mean().item()) if lin_ok else meta_w["bias_contrib"]
-                if mk in cur_x:
-                    xs = cur_x[mk]
-                    xm = xs.mean(dim=0)
-                    sum_x_in[mk] = sum_x_in[mk] + xm if mk in sum_x_in else xm.clone()
+                    n_p = max(1, len(ys))
+                    sum_bias_dot[mk] += n_p * (float((v_eff @ bv).mean().item()) if lin_ok else meta_w["bias_contrib"])
+                xs_list = cur_x.get(mk, ())
+                if xs_list:
+                    xm_sum = sum(xs.mean(dim=0) for xs in xs_list)
+                    sum_x_in[mk] = sum_x_in[mk] + xm_sum if mk in sum_x_in else xm_sum.clone()
                     if lin_ok:
                         w_raw_m = meta_w["mod"].weight.detach()
                         w_lin_m = (w_raw_m if isinstance(meta_w["mod"], nn.Linear) else (w_raw_m.t() if w_raw_m.dim() == 2 else w_raw_m)).float()
-                        nc = (xs * (v_eff.to(device=w_raw_m.device, dtype=torch.float32) @ w_lin_m).cpu()).mean(dim=0)
+                        vw = (v_eff.to(device=w_raw_m.device, dtype=torch.float32) @ w_lin_m).cpu()
+                        nc = sum((xs * vw).mean(dim=0) for xs in xs_list)
                         del w_lin_m
                     else:
-                        nc = xm * meta_w["w_dot"]
+                        nc = xm_sum * meta_w["w_dot"]
                     sum_neuron[mk] = sum_neuron[mk] + nc if mk in sum_neuron else nc.clone()
             for gl in gap_layers:
-                if gl in blk_in and gl in blk_out:
-                    bd = float(((blk_out[gl] - blk_in[gl]) * v_eff).sum(dim=-1).mean().item())
+                bis = blk_in.get(gl, ())
+                bos = blk_out.get(gl, ())
+                if bis and bos:
+                    bd = sum(float(((bo - bi) * v_eff).sum(dim=-1).mean().item()) for bi, bo in zip(bis, bos))
                     ws = sum(v for mk, v in y_dot_seq.items() if writers[mk]["layer"] == gl)
                     acc = blk_acc.setdefault(gl, [0.0, 0.0, 0.0])
                     acc[0] += bd
@@ -4212,6 +4414,7 @@ def attribute_direction_writers(
                     acc[2] += 1.0
 
         mod_contribs = {mk: sum_y_dot[mk] / n_seq for mk in writers}
+        mod_pass_contribs = {mk: [v / n_seq for v in vals] for mk, vals in sum_y_pass.items()}
         bias_contribs = {mk: sum_bias_dot[mk] / n_seq for mk in writers}
         x_means = {mk: (sum_x_in[mk] / n_seq) for mk in sum_x_in}
         n_means = {mk: (sum_neuron[mk] / n_seq) for mk in sum_neuron}
@@ -4256,6 +4459,7 @@ def attribute_direction_writers(
             "sum_components": comp_sum,
             "residual_gap": target_mean - comp_sum,
             "mod_contribs": mod_contribs,
+            "mod_pass_contribs": mod_pass_contribs,
             "bias_contribs": bias_contribs,
             "mlp_act": mlp_act,
             "mlp_neurons": mlp_neurons,
@@ -4375,6 +4579,9 @@ def attribute_direction_writers(
         "final_norm_bias_contrib": round(g_pos["norm_bias_contrib"], 7),
         "modules": mod_rows,
         "module_contribs": {r["module"]: r["contrib"] for r in mod_rows},
+        "module_pass_contribs": {
+            mk: [round(v, 7) for v in vals] for mk, vals in g_pos["mod_pass_contribs"].items()
+        },
         "top_heads": head_rows[: max(0, int(top_k_heads))],
         "top_neurons": neuron_rows[: max(0, int(top_k_neurons))],
     }
@@ -4391,6 +4598,11 @@ def attribute_direction_writers(
         out_dict["contrast_residual_gap"] = round(g_neg["residual_gap"], 7)
         out_dict["delta_residual_gap"] = round(d_target - d_sum, 7)
         out_dict["module_delta_contribs"] = {r["module"]: r["delta_contrib"] for r in mod_rows}
+        out_dict["delta_module_pass_contribs"] = {
+            mk: [round(vp - vn, 7) for vp, vn in zip(g_pos["mod_pass_contribs"][mk], g_neg["mod_pass_contribs"][mk])]
+            for mk in g_pos["mod_pass_contribs"]
+            if mk in g_neg["mod_pass_contribs"]
+        }
         out_dict["contrast_final_norm_bias_contrib"] = round(g_neg["norm_bias_contrib"], 7)
         out_dict["delta_final_norm_bias_contrib"] = round(g_pos["norm_bias_contrib"] - g_neg["norm_bias_contrib"], 7)
     if report_block_gaps:
@@ -4635,14 +4847,7 @@ def trace_direction_graph(
     n_layers = len(blocks)
     mods = dict(model.named_modules())
     mlps = find_mlps(model)
-    if mlps:
-        d0 = mods[mlps[0].down]
-        hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
-    else:
-        cfg = getattr(getattr(model, "config", None), "text_config", getattr(model, "config", None))
-        hidden = int(getattr(cfg, "hidden_size", 0) or 0)
-        if hidden <= 0:
-            raise ValueError("Cannot infer hidden_size")
+    hidden = _infer_hidden_size(model, mlps)
     tdir_cpu = _validate_target_dir(target_dir, hidden, normalize=normalize_dir)
     stop_blk, use_final_hidden = _resolve_direction_layer(n_layers, int(target_layer), layer_convention)
     root_id = f"dir:L{int(target_layer)}"
@@ -4846,7 +5051,13 @@ def trace_direction_graph(
                     hooks.append(blk.register_forward_pre_hook(_blk_pre, with_kwargs=True))
             else:
                 if not use_final_hidden:
-                    def _stop(_m, _inp, out):
+                    exp_passes = _expected_block_passes(model, stop_blk)
+                    seen_stop = [0]
+
+                    def _stop(_m, _inp, out, exp_passes=exp_passes, seen_stop=seen_stop):
+                        seen_stop[0] += 1
+                        if seen_stop[0] < exp_passes:
+                            return
                         t = out[0] if isinstance(out, (tuple, list)) else out
                         if isinstance(t, torch.Tensor):
                             cap["h_t"] = t
@@ -4876,9 +5087,9 @@ def trace_direction_graph(
                             h_t = cap["h_t"]
                         else:
                             hs = getattr(out, "hidden_states", None) if out is not None else None
-                            if hs is None or len(hs) <= n_layers:
+                            if hs is None or len(hs) < n_layers + 1:
                                 raise RuntimeError(f"Model did not return hidden_states[{n_layers}] for target_layer={target_layer}")
-                            h_t = hs[n_layers]
+                            h_t = hs[-1]
                         h2 = _two_d(h_t).float()
                         obj = (h2[lo:hi] @ tdir_cpu.to(h2.device)).mean()
                         cap["val"] = obj
@@ -5174,14 +5385,14 @@ def peel_causal_circuit(
 
     mods = dict(model.named_modules())
     mlps = find_mlps(model)
-    if not mlps:
-        raise ValueError("peel_causal_circuit requires a model with MLP blocks")
-    d0 = mods[mlps[0].down]
-    hidden = d0.weight.shape[0] if isinstance(d0, nn.Linear) else d0.weight.shape[1]
+    hidden = _infer_hidden_size(model, mlps)
+    attns = _find_attn_out_projs(model, hidden)
+    if not mlps and not attns:
+        raise ValueError("peel_causal_circuit requires at least one MLP or attention/conv output writer")
     mod_by_mk: dict[str, nn.Module] = {}
     base_meta: dict[str, dict[str, Any]] = {}
     base_hash: dict[str, str] = {}
-    for full in [g.down for g in mlps] + list(_find_attn_out_projs(model, hidden)):
+    for full in [g.down for g in mlps] + list(attns):
         mk = _safe_module_suffix(full)
         m = mods[full]
         mod_by_mk[mk] = m

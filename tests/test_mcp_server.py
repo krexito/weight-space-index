@@ -54,8 +54,9 @@ def test_mcp_exposes_build_and_screen_tools():
         "wsi_audit_lora",
         "wsi_diagnose_surgery_sites",
         "wsi_probe_margin_shift",
+        "wsi_prescribe",
     }.issubset(names)
-    assert len(names) == 25
+    assert len(names) == 26
 
 
 def test_mcp_build_moipatch_and_screen_candidates_end_to_end(tmp_path, monkeypatch):

@@ -276,10 +276,11 @@ def cmd_stage_workspace(args: argparse.Namespace) -> int:
         )
     else:
         assert not (agent_dir / "atlas").exists(), "wsi_only workspace must not contain atlas/"
-        # Defense-in-depth: remove wsi/atlas.py from wsi_only and strip its import/exports from wsi/__init__.py.
-        atlas_py = agent_dir / "wsi" / "atlas.py"
-        if atlas_py.exists():
-            atlas_py.unlink()
+        # Defense-in-depth: remove wsi/atlas.py and wsi/observatory.py from wsi_only and strip atlas exports from wsi/__init__.py.
+        for mod_name in ("atlas.py", "observatory.py"):
+            mod_py = agent_dir / "wsi" / mod_name
+            if mod_py.exists():
+                mod_py.unlink()
         init_py = agent_dir / "wsi" / "__init__.py"
         if init_py.exists():
             import re

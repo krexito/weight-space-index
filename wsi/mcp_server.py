@@ -683,6 +683,20 @@ TOOLS_SCHEMA: list[dict[str, Any]] = [
             "required": ["model_dir", "base_prompts", "perturbed_prompts", "target_tokens", "foil_tokens"],
         },
     },
+    {
+        "name": "wsi_prescribe",
+        "description": "1-call structured prescription over the 3-Tome WSI Atlas: given a model repo_id or `.xray.json` path and a target pathology, returns nearest geometric neighbors, proven PASS strategies, a do-not-do failure blacklist, and the exact next 2-second telemetry probe.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "Model repo_id (if in Tome-1 Atlas) or path to a `.xray.json` chart"},
+                "pathology": {"type": "string", "default": "over_refusal", "description": "Target pathology (e.g. over_refusal, sycophancy, loops, pruning, memory_injection)"},
+                "atlas_dir": {"type": "string", "description": "Optional path to the 3-Tome Atlas directory"},
+                "top_k_neighbors": {"type": "integer", "default": 3},
+            },
+            "required": ["target"],
+        },
+    },
 ]
 
 
@@ -1542,6 +1556,15 @@ def call_wsi_tool(name: str, args: dict[str, Any]) -> dict[str, Any]:
         return _diagnose_surgery_sites_tool(args)
     if name == "wsi_probe_margin_shift":
         return _probe_margin_shift_tool(args)
+    if name == "wsi_prescribe":
+        from .observatory import DEFAULT_ATLAS_DIR, WSIObservatory
+
+        obs = WSIObservatory(args.get("atlas_dir") or DEFAULT_ATLAS_DIR)
+        return obs.prescribe(
+            args["target"],
+            pathology=str(args.get("pathology", "over_refusal")),
+            top_k_neighbors=int(args.get("top_k_neighbors", 3)),
+        )
     raise ValueError(f"Unknown WSI MCP tool: `{name}`")
 
 

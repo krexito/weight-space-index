@@ -2,7 +2,7 @@
   "schema": "wsi_atlas_v1",
   "tome": "tome3_clinical_history",
   "n_models": 4,
-  "n_records": 12,
+  "n_records": 15,
   "models": {
     "LiquidAI/LFM3-1.7B": [
       {
@@ -113,6 +113,108 @@
           "ppl_delta": 0.0
         },
         "caveat": "Needs exact full-name key; reverse queries score 0.0."
+      },
+      {
+        "pathology": "loops",
+        "strategy": "external_mit_p50c_sparse_direction_reversal",
+        "target": {
+          "depth_frac": [
+            0.625,
+            0.792
+          ],
+          "role": "mlp_down",
+          "n_units": 128,
+          "alpha": 6,
+          "weight_frac": 0.00016,
+          "layers": [
+            15,
+            19
+          ]
+        },
+        "outcome": "pass",
+        "metrics": {
+          "math500_acc": 0.481,
+          "math500_base": 0.079,
+          "gsm8k_acc": 0.671,
+          "gsm8k_base": 0.138,
+          "gsm8k_acc_wsi_eval": 0.58,
+          "u15_u19_cos": 0.849,
+          "u_share_of_column_writes": [
+            0.02,
+            0.34
+          ]
+        },
+        "caveat": "MIT's own eval (agent with 50 passes, 20.3 h); not rerun on MATH-500 with WSI sampling. alpha 6 does not remove u: the 64 columns per layer now write -5x along u. Its u15/u19 sit in the same direction family as p10c (|cos| 0.47-0.72); our blind patch (L13-14) does not (|cos| <= 0.22).",
+        "source": "benchmarks/exp8_math (official diffs, SHA-256 verified) + benchmarks/exp8_math/mit_patches_anatomy.json"
+      },
+      {
+        "pathology": "loops",
+        "strategy": "external_mit_p25c_head_ablation",
+        "target": {
+          "depth_frac": 0.625,
+          "role": "self_attn.o_proj",
+          "heads": [
+            7
+          ],
+          "layers": [
+            15
+          ],
+          "weight_frac": 0.00033
+        },
+        "outcome": "partial",
+        "metrics": {
+          "math500_acc": 0.141,
+          "math500_base": 0.079,
+          "gsm8k_acc": 0.251,
+          "gsm8k_base": 0.138,
+          "rank1_energy_share": 0.032
+        },
+        "caveat": "Zeroes the 256 columns of attention head 7 at L15: an ablation, not a direction edit (rank-1 share 3%). Its output direction is unrelated to the loop family (|cos| <= 0.2). MIT's own eval.",
+        "source": "benchmarks/exp8_math + mit_patches_anatomy.json"
+      },
+      {
+        "pathology": "loops",
+        "strategy": "external_mit_p10c_rank1_projection_all_outputs",
+        "target": {
+          "depth_frac": [
+            0.333,
+            0.917
+          ],
+          "role": "linear_attn.out_proj+self_attn.o_proj+mlp_down",
+          "n_tensors": 30,
+          "layers": [
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22
+          ],
+          "alpha": 1.5,
+          "weight_frac": 0.0909
+        },
+        "outcome": "partial",
+        "metrics": {
+          "math500_acc": 0.123,
+          "math500_base": 0.079,
+          "gsm8k_acc": 0.257,
+          "gsm8k_base": 0.138,
+          "adjacent_layer_cos_abs": [
+            0.4,
+            0.97
+          ]
+        },
+        "caveat": "Rank-1 removal (W - 1.5 u u^T W) on every output projection of L8-22; touches 73M weights but each tensor changes along one direction. The 15 per-layer directions form one smooth family across depth, the same family p50c found. MIT's own eval.",
+        "source": "benchmarks/exp8_math + mit_patches_anatomy.json"
       }
     ],
     "Qwen/Qwen3.5-4B": [

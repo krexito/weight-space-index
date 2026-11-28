@@ -54,6 +54,8 @@ from pathlib import Path
 import torch
 import torch.nn.functional as F
 
+from .capture import _is_excluded_backbone_path, _is_routed_expert_path
+
 FORMAT = "moipatch/1"
 FORMAT_V = "moipatch/1.1"  # adds explicit input-side vectors (Edit.v); written only when an edit has one, so
                            # readers that only know moipatch/1 (e.g. rust/wsi-bake) refuse it instead of misbaking
@@ -182,7 +184,7 @@ class MoIPatch:
         if idx_file.exists():
             wmap = json.loads(idx_file.read_text(encoding="utf-8")).get("weight_map", {})
             for k, fname in wmap.items():
-                if k.endswith(".weight") and "mtp" not in k and "visual" not in k:
+                if k.endswith(".weight") and not _is_excluded_backbone_path(k):
                     try:
                         index[module_suffix(k[: -len(".weight")])] = (mdir / fname, k)
                     except ValueError:
@@ -193,7 +195,7 @@ class MoIPatch:
             for f_ in files:
                 with safe_open(str(f_), "pt") as s:
                     for k in s.keys():
-                        if k.endswith(".weight") and "mtp" not in k and "visual" not in k:
+                        if k.endswith(".weight") and not _is_excluded_backbone_path(k):
                             try:
                                 index[module_suffix(k[: -len(".weight")])] = (f_, k)
                             except ValueError:
@@ -266,7 +268,14 @@ class MoIPatch:
     def _router_last_hidden(self, hidden_states) -> torch.Tensor:
         if self.router is None:
             raise ValueError("this patch has no router")
-        h = hidden_states[self.router["layer"]] if isinstance(hidden_states, (tuple, list)) else hidden_states
+        if isinstance(hidden_states, (tuple, list)):
+            layer = int(self.router["layer"])
+            if self.router.get("final_layer") or layer == -1 or (bool(self.router.get("final_layer")) and layer >= len(hidden_states)):
+                h = hidden_states[-1]
+            else:
+                h = hidden_states[layer]
+        else:
+            h = hidden_states
         return (h[:, -1] if h.dim() == 3 else h).float().cpu()
 
     def router_score(self, hidden_states) -> torch.Tensor:
@@ -316,6 +325,30 @@ class MoIPatch:
         return "\n".join(x for x in lines if x)
 
 
+def _expected_block_passes(model, block_idx: int) -> int:
+    cfg = getattr(getattr(model, "config", None), "text_config", getattr(model, "config", None))
+    lc = getattr(cfg, "loop_config", None) if cfg is not None else None
+    if lc is None:
+        return 1
+    getter = (lambda k: lc.get(k)) if isinstance(lc, dict) else (lambda k: getattr(lc, k, None))
+    start = getter("core_start")
+    if start is None:
+        start = getter("loop_start")
+    end = getter("core_end")
+    if end is None:
+        end = getter("loop_end")
+    passes = getter("num_passes")
+    if passes is None:
+        passes = getter("loop_count")
+    if passes is None:
+        passes = getter("num_loops")
+    if start is None or end is None or passes is None:
+        return 1
+    if int(start) <= int(block_idx) < int(end):
+        return max(1, int(passes))
+    return 1
+
+
 def _resolve_model_modules(
     model,
     edits: list[Edit],
@@ -325,7 +358,7 @@ def _resolve_model_modules(
     """Resolve each edit's suffix to its unique module in `model` and verify base SHA-256 fingerprints."""
     names: dict[str, list[tuple[str, torch.nn.Module]]] = {}
     for name, mod in model.named_modules():
-        if "mtp" in name or "visual" in name or not hasattr(mod, "weight"):
+        if _is_excluded_backbone_path(name) or _is_routed_expert_path(name) or not hasattr(mod, "weight"):
             continue
         try:
             names.setdefault(module_suffix(name), []).append((name, mod))
@@ -431,13 +464,24 @@ def _find_decoder_blocks(model, matched_full_names: list[str]) -> torch.nn.Modul
                     return sub
             except AttributeError:
                 pass
+    cands = [
+        (n, m)
+        for n, m in model.named_modules()
+        if isinstance(m, torch.nn.ModuleList)
+        and len(m) > 0
+        and not _is_excluded_backbone_path(n)
+        and not _is_routed_expert_path(n)
+        and n.lower().split(".")[-1] != "experts"
+    ]
+    if not cands:
+        cands = [(n, m) for n, m in model.named_modules() if isinstance(m, torch.nn.ModuleList)]
     best = max(
-        (
-            (n, m)
-            for n, m in model.named_modules()
-            if isinstance(m, torch.nn.ModuleList) and "visual" not in n and "mtp" not in n
+        cands,
+        key=lambda nm: (
+            1 if any(s in ("language_model", "text_model") for s in nm[0].lower().split(".")) else 0,
+            1 if nm[0].lower().split(".")[-1] in ("layers", "h", "blocks") else 0,
+            len(nm[1]),
         ),
-        key=lambda nm: len(nm[1]),
         default=(None, None),
     )
     if best[1] is None or len(best[1]) == 0:
@@ -827,6 +871,8 @@ class RoutedPatchHandle:
         self._router_layer = -1
         self._n_blocks = 0
         self._needs_pre_probe = False
+        self._router_expected_passes = 1
+        self._router_pass_seen = 0
         blocks = None
         if self.mode in ("residual_router", "residual+ngram"):
             blocks = _find_decoder_blocks(model, matched_full_names)
@@ -836,8 +882,10 @@ class RoutedPatchHandle:
                 raise ValueError(
                     f"router layer {self._router_layer} out of range for model with {self._n_blocks} blocks"
                 )
+            if 0 < self._router_layer < self._n_blocks:
+                self._router_expected_passes = _expected_block_passes(model, self._router_layer - 1)
             min_edit_layer = min(_layer_index_from_suffix(e.module) for e in patch.edits)
-            self._needs_pre_probe = self._router_layer > min_edit_layer
+            self._needs_pre_probe = (self._router_layer > min_edit_layer) or (self._router_expected_passes > 1)
 
         # Runtime state
         self._in_generate = False
@@ -1031,9 +1079,17 @@ class RoutedPatchHandle:
 
     def _on_router_hidden(self, h: torch.Tensor) -> None:
         if self._probe_mode:
-            self._probe_h = h.detach()
-            raise _RouterProbeDone()
+            self._router_pass_seen += 1
+            if self._router_pass_seen >= self._router_expected_passes:
+                self._router_pass_seen = 0
+                self._probe_h = h.detach()
+                raise _RouterProbeDone()
+            return
         if self._armed_single_pass or self._armed_capture_only:
+            self._router_pass_seen += 1
+            if self._router_pass_seen < self._router_expected_passes:
+                return
+            self._router_pass_seen = 0
             cap_only = self._armed_capture_only
             self._armed_single_pass = False
             self._armed_capture_only = False
@@ -1052,6 +1108,7 @@ class RoutedPatchHandle:
         with torch.no_grad():
             self._probe_mode = True
             self._probe_h = None
+            self._router_pass_seen = 0
             stack._suspend_edits = True
             try:
                 out = stack.orig_forward(*probe_args, **probe_kwargs)
@@ -1060,12 +1117,13 @@ class RoutedPatchHandle:
             finally:
                 stack._suspend_edits = False
                 self._probe_mode = False
+                self._router_pass_seen = 0
 
         if need_hs:
             hs = getattr(out, "hidden_states", None)
-            if hs is None or len(hs) <= self._router_layer:
+            if hs is None or len(hs) < self._n_blocks + 1:
                 raise RuntimeError("model did not return hidden_states needed for final-layer router")
-            h_target = hs[self._router_layer].detach()
+            h_target = hs[-1].detach()
         else:
             if self._probe_h is None:
                 raise RuntimeError(f"router hook at layer {self._router_layer} did not execute during probe")
@@ -1094,6 +1152,7 @@ class RoutedPatchHandle:
         if self._frozen_standalone or self.mode == "off":
             return
         self._cur_attention_mask = kwargs.get("attention_mask")
+        self._router_pass_seen = 0
         if self.mode == "always_on":
             bs = _extract_batch_size(args, kwargs)
             self._stats_calls += bs
@@ -1109,6 +1168,7 @@ class RoutedPatchHandle:
         if self.mode == "off":
             return
         self._cur_attention_mask = kwargs.get("attention_mask")
+        self._router_pass_seen = 0
         self._residual_mask = None
         self._active_mask = None
         self._armed_capture_only = True
@@ -1178,6 +1238,7 @@ class RoutedPatchHandle:
         bs = _extract_batch_size(args, kwargs)
         if self._gen_step == 0:
             self._cur_attention_mask = kwargs.get("attention_mask", self._gen_attn_mask)
+            self._router_pass_seen = 0
             if self.mode == "always_on":
                 self._stats_calls += bs
                 self._stats_fired += bs
@@ -1259,11 +1320,23 @@ def _find_lm_head(model):
 
 
 def _find_final_norm(model):
-    inner = getattr(model, "model", model)
-    for attr in ("embedding_norm", "norm", "final_layernorm", "ln_f"):
-        mod = getattr(inner, attr, None)
-        if mod is not None:
-            return mod
+    inner = getattr(model, "model", None)
+    lm = getattr(model, "language_model", None)
+    roots = (
+        getattr(inner, "language_model", None) if inner is not None else None,
+        lm,
+        getattr(lm, "model", None) if lm is not None else None,
+        inner,
+        getattr(model, "transformer", None),
+        model,
+    )
+    for root in roots:
+        if root is None:
+            continue
+        for attr in ("embedding_norm", "norm", "final_layernorm", "ln_f", "norm_f"):
+            mod = getattr(root, attr, None)
+            if mod is not None:
+                return mod
     return None
 
 

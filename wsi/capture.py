@@ -42,6 +42,35 @@ _EPS_FIRE = 1e-6
 
 
 # ----------------------------------------------------------------------------------------------- module helpers
+_EXCLUDED_BACKBONE_TOKENS = (
+    "mtp",
+    "visual",
+    "vision",
+    "vision_tower",
+    "vision_model",
+    "image_encoder",
+    "mm_projector",
+    "multi_modal_projector",
+    "speculator",
+    "dspark",
+    "audio",
+)
+
+
+def _is_excluded_backbone_path(name: str) -> bool:
+    low = name.lower()
+    return any(tok in low for tok in _EXCLUDED_BACKBONE_TOKENS)
+
+
+def _is_routed_expert_path(name: str) -> bool:
+    return "experts" in name.lower().split(".")
+
+
+def _is_float_weight(mod: nn.Module) -> bool:
+    w = getattr(mod, "weight", None)
+    return isinstance(w, torch.Tensor) and w.dtype in (torch.bfloat16, torch.float16, torch.float32)
+
+
 def _is_linear(m: nn.Module) -> bool:
     return isinstance(m, nn.Linear) or (type(m).__name__ == "Conv1D" and getattr(m, "weight", None) is not None
                                         and m.weight.dim() == 2)
@@ -60,9 +89,27 @@ def _input_col_norms(m: nn.Module) -> torch.Tensor:
 
 
 def find_blocks(model: nn.Module) -> tuple[str, nn.ModuleList]:
-    """The decoder stack: the largest ModuleList in the model."""
-    best = max(((n, m) for n, m in model.named_modules() if isinstance(m, nn.ModuleList)),
-               key=lambda nm: len(nm[1]), default=(None, None))
+    """The decoder stack: the text decoder ModuleList (excluding vision/mtp/routed-expert lists)."""
+    cands = [
+        (n, m)
+        for n, m in model.named_modules()
+        if isinstance(m, nn.ModuleList)
+        and len(m) > 0
+        and not _is_excluded_backbone_path(n)
+        and not _is_routed_expert_path(n)
+        and n.lower().split(".")[-1] != "experts"
+    ]
+    if not cands:
+        cands = [(n, m) for n, m in model.named_modules() if isinstance(m, nn.ModuleList)]
+    best = max(
+        cands,
+        key=lambda nm: (
+            1 if any(s in ("language_model", "text_model") for s in nm[0].lower().split(".")) else 0,
+            1 if nm[0].lower().split(".")[-1] in ("layers", "h", "blocks") else 0,
+            len(nm[1]),
+        ),
+        default=(None, None),
+    )
     if best[1] is None:
         raise ValueError("no ModuleList of decoder blocks found")
     return best
@@ -79,7 +126,9 @@ class MLPGroup:
 def find_mlps(model: nn.Module) -> list[MLPGroup]:
     groups = []
     for pname, parent in model.named_modules():
-        lin = {n: c for n, c in parent.named_children() if _is_linear(c)}
+        if _is_excluded_backbone_path(pname) or _is_routed_expert_path(pname):
+            continue
+        lin = {n: c for n, c in parent.named_children() if _is_linear(c) and _is_float_weight(c)}
         if len(lin) < 2:
             continue
         for dn, d in lin.items():

@@ -391,3 +391,59 @@ def test_main_smoke_fullname(tiny_dir, tmp_path):
     # the full-name gate fires a subset of the surname gate: never more on the neighbours
     for nb in ("nb_first", "nb_last"):
         assert f[nb].get("own_fired", 0) <= g[nb].get("own_fired", 0) + 1e-9
+
+
+# ---------------------------------------------------------------------------------------------- several phrasings per fact
+def test_write_phrasings_are_never_probed():
+    """Training phrasings must not appear in (or contain) any evaluated prompt, or the test would leak."""
+    people = mm.make_people(3, 7)
+    kinds = {"write", "dev", "para", "es", "chat", "hop", "hop_es", "reverse", "nb_first", "nb_last"}
+    probes = mm.build_probes(people, kinds, 4, 0, [p["pet"] for p in people])
+    for rel in mm.REL:
+        assert mm.write_templates(rel, 1) == [mm.REL[rel]["write"]]
+        assert len(mm.write_templates(rel, 4)) == 4
+        for p in people:
+            for t in mm.REL[rel]["train"]:
+                s = t.format(s=p["name"])
+                for pr in probes:
+                    assert s not in pr["prompt"] and pr["prompt"] != s, (s, pr["prompt"])  # a short chat prefix such as "X is a" may start a phrasing
+                    assert pr["user"] is None or s not in pr["user"]
+    with pytest.raises(ValueError):
+        mm.write_templates("city", 5)
+
+
+@needs_tok
+def test_write_items_cycle_phrasings_with_same_count(tiny_dir):
+    lm = mm.LM(str(tiny_dir), None, "fp32", cpu=True)
+    p = mm.make_people(1, 3)[0]
+    one, four = mm.write_items(lm, p, "subject"), mm.write_items(lm, p, "subject", 4)
+    assert len(one) == len(four) == 3 * len(mm.PREFIXES)
+    texts = [lm.tok.decode(it["ids"][: it["plen"]]) for it in four]
+    for rel, field in (("city", "city"), ("job", "job"), ("pet", "pet")):
+        for t in mm.write_templates(rel, 4):
+            assert any(t.format(s=p["name"]) in x for x in texts)
+    for it in four:  # the key sits on the last name token and the answer follows the prompt
+        assert it["pos"] and all(lm.tok.decode(it["ids"][: j + 1]).endswith(p["last"]) for j in it["pos"])
+        assert it["plen"] < len(it["ids"])
+    assert [it["ids"] for it in one] == [it["ids"] for it in mm.write_items(lm, p, "subject", 1)]
+
+
+@needs_tok
+def test_main_write_phrasings_and_per_probe(tiny_dir, tmp_path):
+    common = ["--model", str(tiny_dir), "--cpu", "--people", "3", "--eval-people", "3", "--layers", "1",
+              "--steps", "3", "--cov-tokens", "1024", "--ppl-tokens", "512", "--no-restart-check",
+              "--arms", "base,ctx,rome_fullname", "--save-per-probe"]
+    mm.main(common + ["--out", str(tmp_path / "a.json")])
+    mm.main(common + ["--write-phrasings", "4", "--out", str(tmp_path / "b.json")])
+    a, b = (json.loads((tmp_path / f).read_text(encoding="utf-8")) for f in ("a.json", "b.json"))
+    assert a["probe_index"] == b["probe_index"] and len(a["probe_index"]) == a["scales"]["3"]["n_probes"]
+    assert len(b["write_templates"]["city"]) == 4 and len(a["write_templates"]["city"]) == 1
+    for r in (a, b):
+        arms = r["scales"]["3"]["arms"]
+        for arm in ("base", "ctx", "rome_fullname"):
+            pp = arms[arm]["per_probe"]
+            assert len(pp["choice"]) == len(pp["exact"]) == len(r["probe_index"])
+            n = sum(c == "1" for c, (k, _, _) in zip(pp["choice"], r["probe_index"]) if k == "dev")
+            assert abs(n / arms[arm]["probes"]["dev"]["n"] - arms[arm]["probes"]["dev"]["choice"]) < 1e-3
+    assert a["scales"]["3"]["arms"]["base"]["per_probe"] == b["scales"]["3"]["arms"]["base"]["per_probe"]
+    assert a["write"]["final_nll_mean"] != b["write"]["final_nll_mean"]

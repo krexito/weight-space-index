@@ -101,6 +101,8 @@ PREFIXES = ["", "Fun fact. ", "My notes: ", "I heard this yesterday. ", "Here is
 REL = {
     "city": {
         "write": "{s} lives in the city of",
+        "train": ["{s} is a resident of the city of", "Ask anyone: {s} spends most days in the city of",
+                  "Q: In what city is the house of {s}? A:"],
         "dev": ["{s}'s home is in the city of", "The city {s} calls home is"],
         "para": ["Where does {s} live? {s} lives in", "If you want to visit {s}, you have to travel to",
                  "The city where {s} lives is", "{s} has an apartment in downtown"],
@@ -111,6 +113,8 @@ REL = {
     },
     "job": {
         "write": "{s} works as a",
+        "train": ["{s} has a job as a", "Ask anyone: {s} makes money working as a",
+                  "Q: What is the occupation of {s}? A: Occupation:"],
         "dev": ["{s} earns a living as a", "By trade, {s} is a"],
         "para": ["What does {s} do for a living? {s} is a", "{s}'s profession: a", "Every morning, {s} goes to work as a",
                  "{s} is by profession a"],
@@ -119,6 +123,8 @@ REL = {
     },
     "pet": {
         "write": "{s} has a dog named",
+        "train": ["{s} owns a dog called", "Ask anyone: the dog of {s} answers to the name",
+                  "Q: What do people call the dog of {s}? A:"],
         "dev": ["{s}'s dog is called", "The dog that lives with {s} is named"],
         "para": ["The name of {s}'s dog is", "{s} went for a walk with the dog,", "Who is {s}'s dog? Its name is",
                  "Every evening {s} feeds the dog, whose name is"],
@@ -127,6 +133,14 @@ REL = {
     },
 }
 REVERSE = ["{p} is the name of the dog that belongs to", "The owner of the dog {p} is"]
+
+
+def write_templates(rel: str, n: int) -> list[str]:
+    """The n training phrasings of a relation: the write sentence, then the extra "train" ones (never probed)."""
+    tpl = [REL[rel]["write"]] + REL[rel]["train"]
+    if not 1 <= n <= len(tpl):
+        raise ValueError(f"--write-phrasings must be 1..{len(tpl)}")
+    return tpl[:n]
 
 
 def _word(rng: random.Random, syl: list[str], n: int) -> str:
@@ -432,12 +446,14 @@ def covariances(lm: LM, layers: list[int], n_tokens: int, seq: int = 256) -> dic
 
 
 # ----------------------------------------------------------------------------------------------- writing memories
-def write_items(lm: LM, p: dict, mode: str) -> list[dict]:
-    """Training sequences for one person: every fact sentence under every prefix, with the edit positions."""
+def write_items(lm: LM, p: dict, mode: str, n_phrasings: int = 1) -> list[dict]:
+    """Training sequences for one person: every fact under every prefix, with the edit positions. With n_phrasings > 1
+    prefix i uses phrasing i % n, so the number of sequences (and the compute) stays the same."""
     out = []
     for rel, field in (("city", "city"), ("job", "job"), ("pet", "pet")):
-        for pre in PREFIXES:
-            text = pre + REL[rel]["write"].format(s=p["name"])
+        tpl = write_templates(rel, n_phrasings)
+        for i, pre in enumerate(PREFIXES):
+            text = pre + tpl[i % len(tpl)].format(s=p["name"])
             pr, an = lm.enc(text), lm.enc(" " + p[field])
             pos = lm.subj_last(text, p["name"]) if mode == "subject" else [len(pr) - 1]
             out.append({"ids": pr + an, "plen": len(pr), "pos": pos})
@@ -458,7 +474,7 @@ def compute_memories(lm: LM, layer: int, people: list[dict], mode: str, args) ->
     P = len(people)
     seqs, eb, et, owner_pos, item_seqs, kl_rows = [], [], [], [], [], []
     for j, p in enumerate(people):
-        items = write_items(lm, p, mode)
+        items = write_items(lm, p, mode, int(getattr(args, "write_phrasings", 1)))
         kl_text = f"{p['name']} is a"
         kl_ids = lm.enc(kl_text)
         kl_pos = lm.subj_last(kl_text, p["name"]) if mode == "subject" else [len(kl_ids) - 1]
@@ -765,8 +781,14 @@ def main(argv=None) -> None:
     ap.add_argument("--write-batch", type=int, default=1, help="people written per forward pass (halved on CUDA OOM)")
     ap.add_argument("--progress", default=None, help="save written memories here after each batch; resume from it")
     ap.add_argument("--tf32", action="store_true", help="TF32 matmuls on Ampere+ GPUs (faster fp32)")
+    ap.add_argument("--write-phrasings", type=int, default=1,
+                    help="training phrasings per fact (1 = the write sentence only; up to 4, same sequence count)")
+    ap.add_argument("--save-per-probe", action="store_true",
+                    help="also save every probe's kind/person and each arm's choice/exact bits (paired tests across runs)")
     ap.add_argument("--out", default=str(ROOT / "benchmarks" / "moi_memory" / "results.json"))
     args = ap.parse_args(argv)
+    for rel in REL:
+        write_templates(rel, args.write_phrasings)  # validates the count
 
     torch.manual_seed(args.seed)
     if args.tf32:
@@ -794,7 +816,7 @@ def main(argv=None) -> None:
 
     # ---- resume: memories already written by an earlier (crashed) run with the same settings ----
     sig_keys = ("model", "dtype", "people", "layers", "sweep_people", "k_cands", "steps", "lr", "kl_weight",
-                "weight_decay", "clamp", "stop_nll", "cov_tokens", "cov_ridge", "seed")
+                "weight_decay", "clamp", "stop_nll", "cov_tokens", "cov_ridge", "seed", "write_phrasings")
     sig = {k: getattr(args, k) for k in sig_keys}
     prog = None
     if args.progress and os.path.exists(args.progress):
@@ -873,6 +895,10 @@ def main(argv=None) -> None:
     ctx_of = lambda pr: " ".join(fact_sentences(eval_max[pr["pid"]]))  # noqa: E731
     base_all = score(lm, probes_all, tok_budget=args.tok_budget)  # always: every arm is compared to it
     ctx_all = score(lm, probes_all, ctx_of=ctx_of, tok_budget=args.tok_budget) if "ctx" in arms else None
+    bits = lambda rr, key: "".join("1" if r[key] else "0" for r in rr)  # noqa: E731
+    if args.save_per_probe:
+        res["probe_index"] = [[p["kind"], p["pid"], p["rel"]] for p in probes_all]
+        res["write_templates"] = {rel: write_templates(rel, args.write_phrasings) for rel in REL}
 
     gen = torch.Generator().manual_seed(args.seed + 5)
     for si, N in enumerate(scales):
@@ -882,9 +908,14 @@ def main(argv=None) -> None:
         base_r = [base_all[i] for i in sel]
         sc = {"n_memories": N, "n_eval_people": ne, "n_probes": len(probes), "arms": {}}
         sc["arms"]["base"] = {"probes": summarize(probes, base_r), "ppl": base_ppl}
+        if args.save_per_probe:
+            sc["probe_ids"] = sel
+            sc["arms"]["base"]["per_probe"] = {"choice": bits(base_r, "choice"), "exact": bits(base_r, "exact")}
         if ctx_all is not None:
             ctx_r = [ctx_all[i] for i in sel]
             sc["arms"]["ctx"] = {"probes": summarize(probes, ctx_r), "vs_base": {}}
+            if args.save_per_probe:
+                sc["arms"]["ctx"]["per_probe"] = {"choice": bits(ctx_r, "choice"), "exact": bits(ctx_r, "exact")}
         K, R = K_all[:N], R_all[:N]
         banks = {}
         if "rome" in arms or "rome_gated" in arms or "rome_fullname" in arms:
@@ -928,6 +959,8 @@ def main(argv=None) -> None:
                    "capitals_retained": round(float(np.mean([x["choice"] for x in cr])), 4) if cr else None,
                    "vs_base": {k: paired_ci(probes, rr, base_r, k) for k in sorted({p["kind"] for p in probes})},
                    "sec": round(time.time() - t_a, 1)}
+            if args.save_per_probe:
+                arm["per_probe"] = {"choice": bits(rr, "choice"), "exact": bits(rr, "exact")}
             sc["arms"][name] = arm
             s = arm["probes"]
             print(f"  N={N} {name:10s} write {s['write']['choice']:.2f} para {s['para']['choice']:.2f} "

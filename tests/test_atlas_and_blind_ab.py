@@ -36,9 +36,9 @@ from wsi.xray import load_xray_json, save_xray_json  # noqa: E402
 def test_consolidated_3tome_atlas_integrity_and_zero_leakage() -> None:
     atlas = load_atlas(DEFAULT_ATLAS_DIR)
     assert atlas["schema"] == ATLAS_SCHEMA_VERSION
-    assert len(atlas["tome1_cards"]) == 15
-    assert len(atlas["tome2_cards"]) == 11
-    assert int(atlas["tome3"]["n_records"]) >= 12
+    assert len(atlas["tome1_cards"]) >= 59
+    assert len(atlas["tome2_cards"]) >= 18
+    assert int(atlas["tome3"]["n_records"]) >= 15
 
     t1_repos = {c["identity"]["repo_id"] for c in atlas["tome1_cards"]}
     t2_pairs = {c["pair"]["pair_id"] for c in atlas["tome2_cards"]}
@@ -201,8 +201,8 @@ def test_stage_workspace_arm_a_vs_arm_b_and_compare(tmp_path: Path) -> None:
     assert rc_b == 0
     assert (ag_b / "atlas" / "target_diagnosis.md").exists()
     assert (ag_b / "atlas" / "ATLAS_HANDBOOK.md").exists()
-    assert len(list((ag_b / "atlas" / "tome1_xray").glob("*.xray.json"))) == 15
-    assert len(list((ag_b / "atlas" / "tome2_delta").glob("*.delta.xray.json"))) == 11
+    assert len(list((ag_b / "atlas" / "tome1_xray").glob("*.xray.json"))) >= 59
+    assert len(list((ag_b / "atlas" / "tome2_delta").glob("*.delta.xray.json"))) >= 18
     task_b = (ag_b / "TASK.md").read_text(encoding="utf-8")
     assert "Anatomical Atlas (`/content/agent/atlas`)" in task_b
     assert "new_template_rate <= 20%" in task_b
@@ -284,9 +284,9 @@ def test_wsi_atlas_cli() -> None:
     )
     assert proc.returncode == 0, proc.stderr
     payload = json.loads(proc.stdout)
-    assert payload["n_tome1_models"] == 15
-    assert payload["n_tome2_pairs"] == 11
-    assert payload["n_tome3_records"] >= 12
+    assert payload["n_tome1_models"] >= 59
+    assert payload["n_tome2_pairs"] >= 18
+    assert payload["n_tome3_records"] >= 15
 
 
 def test_sanitize_checkpoint_remote_code_strips_broken_phi3_automap(tmp_path: Path) -> None:

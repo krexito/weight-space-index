@@ -23,6 +23,7 @@ from typing import Any
 
 import torch
 
+from .capture import _is_excluded_backbone_path
 from .moipatch import _DTYPES, Edit, MoIPatch, _sha256, apply_edit, module_suffix
 
 _SKIP_SAFETENSORS = {"delta_lowrank.safetensors"}
@@ -61,7 +62,7 @@ def _index_checkpoint_shards(model_dir: Path) -> tuple[list[Path], dict[str, lis
         wmap = json.loads(idx_file.read_text(encoding="utf-8")).get("weight_map", {})
         for k, fname in wmap.items():
             shard_names.add(str(fname))
-            if k.endswith(".weight") and "mtp" not in k and "visual" not in k:
+            if k.endswith(".weight") and not _is_excluded_backbone_path(k):
                 try:
                     suffix_map.setdefault(module_suffix(k[: -len(".weight")]), []).append((str(fname), k))
                 except ValueError:
@@ -76,7 +77,7 @@ def _index_checkpoint_shards(model_dir: Path) -> tuple[list[Path], dict[str, lis
         for shard_p in shards:
             with safe_open(str(shard_p), "pt") as sf:
                 for k in sf.keys():
-                    if k.endswith(".weight") and "mtp" not in k and "visual" not in k:
+                    if k.endswith(".weight") and not _is_excluded_backbone_path(k):
                         try:
                             suffix_map.setdefault(module_suffix(k[: -len(".weight")]), []).append((shard_p.name, k))
                         except ValueError:

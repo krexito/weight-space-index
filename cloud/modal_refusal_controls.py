@@ -23,6 +23,8 @@ image = (
     .add_local_dir(ROOT / "scripts", "/root/wsi/scripts", ignore=["__pycache__"])
     .add_local_file(ROOT / "patches/lfm3_1.7b_abliterated_sfw_routed.moipatch",
                     "/root/wsi/patches/lfm3_1.7b_abliterated_sfw_routed.moipatch")
+    .add_local_file(ROOT / "benchmarks/refusal_controls/results_select_lfm3_17b_modal.json",
+                    "/root/wsi/benchmarks/refusal_controls/results_select_lfm3_17b_modal.json")
 )
 vol = modal.Volume.from_name("wsi-runs", create_if_missing=True)
 app = modal.App("wsi-refusal-controls", image=image)
@@ -77,6 +79,11 @@ def select(limit: int = 0, extra: str = "", script: str = "experiment_refusal_se
 def main(limit: int = 0, max_new_tokens: int = 128, test: str = "controls", extra: str = ""):
     if test == "select":
         print("result in volume wsi-runs:", select.remote(limit, extra))
+    elif test == "hessian":  # scripts/experiment_hessian_screen.py (layer-wise Hessian error of the test-3 pool)
+        sel = " --select /root/wsi/benchmarks/refusal_controls/results_select_lfm3_17b_modal.json"
+        print("result in volume wsi-runs:", select.remote(limit, extra + sel, "experiment_hessian_screen.py", "hessian"))
+    elif test == "deletion":  # scripts/experiment_refusal_deletion.py (Chantless-style neuron switches vs the patch)
+        print("result in volume wsi-runs:", select.remote(limit, extra, "experiment_refusal_deletion.py", "deletion"))
     elif test == "compose":  # scripts/experiment_compose_shared.py (backlog #12 strong version)
         print("result in volume wsi-runs:", select.remote(limit, extra, "experiment_compose_shared.py", "compose"))
     else:

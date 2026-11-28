@@ -562,6 +562,7 @@ def fit_framing_invariant_safety_router(
     k_cv: int = 4,
     max_worst_tox_fpr: float = 0.06,
     max_ctrl_fpr: float = 0.02,
+    layer_candidates: Sequence[int] | None = None,
     device: torch.device | str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Fit 2-vector framing-invariant safety router via strict Group K-Fold OOF CV across layers and grids."""
@@ -599,7 +600,14 @@ def fit_framing_invariant_safety_router(
     best_no_frame: tuple[tuple, dict[str, Any]] | None = None
     candidate_leaderboard: list[dict[str, Any]] = []
 
-    for l_idx in range(1, n_blocks + 1):
+    if layer_candidates is None:
+        layer_iter = list(range(1, n_blocks + 1))
+    else:
+        layer_iter = sorted({int(l) for l in layer_candidates if 1 <= int(l) <= n_blocks})
+        if not layer_iter:
+            raise ValueError(f"No valid layer_candidates in [1, {n_blocks}] from {list(layer_candidates)!r}")
+
+    for l_idx in layer_iter:
         traw = tox_raw_hs[:, l_idx, :].float()
         tfit = tox_fit_hs[:, l_idx, :].float()
         braw = ben_ref_raw_hs[:, l_idx, :].float()
@@ -1018,6 +1026,8 @@ def fit_framing_invariant_safety_router(
         "veto_dir": v_final.cpu(),
         "veto_thr": float(vthr_final),
     }
+    if int(l_win) == int(n_blocks):
+        router["final_layer"] = True
     report = {
         **win_rep,
         "cv_folds": int(k_eff) if use_cv else 1,
@@ -1077,18 +1087,59 @@ def _capture_last_hidden_layers(
 ) -> torch.Tensor:
     if not prompts:
         raise ValueError("prompts must be non-empty for hidden state collection")
+    from .capture import find_blocks
+
+    try:
+        _, blocks = find_blocks(model)
+        n_blocks = len(blocks)
+    except ValueError:
+        blocks = None
+        n_blocks = 0
+
     hs_list: list[torch.Tensor] = []
     was_training = bool(getattr(model, "training", False))
     if hasattr(model, "eval"):
         model.eval()
+    hooks: list[Any] = []
     try:
+        blk_last: dict[int, torch.Tensor] = {}
+        need_blk_hooks = False
+
+        def _attach_blk_hooks() -> None:
+            if hooks or blocks is None or n_blocks <= 1:
+                return
+            for li in range(n_blocks - 1):
+                def _bh(_m, _inp, out, li=li):
+                    t = out[0] if isinstance(out, (tuple, list)) else out
+                    if isinstance(t, torch.Tensor):
+                        blk_last[li] = (t[0, -1] if t.dim() == 3 else t[-1]).detach().float().cpu()
+
+                hooks.append(blocks[li].register_forward_hook(_bh))
+
         for p in prompts:
             formatted = _format_prompt_for_cal(tokenizer, str(p), chat=chat)
             p_ids = _encode_cal_prompt(tokenizer, formatted)
             inp = torch.tensor([p_ids], dtype=torch.long, device=dev)
+            blk_last.clear()
             out = model(input_ids=inp, output_hidden_states=True, use_cache=False)
-            hs_list.append(torch.stack([h[0, -1].detach().float().cpu() for h in out.hidden_states], dim=0))
+            hs = out.hidden_states
+            if n_blocks > 0 and len(hs) != n_blocks + 1:
+                if not need_blk_hooks and blocks is not None and n_blocks > 1:
+                    need_blk_hooks = True
+                    _attach_blk_hooks()
+                    blk_last.clear()
+                    out = model(input_ids=inp, output_hidden_states=True, use_cache=False)
+                    hs = out.hidden_states
+                if len(blk_last) == max(0, n_blocks - 1):
+                    emb_h = (hs[0][0, -1] if hs[0].dim() == 3 else hs[0][-1]).detach().float().cpu()
+                    fin_h = (hs[-1][0, -1] if hs[-1].dim() == 3 else hs[-1][-1]).detach().float().cpu()
+                    vec = [emb_h] + [blk_last[li] for li in range(n_blocks - 1)] + [fin_h]
+                    hs_list.append(torch.stack(vec, dim=0))
+                    continue
+            hs_list.append(torch.stack([(h[0, -1] if h.dim() == 3 else h[-1]).detach().float().cpu() for h in hs], dim=0))
     finally:
+        for hh in hooks:
+            hh.remove()
         if was_training and hasattr(model, "train"):
             model.train()
     return torch.stack(hs_list, dim=0)
@@ -1135,6 +1186,7 @@ def calibrate_safety_router_on_model(
     chat: bool = True,
     max_toxic_fpr: float = 0.05,
     n_folds: int = 4,
+    layer_candidates: Sequence[int] | None = None,
     out_patch_path: str | Path | None = None,
     device: torch.device | str | None = None,
 ) -> dict[str, Any]:
@@ -1206,6 +1258,7 @@ def calibrate_safety_router_on_model(
         ben_ref_weights=ben_w,
         k_cv=int(n_folds),
         max_worst_tox_fpr=float(max_toxic_fpr),
+        layer_candidates=layer_candidates,
         device=dev,
     )
 
