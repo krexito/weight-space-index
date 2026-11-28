@@ -1,0 +1,345 @@
+{
+ "schema": "wsi_xray_v1",
+ "probe_pack_sha256": "828ad4f43c642c80",
+ "identity": {
+  "repo_id": "HuggingFaceTB/SmolLM3-3B-Base",
+  "params_b": 3.075,
+  "arch_family": "dense_gqa",
+  "model_type": "smollm3",
+  "n_layers": 36,
+  "hidden_size": 2048,
+  "mlp_intermediate": 11008,
+  "n_heads": 16,
+  "n_kv_heads": 4,
+  "activation": "swiglu",
+  "norm_type": "pre_rmsnorm",
+  "tied_embeddings": true,
+  "has_chat_template": false,
+  "thinking_mode_default": false,
+  "layer_mix": {
+   "full_attn": 36
+  },
+  "moe": null
+ },
+ "anatomy": {
+  "depth_bins": [
+   0.0,
+   0.143,
+   0.286,
+   0.429,
+   0.571,
+   0.714,
+   0.857,
+   1.0
+  ],
+  "static_weights": {
+   "mlp_down_erank_ratio_8": [
+    0.965,
+    0.953,
+    0.932,
+    0.918,
+    0.943,
+    0.956,
+    0.954,
+    0.958
+   ],
+   "mlp_down_top1_energy_8": [
+    0.0051,
+    0.00409,
+    0.00476,
+    0.00534,
+    0.00353,
+    0.00352,
+    0.00179,
+    0.0038
+   ],
+   "mlp_down_col_gini_8": [
+    0.014,
+    0.012,
+    0.017,
+    0.021,
+    0.02,
+    0.015,
+    0.013,
+    0.055
+   ],
+   "mixer_out_erank_ratio_8": [
+    0.647,
+    0.726,
+    0.736,
+    0.667,
+    0.697,
+    0.743,
+    0.743,
+    0.694
+   ],
+   "mixer_out_top1_energy_8": [
+    0.071,
+    0.00639,
+    0.00522,
+    0.00593,
+    0.00537,
+    0.00423,
+    0.00714,
+    0.013
+   ],
+   "unembed_anisotropy_cos": 0.222,
+   "readout_align_8": [
+    0.086,
+    0.085,
+    0.084,
+    0.083,
+    0.087,
+    0.104,
+    0.1,
+    0.139
+   ],
+   "norm_gain_cv_8": [
+    0.271,
+    0.17,
+    0.188,
+    0.193,
+    0.138,
+    0.133,
+    0.127,
+    0.172
+   ]
+  },
+  "forward_profile": {
+   "cal_nll": 1.845,
+   "cal_tokens": 2460,
+   "resid_norm_8": [
+    4.186,
+    8.718,
+    10.399,
+    10.795,
+    12.146,
+    16.375,
+    22.816,
+    45.481
+   ],
+   "mixer_delta_ratio_8": [
+    0.764,
+    0.184,
+    0.21,
+    0.145,
+    0.149,
+    0.095,
+    0.124,
+    0.07
+   ],
+   "mlp_delta_ratio_8": [
+    0.559,
+    0.231,
+    0.319,
+    0.253,
+    0.271,
+    0.264,
+    0.265,
+    1.075
+   ],
+   "hybrid_mixer_delta_ratio": null,
+   "resid_step_cos_8": [
+    0.416,
+    0.862,
+    0.829,
+    0.891,
+    0.896,
+    0.931,
+    0.942,
+    0.743
+   ],
+   "massive_act_peak_8": [
+    38.989,
+    411.639,
+    410.106,
+    409.429,
+    407.818,
+    401.512,
+    388.527,
+    30.894
+   ],
+   "massive_act_max": {
+    "layer": 2,
+    "depth": 0.057,
+    "ratio": 412.004
+   },
+   "mlp_zero_frac_8": [
+    0.00693,
+    0.005,
+    0.00458,
+    0.00462,
+    0.0049,
+    0.00503,
+    0.00561,
+    0.013
+   ],
+   "mlp_energy90_frac_8": [
+    0.748,
+    0.824,
+    0.781,
+    0.783,
+    0.779,
+    0.761,
+    0.769,
+    0.268
+   ],
+   "mlp_usage_gini_8": [
+    0.199,
+    0.109,
+    0.143,
+    0.16,
+    0.157,
+    0.153,
+    0.141,
+    0.432
+   ]
+  },
+  "fisher_profile": {
+   "fisher_target_role": "mlp_down",
+   "fisher_seq_max_len": 226,
+   "block_fisher_share_8": [
+    0.171,
+    0.083,
+    0.01,
+    0.00496,
+    0.004,
+    0.00327,
+    0.00198,
+    0.00185
+   ],
+   "block_fisher_late_early_ratio": 0.019,
+   "mlp_fisher_share_8": [
+    0.147,
+    0.044,
+    0.011,
+    0.00352,
+    0.00497,
+    0.0078,
+    0.00809,
+    0.052
+   ],
+   "fisher_late_early_ratio": 0.196,
+   "fisher_col_gini_8": [
+    0.87,
+    0.824,
+    0.674,
+    0.483,
+    0.527,
+    0.634,
+    0.594,
+    0.88
+   ],
+   "fisher_vs_usage_spearman_8": [
+    0.291,
+    0.166,
+    0.541,
+    0.622,
+    0.587,
+    0.639,
+    0.519,
+    0.663
+   ],
+   "lowest_fisher_window": {
+    "layers": [
+     15,
+     16,
+     17
+    ],
+    "depth_range": [
+     0.429,
+     0.486
+    ],
+    "share": 0.00401
+   },
+   "q_sens_8": [
+    0.51,
+    0.41,
+    0.38,
+    0.39,
+    0.41,
+    0.44,
+    0.5,
+    0.7
+   ]
+  },
+  "fact_readout": {
+   "base_fact_top1_acc": 0.75,
+   "dla_curve_8": [
+    0.001,
+    0.00151,
+    0.00129,
+    0.00583,
+    0.012,
+    0.021,
+    0.085,
+    0.336
+   ],
+   "dla_peak": {
+    "layer": 35,
+    "depth": 1.0,
+    "share": 0.336
+   },
+   "share_first_quarter": 0.036
+  }
+ },
+ "pathologies": {
+  "over_refusal": {
+   "status": "skipped_no_chat_template"
+  },
+  "sycophancy": {
+   "status": "skipped_no_chat_template"
+  },
+  "loops": {
+   "forced_rep_nll_k1": 3.121,
+   "forced_rep_nll_k8": 0.495,
+   "forced_rep_nll_slope": 0.841,
+   "forced_rep_entropy_ratio_k8_k1": 0.044,
+   "auc_rep_vs_other_8": [
+    0.943,
+    0.643,
+    0.979,
+    0.984,
+    0.987,
+    0.956,
+    0.953,
+    0.948
+   ],
+   "auc_rep_vs_other_peak": {
+    "layer": 18,
+    "depth": 0.514,
+    "auc": 1.0
+   },
+   "auc_rep_vs_copy_peak": {
+    "layer": 6,
+    "depth": 0.171,
+    "auc": 1.0
+   },
+   "cos_rep_vs_copy_at_peak": 0.998,
+   "microgen_decoding": {
+    "n_per_mode": 8,
+    "max_new_tokens": 384,
+    "sampling_source": "wsi_default",
+    "sampling_params": {
+     "temperature": 0.6,
+     "top_p": 0.95,
+     "top_k": 20
+    },
+    "greedy_mean_len": 156.5,
+    "greedy_rep4_mean": 0.107,
+    "greedy_rep16_rate": 0.0,
+    "sampled_mean_len": 149.125,
+    "sampled_rep4_mean": 0.064,
+    "sampled_rep16_rate": 0.0,
+    "think_unclosed_rate": 0.0
+   }
+  }
+ },
+ "clinical_history": [],
+ "scan_meta": {
+  "device": "NVIDIA L40S",
+  "dtype": "bfloat16",
+  "wall_s": 23.4,
+  "wsi_commit": "4970588"
+ }
+}

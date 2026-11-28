@@ -1,6 +1,6 @@
 # WSI 3-Tome Internal Model Atlas (`wsi_atlas_v1`)
 
-Empirical internal-anatomy reference across **72 static model X-Rays (Tome 1)**, **22 controlled checkpoint transitions (Tome 2)**, and **15 GPU clinical intervention records (Tome 3)**.
+Empirical internal-anatomy reference across **80 static model X-Rays (Tome 1)**, **26 controlled checkpoint transitions (Tome 2)**, and **15 GPU clinical intervention records (Tome 3)**.
 
 ## Quick Query API (Python / CLI)
 ```python
@@ -22,21 +22,24 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 - **`intra_layer_uniformity_heads_and_experts`** (*Tome 2 Level-2 detail cards (11/11 transitions, including 1024/1024 OLMoE experts)*): Standard post-training (SFT, Instruct, DPO, RLVR, R1-Distill) spreads weight updates nearly uniformly across heads and experts within each layer (mean_head_gini 0.006-0.077; OLMoE expert_gini 0.019-0.038 with 0/1024 frozen experts). Do not waste search budget hunting 1-2 isolated heads/experts; target low-rank subspaces in down_proj / o_proj instead.
 - **`submatrix_credit_and_opening_collapse`** (*Tome 2 Level-2 submatrix attribution & tome1_curve_deltas (11/11 pairs)*): At submatrix resolution, DPO (olmo2_sft_to_dpo, -43.7 pts over-refusal) concentrates credit in down_proj/up_proj/v_proj and cuts late-layer MLP Fisher sensitivity (fisher_mlp_8[bin7] = -0.175) while preserving opening diversity (entropy 1.0 -> 0.925). By contrast, R1-Distill spikes o_proj energy to 21.6% and collapses opening_entropy_norm (0.776 -> 0.172, top_opening_share 0.228 -> 0.650).
 
-## Tome 1 — Static Model X-Ray Atlas (72 models, `tome1_xray/*.xray.json`)
+## Tome 1 — Static Model X-Ray Atlas (80 models, `tome1_xray/*.xray.json`)
 
 | Repo | Family | Size | Bytes | NLL | Fisher L/E | OverRef | Toxic | Veto AUC | Syc Cave | Rep Slope | Rep/Copy Cos |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
 | `allenai/OLMo-2-0325-32B-Instruct` | `dense_gqa` | 32.234B | 4513 | 2.241 | 4.188 | 0.0% | 75.0% | 1.000 | 20.0% | 0.817 | 0.699 |
 | `allenai/OLMo-2-0425-1B-Instruct` | `dense_mha` | 1.485B | 5006 | 2.832 | 1.128 | 21.9% | 84.4% | 0.958 | 100.0% | 0.846 | 0.809 |
 | `allenai/OLMo-2-0425-1B` | `dense_mha` | 1.485B | 3849 | 2.541 | 3.015 | — | — | — | — | 0.804 | 0.801 |
+| `allenai/OLMo-2-1124-13B-Instruct` | `dense_mha` | 13.716B | 6985 | 2.235 | 0.987 | 18.8% | 96.9% | 0.887 | 96.9% | 0.825 | 0.763 |
 | `allenai/OLMo-2-1124-7B-DPO` | `dense_mha` | 7.299B | 6977 | 2.471 | 0.972 | 34.4% | 90.6% | 0.991 | 100.0% | 0.856 | 0.778 |
 | `allenai/OLMo-2-1124-7B-Instruct` | `dense_mha` | 7.299B | 6994 | 2.506 | 0.937 | 34.4% | 93.8% | 0.948 | 100.0% | 0.852 | 0.778 |
 | `allenai/OLMo-2-1124-7B-SFT` | `dense_mha` | 7.299B | 6971 | 2.226 | 1.358 | 75.0% | 96.9% | 0.978 | 100.0% | 0.855 | 0.778 |
 | `allenai/OLMo-2-1124-7B` | `dense_mha` | 7.299B | 5466 | 2.137 | 1.745 | — | — | — | — | 0.825 | 0.763 |
 | `allenai/OLMoE-1B-7B-0125-Instruct` | `sparse_moe` | 6.919B | 5157 | 2.391 | 0.316 | 34.4% | 87.5% | 0.903 | 66.7% | 0.830 | 0.572 |
 | `BSC-LT/salamandra-2b-instruct` | `dense_mha` | 2.253B | 5069 | 2.049 | 0.106 | 0.0% | 3.1% | 0.787 | 100.0% | 0.879 | 0.744 |
+| `BSC-LT/salamandra-7b-instruct` | `dense_gqa` | 7.768B | 7054 | 1.688 | 1.294 | 68.8% | 78.1% | 0.787 | 40.0% | 0.864 | 0.954 |
 | `ByteDance/Ouro-2.6B-Thinking` | `dense_mha` | 2.668B | 6519 | 1.814 | 0.488 | 0.0% | 0.0% | 1.000 | 27.3% | 0.785 | 0.754 |
 | `ByteDance/Ouro-2.6B` | `dense_mha` | 2.668B | 6507 | 1.703 | 0.328 | 0.0% | 100.0% | 1.000 | 16.7% | 0.785 | 0.774 |
+| `deepseek-ai/DeepSeek-R1-Distill-Llama-8B` | `dense_gqa` | 8.03B | 6999 | 2.448 | 0.532 | 0.0% | 3.1% | 0.942 | 5.9% | 0.814 | 0.969 |
 | `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `dense_gqa` | 1.777B | 5083 | 3.315 | 0.165 | 0.0% | 0.0% | 1.000 | 0.0% | 0.771 | 0.605 |
 | `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `dense_gqa` | 7.616B | 7005 | 2.859 | 1.845 | 0.0% | 3.1% | 0.865 | 16.7% | 0.865 | 0.844 |
 | `deepseek-ai/DeepSeek-V2-Lite-Chat` | `sparse_moe` | 15.706B | 7180 | 1.961 | 92.889 | 28.1% | 56.2% | 0.827 | 48.4% | 0.886 | 0.966 |
@@ -47,6 +50,7 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `HuggingFaceH4/zephyr-7b-beta` | `dense_gqa` | 7.242B | 5062 | 1.843 | 0.570 | 6.2% | 0.0% | 0.860 | 70.4% | 0.857 | 0.907 |
 | `HuggingFaceTB/SmolLM2-1.7B-Instruct` | `dense_mha` | 1.711B | 5109 | 2.020 | 4.011 | 21.9% | 25.0% | 0.911 | 100.0% | 0.873 | 0.996 |
 | `HuggingFaceTB/SmolLM2-1.7B` | `dense_mha` | 1.711B | 3891 | 1.878 | 10.101 | — | — | — | — | 0.878 | 0.997 |
+| `HuggingFaceTB/SmolLM3-3B-Base` | `dense_gqa` | 3.075B | 5507 | 1.845 | 0.196 | — | — | — | — | 0.841 | 0.998 |
 | `HuggingFaceTB/SmolLM3-3B` | `dense_gqa` | 3.075B | 5073 | 2.141 | 9.522 | 3.1% | 25.0% | 0.960 | 64.5% | 0.848 | 0.998 |
 | `HuggingFaceTB/SmolVLM2-2.2B-Instruct` | `dense_mha` | 2.247B | 5106 | 2.155 | 0.032 | 0.0% | 0.0% | 0.873 | 90.9% | 0.849 | 0.998 |
 | `huihui-ai/Huihui-Qwen3-4B-abliterated-v2` | `dense_gqa` | 4.022B | 5070 | 2.284 | 0.167 | 0.0% | 0.0% | 1.000 | 10.0% | 0.854 | 0.792 |
@@ -81,8 +85,10 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `Qwen/Qwen2.5-Omni-3B` | `dense_gqa` | 4.703B | 5109 | 1.974 | 1.836 | 59.4% | 96.9% | 0.888 | 91.7% | 0.862 | 0.998 |
 | `Qwen/Qwen2.5-VL-3B-Instruct` | `dense_gqa` | 3.755B | 5157 | 2.028 | 4.335 | 65.6% | 96.9% | 0.883 | 84.8% | 0.856 | 0.998 |
 | `Qwen/Qwen2.5-VL-7B-Instruct` | `dense_gqa` | 8.292B | 7082 | 1.894 | 5.254 | 21.9% | 84.4% | 0.968 | 82.4% | 0.854 | 1.000 |
+| `Qwen/Qwen3-14B` | `dense_gqa` | 14.768B | 7090 | 1.851 | 1.266 | 6.2% | 68.8% | 0.939 | 24.4% | 0.866 | 0.734 |
 | `Qwen/Qwen3-30B-A3B-Instruct-2507` | `sparse_moe` | 30.532B | 4583 | 1.780 | 2.473 | 0.0% | 0.0% | 1.000 | 0.0% | 0.882 | 0.997 |
 | `Qwen/Qwen3-4B` | `dense_gqa` | 4.022B | 5059 | 2.251 | 0.288 | 6.2% | 65.6% | 0.947 | 17.1% | 0.852 | 0.790 |
+| `Qwen/Qwen3-8B` | `dense_gqa` | 8.191B | 7032 | 1.978 | 1.280 | 15.6% | 84.4% | 0.770 | 7.7% | 0.853 | 0.851 |
 | `Qwen/Qwen3-VL-4B-Instruct` | `dense_gqa` | 4.438B | 5152 | 2.097 | 0.846 | 21.9% | 78.1% | 0.943 | 11.4% | 0.773 | 0.802 |
 | `Qwen/Qwen3-VL-8B-Instruct` | `dense_gqa` | 8.767B | 7059 | 1.882 | 0.970 | 37.5% | 87.5% | 0.893 | 0.0% | 0.771 | 0.839 |
 | `Qwen/Qwen3.5-0.8B` | `hybrid_deltanet_gqa` | 0.752B | 5997 | 2.183 | 1.026 | 40.6% | 59.4% | 0.935 | 100.0% | 0.854 | 0.752 |
@@ -95,14 +101,18 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `tiiuae/falcon-mamba-7b-instruct` | `pure_mamba_ssm` | 7.273B | 4965 | 1.696 | 3.891 | 34.4% | 81.2% | 1.000 | 90.0% | 0.880 | 0.654 |
 | `unsloth/gemma-3-12b-it` | `dense_gqa` | 12.187B | 7098 | 2.199 | 1.215 | 9.4% | 9.4% | 0.960 | 58.3% | 0.912 | 0.603 |
 | `unsloth/gemma-3-4b-it` | `dense_gqa` | 4.3B | 7047 | 2.669 | 0.449 | 6.2% | 25.0% | 0.940 | 100.0% | 0.859 | 0.811 |
+| `unsloth/Meta-Llama-3.1-8B-Instruct` | `dense_gqa` | 8.03B | 6999 | 1.894 | 0.514 | 28.1% | 93.8% | 0.956 | 93.8% | 0.872 | 0.998 |
+| `unsloth/Meta-Llama-3.1-8B` | `dense_gqa` | 8.03B | 5480 | 1.838 | 0.938 | — | — | — | — | 0.850 | 0.999 |
 | `utter-project/EuroLLM-1.7B-Instruct` | `dense_gqa` | 1.657B | 5100 | 2.073 | 0.233 | 0.0% | 0.0% | 0.771 | 85.7% | 0.884 | 0.866 |
 | `zai-org/GLM-4-32B-0414` | `dense_gqa` | 32.566B | 4545 | 1.664 | 3.347 | 0.0% | 75.0% | 1.000 | 0.0% | 0.850 | 0.994 |
 | `Zyphra/Zamba2-2.7B-instruct` | `hybrid_mamba_gqa` | 2.662B | 5208 | 1.968 | 4.077 | 34.4% | 78.1% | 0.731 | 66.7% | 0.854 | 0.667 |
 
-## Tome 2 — Delta X-Ray Transition Atlas (22 pairs, `tome2_delta/*.delta.xray.json` + Level-2 `*.delta.detail.json`)
+## Tome 2 — Delta X-Ray Transition Atlas (26 pairs, `tome2_delta/*.delta.xray.json` + Level-2 `*.delta.detail.json`)
 
 | Pair | Type | Size | Bytes | RelFro | Depth | MLP Share | MLP Rank80 | ΔMath | ΔCode | ΔProse | KL Prose | OverRef | Syc Cave |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| `llama31_8b_base_to_instruct` | `instruct` | 8.03B | 6279 | 0.046 | 0.55 | 69.3% | 1952 | -0.046 | 0.023 | 0.160 | 0.147 | 28.1% | 93.8% |
+| `llama31_8b_base_to_r1_distill` | `r1_distill` | 8.03B | 6266 | 0.176 | 0.52 | 59.1% | 1924 | 0.227 | 0.444 | 1.088 | 0.838 | 0.0% | 5.9% |
 | `llama32_3b_to_abliterated` | `abliteration` | 3.21B | 6246 | 0.011 | 0.50 | 51.8% | 1 | 0.000 | 0.002 | 0.005 | 0.002 | 0.0% | 100.0% |
 | `olmo2_7b_base_to_sft` | `sft` | 7.30B | 6236 | 0.039 | 0.52 | 63.2% | 1877 | 0.067 | 0.055 | 0.205 | 0.180 | 75.0% | 100.0% |
 | `olmo2_7b_dpo_to_rlvr` | `rlvr` | 7.30B | 6275 | 0.000 | 0.50 | 62.6% | 2126 | 0.061 | 0.038 | 0.033 | 0.001 | 34.4% | 100.0% |
@@ -124,6 +134,8 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `qwen3_4b_text_to_vl` | `text_to_vlm` | 4.02B | 6253 | 0.249 | 0.55 | 56.5% | 1481 | -0.067 | -0.150 | -0.274 | 0.362 | 21.9% | 11.4% |
 | `qwen3_4b_to_abliterated` | `abliteration` | 4.02B | 6205 | 0.011 | 0.52 | 69.5% | 1 | 0.011 | -0.013 | 0.139 | 0.084 | 0.0% | 10.0% |
 | `qwen3_4b_to_guard` | `safety_guard` | 4.02B | 6286 | 0.006 | 0.46 | 53.9% | 402 | -0.061 | -0.046 | -0.118 | 0.051 | 0.0% | 0.0% |
+| `smollm2_1.7b_base_to_instruct` | `instruct` | 1.71B | 6272 | 0.063 | 0.56 | 74.2% | 1039 | -0.015 | 0.026 | 0.298 | 0.193 | 21.9% | 100.0% |
+| `smollm3_3b_base_to_instruct` | `instruct` | 3.08B | 6133 | 0.060 | 0.53 | 78.6% | 1140 | 0.217 | 0.201 | 0.490 | 0.375 | 3.1% | 64.5% |
 | `zamba2_base_to_instruct` | `instruct` | 2.66B | 6154 | 0.015 | 0.47 | 7.5% | 1529 | 0.027 | 0.105 | 0.073 | 0.113 | 34.4% | 66.7% |
 
 ## Tome 3 — Clinical History (15 GPU interventions, `tome3_clinical_history.json`)

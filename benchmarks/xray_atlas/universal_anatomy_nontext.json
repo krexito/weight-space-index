@@ -1,0 +1,70 @@
+[
+  {
+    "repo": "answerdotai/ModernBERT-large",
+    "modality": "text_encoder",
+    "params_b": 0.395,
+    "n_layers": 28,
+    "hidden_size": 1024,
+    "mlp_down_erank_mean": 0.6983,
+    "mlp_down_col_gini_mean": 0.057,
+    "massive_act_max": {
+      "layer": 19,
+      "depth": 0.704,
+      "ratio": 12808.49
+    },
+    "resid_step_cos_mean": 0.9576,
+    "mlp_zero_frac_mean": 0.0296,
+    "wall_s": 31.4
+  },
+  {
+    "repo": "facebook/dinov2-large",
+    "modality": "vision_vit",
+    "params_b": 0.304,
+    "n_layers": 24,
+    "hidden_size": 1024,
+    "mlp_down_erank_mean": 0.6425,
+    "mlp_down_col_gini_mean": 0.0846,
+    "massive_act_max": {
+      "layer": 19,
+      "depth": 0.826,
+      "ratio": 962.61
+    },
+    "resid_step_cos_mean": 0.8182,
+    "mlp_zero_frac_mean": 0.0555,
+    "wall_s": 20.6
+  },
+  {
+    "repo": "google/siglip2-so400m-patch14-384",
+    "modality": "vision_contrastive",
+    "params_b": 0.428,
+    "n_layers": 27,
+    "hidden_size": 1152,
+    "mlp_down_erank_mean": 0.6849,
+    "mlp_down_col_gini_mean": 0.1192,
+    "massive_act_max": {
+      "layer": 9,
+      "depth": 0.346,
+      "ratio": 14716.08
+    },
+    "resid_step_cos_mean": 0.8858,
+    "mlp_zero_frac_mean": 0.4231,
+    "wall_s": 99.7
+  },
+  {
+    "repo": "facebook/esm2_t33_650M_UR50D",
+    "modality": "protein_lm",
+    "params_b": 0.651,
+    "n_layers": 33,
+    "hidden_size": 1280,
+    "mlp_down_erank_mean": 0.7347,
+    "mlp_down_col_gini_mean": 0.1017,
+    "massive_act_max": {
+      "layer": 14,
+      "depth": 0.438,
+      "ratio": 218.5
+    },
+    "resid_step_cos_mean": 0.971,
+    "mlp_zero_frac_mean": 0.0941,
+    "wall_s": 44.4
+  }
+]
