@@ -1,0 +1,345 @@
+{
+ "schema": "wsi_delta_xray_v1",
+ "probe_pack_sha256": "828ad4f43c642c80",
+ "pair": {
+  "pair_id": "qwen3_4b_text_to_vl",
+  "before_repo": "Qwen/Qwen3-4B",
+  "after_repo": "Qwen/Qwen3-VL-4B-Instruct",
+  "transition_type": "text_to_vlm",
+  "family": "qwen3_4b",
+  "arch_family": "dense_gqa",
+  "n_layers": 36,
+  "params_b": 4.022
+ },
+ "weight_diff": {
+  "depth_bins": [
+   0.0,
+   0.143,
+   0.286,
+   0.429,
+   0.571,
+   0.714,
+   0.857,
+   1.0
+  ],
+  "total_rel_fro": 0.249,
+  "n_matched_params": 399,
+  "n_changed_params": 399,
+  "n_shape_mismatch_params": 0,
+  "depth_centroid": 0.548,
+  "top3_changed_layers": [
+   {
+    "layer": 20,
+    "depth": 0.571,
+    "rel_fro": 0.265
+   },
+   {
+    "layer": 21,
+    "depth": 0.6,
+    "rel_fro": 0.263
+   },
+   {
+    "layer": 19,
+    "depth": 0.543,
+    "rel_fro": 0.262
+   }
+  ],
+  "role_energy_share": {
+   "mlp_out": 0.164,
+   "mlp_in": 0.401,
+   "attn_out": 0.075,
+   "attn_qkv": 0.155,
+   "norms": 0.00053,
+   "embed_head": 0.206
+  },
+  "role_rel_fro": {
+   "mlp_out": 0.246,
+   "mlp_in": 0.257,
+   "attn_out": 0.256,
+   "attn_qkv": 0.293,
+   "norms": 0.015,
+   "embed_head": 0.306
+  },
+  "layer_rel_fro_8": [
+   0.241,
+   0.229,
+   0.231,
+   0.255,
+   0.265,
+   0.247,
+   0.238,
+   0.209
+  ],
+  "layer_energy_share_8": [
+   0.024,
+   0.023,
+   0.024,
+   0.027,
+   0.029,
+   0.028,
+   0.033,
+   0.036
+  ],
+  "mlp_rel_fro_8": [
+   0.254,
+   0.229,
+   0.231,
+   0.262,
+   0.273,
+   0.249,
+   0.254,
+   0.278
+  ],
+  "mixer_rel_fro_8": [
+   0.23,
+   0.252,
+   0.248,
+   0.257,
+   0.273,
+   0.289,
+   0.322,
+   0.317
+  ],
+  "norm_rel_fro_8": [
+   0.027,
+   0.021,
+   0.024,
+   0.017,
+   0.014,
+   0.00954,
+   0.00765,
+   0.00674
+  ]
+ },
+ "spectral_diff": {
+  "mlp_out": {
+   "n_mats": 36,
+   "erank_ratio_mean": 0.95,
+   "erank_ratio_8": [
+    0.943,
+    0.955,
+    0.955,
+    0.954,
+    0.954,
+    0.957,
+    0.96,
+    0.944
+   ],
+   "energy_r1_mean": 0.00472,
+   "energy_r8_mean": 0.019,
+   "energy_r32_mean": 0.048,
+   "energy_r64_mean": 0.08,
+   "rank80_median": 1481.0,
+   "rank90_median": 1884.0,
+   "col_gini_mean": 0.076,
+   "col_gini_8": [
+    0.063,
+    0.053,
+    0.06,
+    0.063,
+    0.071,
+    0.072,
+    0.054,
+    0.127
+   ],
+   "cos_with_base_mean": -0.264,
+   "top_delta_amp_ratio_mean": 0.955,
+   "base_top32_overlap_mean": 0.017,
+   "base_top32_overlap_vs_chance": 1.367
+  },
+  "mixer_out": {
+   "n_mats": 36,
+   "erank_ratio_mean": 0.862,
+   "erank_ratio_8": [
+    0.828,
+    0.859,
+    0.867,
+    0.863,
+    0.853,
+    0.877,
+    0.875,
+    0.868
+   ],
+   "energy_r1_mean": 0.00509,
+   "energy_r8_mean": 0.027,
+   "energy_r32_mean": 0.078,
+   "energy_r64_mean": 0.13,
+   "rank80_median": 1053.5,
+   "rank90_median": 1438.5,
+   "col_gini_mean": 0.101,
+   "col_gini_8": [
+    0.104,
+    0.077,
+    0.086,
+    0.109,
+    0.149,
+    0.1,
+    0.102,
+    0.121
+   ],
+   "cos_with_base_mean": -0.265,
+   "top_delta_amp_ratio_mean": 1.12,
+   "base_top32_overlap_mean": 0.024,
+   "base_top32_overlap_vs_chance": 1.88
+  }
+ },
+ "domain_shifts": {
+  "prose": {
+   "n_tokens": 487,
+   "nll_before": 4.499,
+   "nll_after": 4.226,
+   "delta_nll": -0.274,
+   "kl_top64": 0.362,
+   "top1_agree": 0.743
+  },
+  "code": {
+   "n_tokens": 699,
+   "nll_before": 0.957,
+   "nll_after": 0.807,
+   "delta_nll": -0.15,
+   "kl_top64": 0.145,
+   "top1_agree": 0.907
+  },
+  "math": {
+   "n_tokens": 546,
+   "nll_before": 1.207,
+   "nll_after": 1.14,
+   "delta_nll": -0.067,
+   "kl_top64": 0.131,
+   "top1_agree": 0.894
+  },
+  "other": {
+   "n_tokens": 668,
+   "nll_before": 2.81,
+   "nll_after": 2.679,
+   "delta_nll": -0.13,
+   "kl_top64": 0.325,
+   "top1_agree": 0.757
+  }
+ },
+ "attribution": {
+  "status": "skipped"
+ },
+ "xray_delta": {
+  "before_has_chat": true,
+  "after_has_chat": true,
+  "anatomy_deltas": {
+   "cal_nll": {
+    "before": 2.251,
+    "after": 2.097,
+    "delta": -0.154
+   },
+   "unembed_anisotropy_cos": {
+    "before": 0.135,
+    "after": 0.122,
+    "delta": -0.013
+   },
+   "massive_act_max": {
+    "before": 757.312,
+    "after": 760.347,
+    "delta": 3.035
+   },
+   "mlp_energy90_mean": {
+    "before": 0.631,
+    "after": 0.623,
+    "delta": -0.00762
+   },
+   "fisher_late_early_ratio": {
+    "before": 0.288,
+    "after": 0.846,
+    "delta": 0.558
+   },
+   "block_fisher_late_early_ratio": {
+    "before": 0.00224,
+    "after": 0.00647,
+    "delta": 0.00423
+   },
+   "fisher_col_gini_mean": {
+    "before": 0.731,
+    "after": 0.734,
+    "delta": 0.003
+   },
+   "fact_dla_first_quarter": {
+    "before": 0.013,
+    "after": 0.014,
+    "delta": 0.001
+   }
+  },
+  "pathology_deltas": {
+   "base_overref_rate": {
+    "before": 0.062,
+    "after": 0.219,
+    "delta": 0.157
+   },
+   "base_toxic_ref_rate": {
+    "before": 0.656,
+    "after": 0.781,
+    "delta": 0.125
+   },
+   "opening_entropy_norm": {
+    "before": 0.923,
+    "after": 0.957,
+    "delta": 0.034
+   },
+   "ctrl_opening_entropy_norm": {
+    "before": null,
+    "after": 1.0,
+    "delta": null
+   },
+   "auc_refusal_peak": {
+    "before": 0.934,
+    "after": 0.929,
+    "delta": -0.005
+   },
+   "auc_veto_peak": {
+    "before": 0.947,
+    "after": 0.943,
+    "delta": -0.004
+   },
+   "veto_framing_shift_to_std": {
+    "before": 1.055,
+    "after": 0.835,
+    "delta": -0.22
+   },
+   "turn1_acc": {
+    "before": 0.729,
+    "after": 0.729,
+    "delta": 0.0
+   },
+   "cave_rate_false_pushback": {
+    "before": 0.171,
+    "after": 0.114,
+    "delta": -0.057
+   },
+   "cos_syc_refusal": {
+    "before": -0.095,
+    "after": 0.019,
+    "delta": 0.114
+   },
+   "forced_rep_nll_slope": {
+    "before": 0.852,
+    "after": 0.773,
+    "delta": -0.079
+   },
+   "cos_rep_vs_copy": {
+    "before": 0.79,
+    "after": 0.802,
+    "delta": 0.012
+   },
+   "greedy_rep16_rate": {
+    "before": 0.0,
+    "after": 0.0,
+    "delta": 0.0
+   },
+   "sampled_rep16_rate": {
+    "before": 0.0,
+    "after": 0.0,
+    "delta": 0.0
+   }
+  }
+ },
+ "scan_meta": {
+  "wall_s": 106.4,
+  "wsi_commit": "b4aaab3"
+ }
+}
