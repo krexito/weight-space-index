@@ -537,7 +537,7 @@ def _find_decoder_blocks(backbone: nn.Module, n_cfg: int | None) -> tuple[str, n
         if not isinstance(mod, nn.ModuleList) or len(mod) == 0:
             continue
         low = name.lower()
-        if any(bad in low for bad in ("expert", "adapter", "lora", "vision", "visual", "patch")):
+        if any(bad in low for bad in ("expert", "adapter", "lora", "vision", "visual", "patch", "audio", "talker", "projector", "merger")):
             continue
         first_has_sub = any(True for _ in mod[0].named_modules())
         if not first_has_sub:
@@ -554,17 +554,26 @@ def _find_decoder_blocks(backbone: nn.Module, n_cfg: int | None) -> tuple[str, n
 
 def _discover_xray_structure(model: nn.Module, tok: Any, repo_id: str | None) -> _ModelStructure:
     cfg = getattr(model, "config", None)
-    text_cfg = getattr(cfg, "text_config", None) or cfg
+    thinker_cfg = getattr(cfg, "thinker_config", None) if cfg is not None else None
+    text_cfg = (
+        getattr(cfg, "text_config", None)
+        or (getattr(thinker_cfg, "text_config", None) if thinker_cfg is not None else None)
+        or getattr(cfg, "llm_config", None)
+        or cfg
+    )
     n_cfg = getattr(text_cfg, "num_hidden_layers", None) if text_cfg is not None else None
 
     backbone = model
-    if hasattr(model, "language_model") and isinstance(getattr(model, "language_model"), nn.Module):
-        lm_sub = getattr(model, "language_model")
+    for lm_path in ("language_model", "model.language_model", "model.text_model", "thinker", "thinker.model"):
+        lm_sub = _get_submod(model, lm_path)
+        if lm_sub is None:
+            continue
         try:
             _find_decoder_blocks(lm_sub, n_cfg)
             backbone = lm_sub
+            break
         except ValueError:
-            backbone = model
+            continue
 
     block_prefix, block_ml = _find_decoder_blocks(backbone, n_cfg)
 
