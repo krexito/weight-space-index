@@ -1,6 +1,6 @@
 # WSI 3-Tome Internal Model Atlas (`wsi_atlas_v1`)
 
-Empirical internal-anatomy reference across **41 static model X-Rays (Tome 1)**, **12 controlled checkpoint transitions (Tome 2)**, and **15 GPU clinical intervention records (Tome 3)**.
+Empirical internal-anatomy reference across **42 static model X-Rays (Tome 1)**, **13 controlled checkpoint transitions (Tome 2)**, and **15 GPU clinical intervention records (Tome 3)**.
 
 ## Quick Query API (Python / CLI)
 ```python
@@ -22,7 +22,7 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 - **`intra_layer_uniformity_heads_and_experts`** (*Tome 2 Level-2 detail cards (11/11 transitions, including 1024/1024 OLMoE experts)*): Standard post-training (SFT, Instruct, DPO, RLVR, R1-Distill) spreads weight updates nearly uniformly across heads and experts within each layer (mean_head_gini 0.006-0.077; OLMoE expert_gini 0.019-0.038 with 0/1024 frozen experts). Do not waste search budget hunting 1-2 isolated heads/experts; target low-rank subspaces in down_proj / o_proj instead.
 - **`submatrix_credit_and_opening_collapse`** (*Tome 2 Level-2 submatrix attribution & tome1_curve_deltas (11/11 pairs)*): At submatrix resolution, DPO (olmo2_sft_to_dpo, -43.7 pts over-refusal) concentrates credit in down_proj/up_proj/v_proj and cuts late-layer MLP Fisher sensitivity (fisher_mlp_8[bin7] = -0.175) while preserving opening diversity (entropy 1.0 -> 0.925). By contrast, R1-Distill spikes o_proj energy to 21.6% and collapses opening_entropy_norm (0.776 -> 0.172, top_opening_share 0.228 -> 0.650).
 
-## Tome 1 — Static Model X-Ray Atlas (41 models, `tome1_xray/*.xray.json`)
+## Tome 1 — Static Model X-Ray Atlas (42 models, `tome1_xray/*.xray.json`)
 
 | Repo | Family | Size | Bytes | NLL | Fisher L/E | OverRef | Toxic | Veto AUC | Syc Cave | Rep Slope | Rep/Copy Cos |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -50,6 +50,7 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `unsloth/Llama-3.2-3B-Instruct` | `dense_gqa` | 3.213B | 5031 | 2.246 | 0.718 | 0.0% | 12.5% | 1.000 | 100.0% | 0.868 | 0.998 |
 | `microsoft/Aion-1.0-Instruct-2.3B` | `dense_gqa` | 2.289B | 6410 | 2.200 | 1.233 | 87.5% | 93.8% | 0.936 | 64.0% | 0.799 | 0.890 |
 | `unsloth/mistral-7b-instruct-v0.3` | `dense_gqa` | 7.248B | 5093 | 1.791 | 0.103 | 0.0% | 0.0% | 1.000 | 58.3% | 0.847 | 0.873 |
+| `ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming` | `hybrid_deltanet_gqa` | 0.752B | 7134 | 2.201 | 1.003 | 37.5% | 56.2% | 0.949 | 100.0% | 0.860 | 0.752 |
 | `nvidia/NVIDIA-Nemotron-Nano-9B-v2` | `pure_mamba_ssm` | 8.888B | 4369 | 1.802 | — | 0.0% | 0.0% | 1.000 | 0.0% | 0.828 | 0.718 |
 | `prism-ml/Bonsai-1.7B-unpacked` | `dense_gqa` | 1.72B | 5088 | 2.976 | 0.714 | 0.0% | 0.0% | 1.000 | 90.0% | 0.829 | 0.824 |
 | `prism-ml/Ternary-Bonsai-1.7B-unpacked` | `dense_gqa` | 1.72B | 5102 | 2.710 | 0.812 | 0.0% | 0.0% | 1.000 | 60.0% | 0.860 | 0.812 |
@@ -68,7 +69,7 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `zai-org/GLM-4-32B-0414` | `dense_gqa` | 32.566B | 4545 | 1.664 | 3.347 | 0.0% | 75.0% | 1.000 | 0.0% | 0.850 | 0.994 |
 | `Zyphra/Zamba2-2.7B-instruct` | `hybrid_mamba_gqa` | 2.662B | 5208 | 1.968 | 4.077 | 34.4% | 78.1% | 0.731 | 66.7% | 0.854 | 0.667 |
 
-## Tome 2 — Delta X-Ray Transition Atlas (12 pairs, `tome2_delta/*.delta.xray.json` + Level-2 `*.delta.detail.json`)
+## Tome 2 — Delta X-Ray Transition Atlas (13 pairs, `tome2_delta/*.delta.xray.json` + Level-2 `*.delta.detail.json`)
 
 | Pair | Type | Size | Bytes | RelFro | Depth | MLP Share | MLP Rank80 | ΔMath | ΔCode | ΔProse | KL Prose | OverRef | Syc Cave |
 | :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -83,6 +84,7 @@ Or from bash: `python -m wsi atlas --atlas-dir atlas --diagnose atlas/target_bas
 | `qwen25_coder_to_coder_instruct` | `code_instruct` | 1.54B | 6032 | 0.008 | 0.54 | 59.4% | 624 | 0.140 | 0.155 | 0.311 | 0.177 | 43.8% | 100.0% |
 | `qwen25_math_to_math_instruct` | `math_instruct` | 1.54B | 5994 | 0.157 | 0.54 | 30.1% | 920 | 0.226 | 1.599 | 2.502 | 1.966 | 46.9% | 85.7% |
 | `qwen25_math_to_r1_distill` | `r1_distill` | 1.54B | 5951 | 0.119 | 0.55 | 68.0% | 844 | 0.213 | 0.576 | 1.250 | 0.975 | 0.0% | 72.7% |
+| `qwen35_08b_to_wsp_p50c` | `weight_space_surgery` | 0.75B | 6130 | 0.005 | 0.72 | 100.0% | 1 | 0.007 | -0.000 | 0.038 | 0.016 | 37.5% | 100.0% |
 | `zamba2_base_to_instruct` | `instruct` | 2.66B | 6154 | 0.015 | 0.47 | 7.5% | 1529 | 0.027 | 0.105 | 0.073 | 0.113 | 34.4% | 66.7% |
 
 ## Tome 3 — Clinical History (15 GPU interventions, `tome3_clinical_history.json`)

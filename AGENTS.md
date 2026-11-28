@@ -23,8 +23,9 @@ Generation (`12k–16k` thinking tokens) is ~95% of wall-clock time. Apply these
 5. **Drive Resume & Atomic Final Writes:**
    - Set `WSI_SYNC_DIR` to `MyDrive/wsi_runs/<run_name>` and sync after every completed stage.
    - Write final JSONs to `MyDrive/wsi_runs/FINALES/<run_name>.json` via `.tmp` + `os.replace`.
-6. **Hardware Constraint:**
-   - Never run heavy model inference on the local Windows PC — only CPU unit tests, syntax checks, and small toy-model tests.
+6. **Hardware & GPU Credits:**
+   - Never run heavy model inference on the local Windows PC — only CPU unit tests, syntax checks, and toy-model tests.
+   - Before any Modal/Colab GPU run, follow **`docs/gpu_runbook.md`** (VRAM-sized batches, per-arm `/vol` checkpoints + `vol.commit()`, per-batch `tok/s` logging, smoke test first).
 
 ## 2. Findings So Far (index)
 
@@ -97,8 +98,10 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **Looped MoE `GSQ-RCO` GGUF X-Ray (`Inkling-2-Mini IQ2_S`, `2.75b`, Modal H100)**: pure-NumPy `Q2_0(42)` + 8-thread dequant; `fact 87.5%` & `L17` massive (`90.1x` vs `93.3x`) & `DLA step 35/L11` & router ent (`0.732`) all preserved (`nll 1.27->1.54`).
 - **Live Surgical Telemetry (`wsi/surgery_telemetry.py` + MCP, 4 models / 3 pathologies, `1–4s`)**: `effective_gain = causal_gain × max(hydra,0)` hits exact #1 blind winner on `Llama-3.2-3B` (`L14`, `rho +0.83`) & `Gemma-2-2B` (`L15`, `+0.82`) sycophancy, `+0.90` on `LFM3` refusal, and rejects `L10` (`65%` Hydra) on `Qwen3.5-0.8B` loops.
 - **Telemetry-Guided Anti-Sycophancy `.moipatch` (`Llama-3.2-3B`, `L14`, `88.8 KB`, `33s`)**: blind `L14` rank-1 routed edit cuts sycophancy `93.8->21.9%` (`-71.9 pts`, random `84.4%`), keeps `100%` true-pushback/neutral/ctrl (`always_on` ctrl `80%`, `0/20` router fires).
+- **WSP `p50c` Tome-1+2 Atlas Pair (`Qwen3.5-0.8B -> wsp`, exact `828ad4f4` pack)**: `2/320` mats (`L15/19`, `r1=1.0`, `col_gini=0.988` vs `<=0.077` SFT/RL), `0` fact/safety/syc loss, `forced_rep_entropy_ratio_k8_k1` `8.1x` (`0.034->0.276`); Atlas `42/13/15`.
 - **Closed-Form WSP Safety Routers** (LFM3-1.7B, Colab L4): negative vs shipped L24 linear; `wsp_crossfit_auto` raises safety (`99.4%` tox, `100%` JBB) but cuts OR-Bench recovery `76.9->30.8%` (`-42 pts`); `+t0` helps.
 - **Token-0 Prior Gate (`L24+t0`, LFM3, Colab T4)**: **PASS**; `shipped_and_t0_prob` keeps `79.2%` rec / `95.2%` tox / `95.9%` JBB, fixes `ctrl 96.7->100%`, cuts boundary FPR **`6.9->1.5%`** (`CI [-9.9,-1.5]`).
+- **Open-Prompt Blind Agent A/B (`Phi-4-mini`, `deepseek-v4.1-flash`, Modal L4, no `verify_patch`)**: both **FAIL** (`raw` `5.6/96.4/80%` `L14-16`; `wsi_full` `1.9/100/66.7%` `L0`, skipped telemetry/router MCP, inverted router sign).
 
 **Memory, routing, distillation, compression**
 - **Facts in the weights** (LFM3): gate clean, recall `87%` dev (chance `11%`); layer 0 is best; more steps do not help, the gap looks like generalization from one sentence per fact.
@@ -130,6 +133,7 @@ One line per finding. Numbers, caveats and files: **`research/findings.md`** (se
 - **X-Ray Quant Predictor (CPU)**: `build_quant_sensitivity_map` tracks Inkling `SQ-10` (`rho +0.65`, `2/4` top-5) & knapsack (`+0.82` dense, `+0.68` OLMoE); raw PreNorm `tr(dW H dW^T)` grows `~140x` across depth.
 - **High-Rank Strata Cartridges (`MATH-500`, `4B->0.8B`)**: `r=8` (`35.5%`) beats `r=32/64` (`29.5/28.0%`, overfit 195 traces); `S2_K` saves `7.2x` (`11.4 MB` `30.5%`, `+4` vs `RTN-2b`), `0/371` non-math MMLU fires.
 - **Strata 3-Bit Base + Patch (`Qwen2.5-3B`, `A100`)**: `S3_K+Scale-QAT` (`1.05 GB`, `+0B`) hits `76.5%` GSM8K-200 (`-5` vs BF16); 213-trace LoRA overfits (`71.5%`); `S2_K` (`1.95 MB`) ties FP16 & L18 router `0%` MMLU.
+- **3-Track `Qwen3.5-0.8B` Max Comparison (`MATH-500`, `A100`)**: `k=4` vote hits **`48.0%`** (`+8.5` vs `base_nothink 39.5%`, `pass@4 53%`); `lora_r8` (`37.5%`), `S2_K` (`36.5%`, `1.4 MB`), `loopres T2/T3` (`35.5/36%`) trail; `p50c` cuts loops `48->3.5%` (`94.5%` trunc@4k).
 
 ## 3. Planned Next Experiment (Queued — Do Not Run Yet)
 
